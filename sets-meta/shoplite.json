@@ -1,0 +1,205 @@
+{
+  "title": "ShopLite",
+  "problems": {
+    "Q1": {
+      "tags": [
+        "Subqueries",
+        "Ranking"
+      ]
+    },
+    "Q2": {
+      "tags": [
+        "Ranking",
+        "Subqueries"
+      ],
+      "dialect_note_md": "In MySQL, `LIMIT … OFFSET` is allowed inside a scalar subquery, but not inside `IN (…)`, `ANY`, `ALL` or `SOME`."
+    },
+    "Q3": {
+      "tags": [
+        "Aggregation",
+        "Data cleaning"
+      ],
+      "dialect_note_md": "MySQL's default collation (`utf8mb4_0900_ai_ci`) compares strings case-insensitively, so letter case alone won't split a group the way it does in PostgreSQL. Surrounding spaces still count. To see the case-sensitive behaviour, try `GROUP BY BINARY email`."
+    },
+    "Q4": {
+      "tags": [
+        "Data cleaning",
+        "DML",
+        "Ranking"
+      ],
+      "dialect_note_md": "MySQL rejects a `DELETE` whose subquery reads the same table (error 1093). Workbench's safe-update mode may block the delete (error 1175): run `SET SQL_SAFE_UPDATES = 0;` first. Re-run `setup.sql` afterwards to restore the data."
+    },
+    "Q5": {
+      "tags": [
+        "Anti-joins",
+        "NULL handling"
+      ]
+    },
+    "Q6": {
+      "tags": [
+        "Joins",
+        "Aggregation",
+        "NULL handling"
+      ],
+      "dialect_note_md": "MySQL prints zero spend as `0.00` where the expected output shows `0` — same value."
+    },
+    "Q7": {
+      "tags": [
+        "Aggregation"
+      ]
+    },
+    "Q8": {
+      "tags": [
+        "Window functions",
+        "Ranking",
+        "Top N per group"
+      ]
+    },
+    "Q9": {
+      "tags": [
+        "Window functions",
+        "Ranking",
+        "Top N per group"
+      ]
+    },
+    "Q10": {
+      "tags": [
+        "Window functions",
+        "Ranking"
+      ]
+    },
+    "Q11": {
+      "tags": [
+        "Aggregation",
+        "Conditional aggregation",
+        "Dates"
+      ],
+      "dialect_note_md": "MySQL has no `DATE_TRUNC`."
+    },
+    "Q12": {
+      "tags": [
+        "Window functions",
+        "Aggregation"
+      ]
+    },
+    "Q13": {
+      "tags": [
+        "Window functions",
+        "Running totals"
+      ]
+    },
+    "Q14": {
+      "tags": [
+        "Window functions",
+        "Dates"
+      ],
+      "dialect_note_md": "MySQL has no `DATE_TRUNC`."
+    },
+    "Q15": {
+      "tags": [
+        "Window functions",
+        "Deduplication"
+      ]
+    },
+    "Q16": {
+      "tags": [
+        "Window functions"
+      ]
+    },
+    "Q17": {
+      "tags": [
+        "Window functions",
+        "Dates"
+      ],
+      "dialect_note_md": "In MySQL, subtracting one date from another does not give a day count."
+    },
+    "Q18": {
+      "tags": [
+        "Window functions",
+        "Moving averages",
+        "Dates"
+      ]
+    },
+    "Q19": {
+      "tags": [
+        "Window functions",
+        "Gaps and islands",
+        "Dates"
+      ],
+      "dialect_note_md": "In MySQL, `date - integer` does not subtract days."
+    },
+    "Q20": {
+      "tags": [
+        "Window functions",
+        "Statistics"
+      ],
+      "dialect_note_md": "MySQL has no `PERCENTILE_CONT` or `MEDIAN`, so only the second part of the question applies."
+    },
+    "Q21": {
+      "tags": [
+        "Self-joins",
+        "Aggregation"
+      ]
+    },
+    "Q22": {
+      "tags": [
+        "Relational division",
+        "Anti-joins"
+      ]
+    },
+    "Q23": {
+      "tags": [
+        "Self-joins",
+        "Aggregation"
+      ]
+    },
+    "Q24": {
+      "tags": [
+        "Conditional aggregation"
+      ]
+    },
+    "Q25": {
+      "tags": [
+        "Pivoting",
+        "Conditional aggregation"
+      ],
+      "dialect_note_md": "MySQL has no `PIVOT` keyword."
+    },
+    "Q26": {
+      "tags": [
+        "Cohorts",
+        "Dates",
+        "Conditional aggregation"
+      ]
+    },
+    "Q27": {
+      "tags": [
+        "Window functions",
+        "Cohorts",
+        "Dates"
+      ],
+      "dialect_note_md": "MySQL trap: `first_date + 30` is not 30 days later — MySQL turns the date into the number 20250103 and adds 30."
+    },
+    "Q28": {
+      "tags": [
+        "Date spines",
+        "Recursive CTEs",
+        "Dates"
+      ],
+      "dialect_note_md": "MySQL has no `generate_series` — see the hint."
+    },
+    "Q29": {
+      "tags": [
+        "Window functions",
+        "Aggregation"
+      ]
+    },
+    "Q30": {
+      "tags": [
+        "Recursive CTEs",
+        "Hierarchies"
+      ],
+      "dialect_note_md": "In MySQL, `||` means OR, not string concatenation. A recursive CTE also sizes its text columns from the anchor row, so longer paths can fail with \"Data too long\"."
+    }
+  }
+}

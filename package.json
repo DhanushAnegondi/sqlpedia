@@ -1,0 +1,10 @@
+{
+  "name": "sqlpedia",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "import": "node scripts/import.mjs starter_pac shoplite && node scripts/import.mjs sets/campus campus",
+    "serve": "python -m http.server 8130 --directory site",
+    "gen:campus": "python scripts/authoring/gen_campus.py"
+  }
+}
