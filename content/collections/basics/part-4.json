@@ -1,0 +1,1635 @@
+{
+  "problems": [
+    {
+      "id": "B037",
+      "slug": "above-the-average",
+      "title": "Above the average",
+      "difficulty": "Easy",
+      "section": "Subqueries and CTEs",
+      "topics": [
+        "Subqueries",
+        "Filtering"
+      ],
+      "statement_md": "A cafe wants to know which drinks are priced above its average menu price. Return `item_name` and `price` for every item that costs more than the average price of all items, most expensive first, ties by `item_id`.",
+      "tables": [
+        {
+          "name": "menu_items",
+          "description_md": "One row per drink on the menu.",
+          "columns": [
+            {
+              "name": "item_id",
+              "type": "INT"
+            },
+            {
+              "name": "item_name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "price",
+              "type": "DECIMAL(5,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Drip coffee",
+              2.5
+            ],
+            [
+              2,
+              "Latte",
+              4.5
+            ],
+            [
+              3,
+              "Espresso",
+              3.5
+            ],
+            [
+              4,
+              "Mocha",
+              5.5
+            ],
+            [
+              5,
+              "Chai latte",
+              4.5
+            ],
+            [
+              6,
+              "Cold brew",
+              5.0
+            ],
+            [
+              7,
+              "Matcha latte",
+              6.5
+            ],
+            [
+              8,
+              "Hot chocolate",
+              4.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need two numbers: each item's price and the average of all prices. A query inside brackets can produce the second one.",
+        "Does an item priced exactly at the average count as 'above' it?"
+      ],
+      "notes_md": "**Concept:** a subquery is a SELECT inside brackets that gives the outer query a value to compare with.\n\n**Shape:** the inner query works out one number (the overall average); the outer query keeps the rows that beat it, then sorts.\n\n**Syntax:** A bracketed `(SELECT AVG(col) FROM t)` returns a single value you can use in a comparison.\n\n**Watch out:** an aggregate such as `AVG` cannot sit directly in a `WHERE`; and think about whether 'above' means `>` or `>=`.",
+      "solutions": [
+        {
+          "label": "Subquery in WHERE",
+          "explain_md": "The bracketed query returns one number, the average price. `WHERE price > (...)` keeps only items above it.",
+          "sql": "SELECT item_name, price\nFROM menu_items\nWHERE price > (SELECT AVG(price) FROM menu_items)\nORDER BY price DESC, item_id;"
+        },
+        {
+          "label": "Join to a one-row table",
+          "explain_md": "The subquery in FROM gives a one-row table holding the average; joining it to every item lets you compare in WHERE.",
+          "sql": "SELECT m.item_name, m.price\nFROM menu_items m\nCROSS JOIN (SELECT AVG(price) AS avg_price FROM menu_items) a\nWHERE m.price > a.avg_price\nORDER BY m.price DESC, m.item_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`>=` also keeps the two items priced exactly at the average (4.50), but they are not above it.",
+          "sql": "SELECT item_name, price\nFROM menu_items\nWHERE price >= (SELECT AVG(price) FROM menu_items)\nORDER BY price DESC, item_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "item_name",
+          "price"
+        ],
+        "rows": [
+          [
+            "Matcha latte",
+            "6.50"
+          ],
+          [
+            "Mocha",
+            "5.50"
+          ],
+          [
+            "Cold brew",
+            "5.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B038",
+      "slug": "in-a-list-from-another-table",
+      "title": "In a list from another table",
+      "difficulty": "Easy",
+      "section": "Subqueries and CTEs",
+      "topics": [
+        "Subqueries",
+        "Filtering"
+      ],
+      "statement_md": "A bookshop is planning an Irish-writers table. Return `title` and `price` of every book written by an author whose `country` is `'Ireland'`, ordered by `title`, ties by `book_id`. The country is stored in `authors`, not in `books`.",
+      "tables": [
+        {
+          "name": "authors",
+          "description_md": "One row per author.",
+          "columns": [
+            {
+              "name": "author_id",
+              "type": "INT"
+            },
+            {
+              "name": "author_name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "country",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Orla Brennan",
+              "Ireland"
+            ],
+            [
+              2,
+              "Tomas Reyes",
+              "Spain"
+            ],
+            [
+              3,
+              "Fiona Doyle",
+              "Ireland"
+            ],
+            [
+              4,
+              "Kenji Arai",
+              "Japan"
+            ],
+            [
+              5,
+              "Lena Vogt",
+              "Germany"
+            ]
+          ]
+        },
+        {
+          "name": "books",
+          "description_md": "One row per book. `author_id` points to `authors`.",
+          "columns": [
+            {
+              "name": "book_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(40)"
+            },
+            {
+              "name": "author_id",
+              "type": "INT"
+            },
+            {
+              "name": "price",
+              "type": "DECIMAL(5,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "The Salt Road",
+              3,
+              12.99
+            ],
+            [
+              2,
+              "Harbour Lights",
+              1,
+              9.5
+            ],
+            [
+              3,
+              "Quiet Orchards",
+              2,
+              14.0
+            ],
+            [
+              4,
+              "Winter Ledger",
+              1,
+              11.25
+            ],
+            [
+              5,
+              "Paper Cities",
+              5,
+              16.8
+            ],
+            [
+              6,
+              "Small Mercies",
+              3,
+              8.99
+            ],
+            [
+              7,
+              "Tide Tables",
+              4,
+              13.4
+            ],
+            [
+              8,
+              "The Long Table",
+              2,
+              10.75
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "First work out which `author_id` values belong to Irish authors. That list is the first step.",
+        "Which column of `books` should be checked against that list? Compare ids with ids."
+      ],
+      "notes_md": "**Concept:** a subquery can return a whole column of values, and `IN` asks 'is my value somewhere in that list?'.\n\n**Shape:** inner query lists the matching ids from one table; the outer query keeps rows of the other table whose id is on the list.\n\n**Syntax:** `col IN (subquery returning one column)`.\n\n**Watch out:** match the right pair of columns; ids from different tables can overlap by accident and still run without any error.",
+      "solutions": [
+        {
+          "label": "IN with a subquery",
+          "explain_md": "The inner query returns the ids of Irish authors. `author_id IN (...)` keeps the books whose author is on that list.",
+          "sql": "SELECT title, price\nFROM books\nWHERE author_id IN (SELECT author_id FROM authors WHERE country = 'Ireland')\nORDER BY title, book_id;"
+        },
+        {
+          "label": "JOIN",
+          "explain_md": "Joining books to authors and filtering the country gives the same rows, because each book has one author.",
+          "sql": "SELECT b.title, b.price\nFROM books b\nJOIN authors a ON a.author_id = b.author_id\nWHERE a.country = 'Ireland'\nORDER BY b.title, b.book_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The list holds author ids, but `book_id` is compared with it. Book 1 and book 3 happen to have the same numbers as the Irish authors 1 and 3, so the wrong books are returned.",
+          "sql": "SELECT title, price\nFROM books\nWHERE book_id IN (SELECT author_id FROM authors WHERE country = 'Ireland')\nORDER BY title, book_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "title",
+          "price"
+        ],
+        "rows": [
+          [
+            "Harbour Lights",
+            "9.50"
+          ],
+          [
+            "Small Mercies",
+            "8.99"
+          ],
+          [
+            "The Salt Road",
+            "12.99"
+          ],
+          [
+            "Winter Ledger",
+            "11.25"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B039",
+      "slug": "has-at-least-one-cancellation",
+      "title": "Has at least one cancellation",
+      "difficulty": "Medium",
+      "section": "Subqueries and CTEs",
+      "topics": [
+        "Subqueries",
+        "Filtering"
+      ],
+      "statement_md": "A clinic wants to phone patients who have cancelled at least once. Return `patient_id` and `patient_name` of every patient with one or more appointments whose `status` is `'cancelled'`. Each patient must appear once, ordered by `patient_id`.",
+      "tables": [
+        {
+          "name": "patients",
+          "description_md": "One row per patient.",
+          "columns": [
+            {
+              "name": "patient_id",
+              "type": "INT"
+            },
+            {
+              "name": "patient_name",
+              "type": "VARCHAR(30)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Aiden Park"
+            ],
+            [
+              2,
+              "Bela Horvat"
+            ],
+            [
+              3,
+              "Camila Ruiz"
+            ],
+            [
+              4,
+              "Dev Malhotra"
+            ],
+            [
+              5,
+              "Elin Berg"
+            ]
+          ]
+        },
+        {
+          "name": "appointments",
+          "description_md": "One row per appointment. `status` is `'attended'`, `'cancelled'` or `'booked'`.",
+          "columns": [
+            {
+              "name": "appt_id",
+              "type": "INT"
+            },
+            {
+              "name": "patient_id",
+              "type": "INT"
+            },
+            {
+              "name": "appt_date",
+              "type": "DATE"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-02-03",
+              "attended"
+            ],
+            [
+              2,
+              2,
+              "2026-02-04",
+              "cancelled"
+            ],
+            [
+              3,
+              2,
+              "2026-02-18",
+              "cancelled"
+            ],
+            [
+              4,
+              3,
+              "2026-02-05",
+              "attended"
+            ],
+            [
+              5,
+              4,
+              "2026-02-09",
+              "cancelled"
+            ],
+            [
+              6,
+              1,
+              "2026-03-02",
+              "booked"
+            ],
+            [
+              7,
+              3,
+              "2026-03-04",
+              "booked"
+            ],
+            [
+              8,
+              4,
+              "2026-03-11",
+              "attended"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "For each patient, ask a yes/no question: is there at least one cancelled appointment that belongs to them?",
+        "A patient with two cancellations should still be one row in the answer."
+      ],
+      "notes_md": "**Concept:** `EXISTS` tests whether a subquery finds any row at all. It is a yes/no check, so it never multiplies rows.\n\n**Shape:** for each patient, run a small inner query on `appointments` that links by `patient_id` and looks for the status; keep the patient if anything is found.\n\n**Syntax:** `EXISTS (subquery)` is true when the subquery returns at least one row; link it to the outer row through a shared key.\n\n**Watch out:** joining instead of testing existence repeats a patient once per matching row.",
+      "solutions": [
+        {
+          "label": "EXISTS",
+          "explain_md": "For each patient the inner query looks for a cancelled appointment with the same `patient_id`. EXISTS is true or false, so a patient is never repeated.",
+          "sql": "SELECT p.patient_id, p.patient_name\nFROM patients p\nWHERE EXISTS (\n  SELECT 1 FROM appointments a\n  WHERE a.patient_id = p.patient_id AND a.status = 'cancelled'\n)\nORDER BY p.patient_id;"
+        },
+        {
+          "label": "IN with a subquery",
+          "explain_md": "The inner query lists patient ids that have a cancellation; IN keeps each patient once however many times the id appears in the list.",
+          "sql": "SELECT patient_id, patient_name\nFROM patients\nWHERE patient_id IN (SELECT patient_id FROM appointments WHERE status = 'cancelled')\nORDER BY patient_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A plain JOIN returns one row per cancelled appointment, so Bela Horvat (two cancellations) shows up twice.",
+          "sql": "SELECT p.patient_id, p.patient_name\nFROM patients p\nJOIN appointments a ON a.patient_id = p.patient_id\nWHERE a.status = 'cancelled'\nORDER BY p.patient_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "patient_id",
+          "patient_name"
+        ],
+        "rows": [
+          [
+            "2",
+            "Bela Horvat"
+          ],
+          [
+            "4",
+            "Dev Malhotra"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B040",
+      "slug": "name-a-step-with-with",
+      "title": "Name a step with WITH",
+      "difficulty": "Medium",
+      "section": "Subqueries and CTEs",
+      "topics": [
+        "CTEs",
+        "Aggregation",
+        "Joins"
+      ],
+      "statement_md": "A delivery firm wants to reward couriers with big tips. Add up each courier's tips, then return `courier_name` and `total_tip` for couriers whose total is more than 20. Highest total first, ties by `courier_id`. Two different couriers can share a name.",
+      "tables": [
+        {
+          "name": "couriers",
+          "description_md": "One row per courier. Names are not unique.",
+          "columns": [
+            {
+              "name": "courier_id",
+              "type": "INT"
+            },
+            {
+              "name": "courier_name",
+              "type": "VARCHAR(30)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Priya Nair"
+            ],
+            [
+              2,
+              "Sam Ortiz"
+            ],
+            [
+              3,
+              "Wen Zhao"
+            ],
+            [
+              4,
+              "Sam Ortiz"
+            ],
+            [
+              5,
+              "Dara Quinn"
+            ]
+          ]
+        },
+        {
+          "name": "deliveries",
+          "description_md": "One row per delivery, with the tip left by the customer.",
+          "columns": [
+            {
+              "name": "delivery_id",
+              "type": "INT"
+            },
+            {
+              "name": "courier_id",
+              "type": "INT"
+            },
+            {
+              "name": "tip",
+              "type": "DECIMAL(5,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              8.0
+            ],
+            [
+              2,
+              1,
+              7.5
+            ],
+            [
+              3,
+              1,
+              9.0
+            ],
+            [
+              4,
+              2,
+              6.0
+            ],
+            [
+              5,
+              2,
+              5.5
+            ],
+            [
+              6,
+              3,
+              10.0
+            ],
+            [
+              7,
+              3,
+              9.0
+            ],
+            [
+              8,
+              3,
+              3.0
+            ],
+            [
+              9,
+              4,
+              12.0
+            ],
+            [
+              10,
+              4,
+              4.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Do it in two steps: first a small result with one total per courier, then use that result like a table.",
+        "Which column identifies a courier for certain: the name or the id?"
+      ],
+      "notes_md": "**Concept:** a CTE (`WITH name AS (...)`) gives a query step a name so the next step can use it like a table.\n\n**Shape:** step 1 = one row per courier with the total; step 2 = join that to the courier list for the names and keep the big totals.\n\n**Syntax:** `WITH name AS (SELECT ...) SELECT ... FROM name ...` - the CTE behaves like a table for the rest of the query.\n\n**Watch out:** group by the id, not the name. Names can repeat, and grouping by a repeated name quietly merges different people.",
+      "solutions": [
+        {
+          "label": "CTE",
+          "explain_md": "The CTE `totals` sums tips per courier id. The main query joins it to `couriers` for the names and keeps totals above 20.",
+          "sql": "WITH totals AS (\n  SELECT courier_id, SUM(tip) AS total_tip\n  FROM deliveries\n  GROUP BY courier_id\n)\nSELECT c.courier_name, t.total_tip\nFROM couriers c\nJOIN totals t ON t.courier_id = c.courier_id\nWHERE t.total_tip > 20\nORDER BY t.total_tip DESC, c.courier_id;"
+        },
+        {
+          "label": "Subquery in FROM",
+          "explain_md": "The same two steps without WITH: the first step sits inside brackets in the FROM clause and gets an alias.",
+          "sql": "SELECT c.courier_name, t.total_tip\nFROM couriers c\nJOIN (\n  SELECT courier_id, SUM(tip) AS total_tip\n  FROM deliveries\n  GROUP BY courier_id\n) t ON t.courier_id = c.courier_id\nWHERE t.total_tip > 20\nORDER BY t.total_tip DESC, c.courier_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Grouping by `courier_name` merges the two different couriers called Sam Ortiz (11.50 + 16.00 = 27.50), so a name appears that no single courier earned.",
+          "sql": "SELECT c.courier_name, SUM(d.tip) AS total_tip\nFROM couriers c\nJOIN deliveries d ON d.courier_id = c.courier_id\nGROUP BY c.courier_name\nHAVING SUM(d.tip) > 20\nORDER BY total_tip DESC, c.courier_name;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "courier_name",
+          "total_tip"
+        ],
+        "rows": [
+          [
+            "Priya Nair",
+            "24.50"
+          ],
+          [
+            "Wen Zhao",
+            "22.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B041",
+      "slug": "top-score-and-who-holds-it",
+      "title": "Top score and who holds it",
+      "difficulty": "Medium",
+      "section": "Subqueries and CTEs",
+      "topics": [
+        "Subqueries",
+        "Aggregation"
+      ],
+      "statement_md": "A teacher wants to congratulate everyone who got the highest exam score in the class, even if several students share it. Return `student_id`, `student_name` and `score` for each student with the top score, ordered by `student_id`.",
+      "tables": [
+        {
+          "name": "exam_results",
+          "description_md": "One row per student for the term exam.",
+          "columns": [
+            {
+              "name": "student_id",
+              "type": "INT"
+            },
+            {
+              "name": "student_name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "score",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Noor Hassan",
+              82
+            ],
+            [
+              2,
+              "Ravi Iyer",
+              94
+            ],
+            [
+              3,
+              "Sofia Costa",
+              77
+            ],
+            [
+              4,
+              "Tariq Aziz",
+              88
+            ],
+            [
+              5,
+              "Uma Patel",
+              94
+            ],
+            [
+              6,
+              "Viktor Novak",
+              69
+            ],
+            [
+              7,
+              "Wanda Cole",
+              91
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Find the highest score on its own first. Then ask which rows have exactly that score.",
+        "Could more than one student have it?"
+      ],
+      "notes_md": "**Concept:** `MAX` finds the top value, but it does not tell you which rows own it; a subquery lets you filter by that value.\n\n**Shape:** inner query = the single top score; outer query = every row whose score equals it, so ties all come back.\n\n**Syntax:** A bracketed subquery that returns one value can sit on either side of `=`.\n\n**Watch out:** sorting and keeping the first row looks like it works, but it silently drops everyone tied for the top.",
+      "solutions": [
+        {
+          "label": "Subquery with MAX",
+          "explain_md": "The inner query returns one number, the highest score. The outer query keeps every student whose score equals it, so both tied students appear.",
+          "sql": "SELECT student_id, student_name, score\nFROM exam_results\nWHERE score = (SELECT MAX(score) FROM exam_results)\nORDER BY student_id;"
+        },
+        {
+          "label": "Join to the top score",
+          "explain_md": "A one-row derived table holds the maximum; joining on equality keeps all students with that score.",
+          "sql": "SELECT e.student_id, e.student_name, e.score\nFROM exam_results e\nJOIN (SELECT MAX(score) AS top_score FROM exam_results) m ON e.score = m.top_score\nORDER BY e.student_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Sorting by score and taking one row returns only one of the two students who scored 94.",
+          "sql": "SELECT student_id, student_name, score\nFROM exam_results\nORDER BY score DESC, student_id\nLIMIT 1;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "student_id",
+          "student_name",
+          "score"
+        ],
+        "rows": [
+          [
+            "2",
+            "Ravi Iyer",
+            "94"
+          ],
+          [
+            "5",
+            "Uma Patel",
+            "94"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B042",
+      "slug": "clean-up-names",
+      "title": "Clean up names",
+      "difficulty": "Easy",
+      "section": "Text, numbers and dates",
+      "topics": [
+        "String functions"
+      ],
+      "statement_md": "A shop imported customer details typed by hand, with stray spaces and mixed capitals. Return `customer_id`, `full_name` and `email`. `full_name` is the first name, one space, then the last name, all in capital letters and with no extra spaces. `email` is in lower case with no surrounding spaces. Order by `customer_id`.",
+      "tables": [
+        {
+          "name": "customers",
+          "description_md": "One row per customer, as typed in. Names and emails may have extra spaces and any capitalisation.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "first_name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "last_name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR(40)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "  maya ",
+              "Chen",
+              "Maya.Chen@Example.com"
+            ],
+            [
+              2,
+              "JORGE",
+              "  alvarez",
+              " jorge@Example.com"
+            ],
+            [
+              3,
+              "li",
+              "wei  ",
+              "LI.WEI@example.com "
+            ],
+            [
+              4,
+              "Amara",
+              "Okafor",
+              "amara@example.com"
+            ],
+            [
+              5,
+              " peter",
+              "Lindqvist ",
+              "Peter.L@Example.COM"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Each name part may have spaces on its own edges. Clean each part before joining them.",
+        "One function removes spaces at both ends; another changes the case. Functions can be nested."
+      ],
+      "notes_md": "**Concept:** string functions return a cleaned-up copy of the text; the stored value is not changed.\n\n**Shape:** tidy each name part on its own, glue the parts together with a single space, then change the case of the result.\n\n**Syntax:** `TRIM(s)`, `UPPER(s)`, `LOWER(s)`, `CONCAT(a, ' ', b)`.\n\n**Watch out:** trimming only after joining cannot reach spaces in the middle of the new string.",
+      "solutions": [
+        {
+          "label": "TRIM each part, then CONCAT",
+          "explain_md": "TRIM removes spaces at both ends of each part, CONCAT joins the parts with one space, and UPPER and LOWER change the case.",
+          "sql": "SELECT customer_id,\n       UPPER(CONCAT(TRIM(first_name), ' ', TRIM(last_name))) AS full_name,\n       LOWER(TRIM(email)) AS email\nFROM customers\nORDER BY customer_id;"
+        },
+        {
+          "label": "UPPER each part, then CONCAT_WS",
+          "explain_md": "CONCAT_WS puts the first argument between the others, here a single space.",
+          "sql": "SELECT customer_id,\n       CONCAT_WS(' ', UPPER(TRIM(first_name)), UPPER(TRIM(last_name))) AS full_name,\n       LOWER(TRIM(email)) AS email\nFROM customers\nORDER BY customer_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Trimming the joined text only removes spaces at its two ends. A space at the end of the first name or the start of the last name stays inside, giving a double space.",
+          "sql": "SELECT customer_id,\n       TRIM(UPPER(CONCAT(first_name, ' ', last_name))) AS full_name,\n       LOWER(TRIM(email)) AS email\nFROM customers\nORDER BY customer_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "full_name",
+          "email"
+        ],
+        "rows": [
+          [
+            "1",
+            "MAYA CHEN",
+            "maya.chen@example.com"
+          ],
+          [
+            "2",
+            "JORGE ALVAREZ",
+            "jorge@example.com"
+          ],
+          [
+            "3",
+            "LI WEI",
+            "li.wei@example.com"
+          ],
+          [
+            "4",
+            "AMARA OKAFOR",
+            "amara@example.com"
+          ],
+          [
+            "5",
+            "PETER LINDQVIST",
+            "peter.l@example.com"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B043",
+      "slug": "part-of-a-string",
+      "title": "Part of a string",
+      "difficulty": "Easy",
+      "section": "Text, numbers and dates",
+      "topics": [
+        "String functions"
+      ],
+      "statement_md": "A book club keeps its members' email addresses. Return `member_id`, `domain` (everything after the `@`, without the `@`) and `handle_length` (how many characters come before the `@`). Order by `member_id`.",
+      "tables": [
+        {
+          "name": "club_members",
+          "description_md": "One row per member. Every `email` contains exactly one `@`.",
+          "columns": [
+            {
+              "name": "member_id",
+              "type": "INT"
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR(40)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "nadia@mail.com"
+            ],
+            [
+              2,
+              "oliver.reed@school.edu"
+            ],
+            [
+              3,
+              "p@bookclub.org"
+            ],
+            [
+              4,
+              "quentin.fox@mail.com"
+            ],
+            [
+              5,
+              "rosa_diaz@library.gov.uk"
+            ],
+            [
+              6,
+              "sam@school.edu"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Find the position of the `@` first. Everything else is measured from it.",
+        "Counting characters from position 1 means the character *after* the `@` is one further along."
+      ],
+      "notes_md": "**Concept:** find where a marker sits in the text, then cut the text relative to that position.\n\n**Shape:** one value gives the position of `@`; the text before it has that position minus one characters; the domain starts one character after it.\n\n**Syntax:** `LOCATE(sub, s)`, `SUBSTRING(s, start)`, `LENGTH(s)`, `LEFT(s, n)`, `SUBSTRING_INDEX(s, delim, count)`.\n\n**Watch out:** positions start at 1, and an off-by-one slip keeps the `@` in the domain.",
+      "solutions": [
+        {
+          "label": "LOCATE and SUBSTRING",
+          "explain_md": "LOCATE finds the position of `@`. SUBSTRING from one position after it gives the domain, and the handle holds one fewer character than that position.",
+          "sql": "SELECT member_id,\n       SUBSTRING(email, LOCATE('@', email) + 1) AS domain,\n       LOCATE('@', email) - 1 AS handle_length\nFROM club_members\nORDER BY member_id;"
+        },
+        {
+          "label": "SUBSTRING_INDEX",
+          "explain_md": "SUBSTRING_INDEX splits on a delimiter: count -1 keeps the part after the last `@`, count 1 keeps the part before the first.",
+          "sql": "SELECT member_id,\n       SUBSTRING_INDEX(email, '@', -1) AS domain,\n       LENGTH(SUBSTRING_INDEX(email, '@', 1)) AS handle_length\nFROM club_members\nORDER BY member_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Starting at the `@` itself (no +1) keeps the `@` at the front of every domain.",
+          "sql": "SELECT member_id,\n       SUBSTRING(email, LOCATE('@', email)) AS domain,\n       LOCATE('@', email) - 1 AS handle_length\nFROM club_members\nORDER BY member_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "member_id",
+          "domain",
+          "handle_length"
+        ],
+        "rows": [
+          [
+            "1",
+            "mail.com",
+            "5"
+          ],
+          [
+            "2",
+            "school.edu",
+            "11"
+          ],
+          [
+            "3",
+            "bookclub.org",
+            "1"
+          ],
+          [
+            "4",
+            "mail.com",
+            "11"
+          ],
+          [
+            "5",
+            "library.gov.uk",
+            "9"
+          ],
+          [
+            "6",
+            "school.edu",
+            "3"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B044",
+      "slug": "rounding-money",
+      "title": "Rounding money",
+      "difficulty": "Easy",
+      "section": "Text, numbers and dates",
+      "topics": [
+        "Numeric functions"
+      ],
+      "statement_md": "A repair shop lists invoice amounts with cents. For every invoice return `invoice_id`, `amount`, `nearest_whole` (rounded to the nearest whole number), `rounded_up` (the next whole number at or above the amount) and `rounded_down` (the whole number at or below it). Order by `invoice_id`. Refunds are stored as negative amounts.",
+      "tables": [
+        {
+          "name": "invoices",
+          "description_md": "One row per invoice. A negative `amount` is a refund.",
+          "columns": [
+            {
+              "name": "invoice_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              12.49
+            ],
+            [
+              2,
+              7.5
+            ],
+            [
+              3,
+              30.0
+            ],
+            [
+              4,
+              18.01
+            ],
+            [
+              5,
+              99.99
+            ],
+            [
+              6,
+              -2.4
+            ],
+            [
+              7,
+              4.75
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Three different functions answer 'nearest', 'up' and 'down'. Which is which?",
+        "Rounding down is not the same as cutting off the decimals once a number can be negative."
+      ],
+      "notes_md": "**Concept:** numeric functions turn a decimal into a whole number in different directions.\n\n**Shape:** one column per direction, all computed from the same `amount`.\n\n**Syntax:** `ROUND(x)`, `ROUND(x, 2)`, `CEIL(x)`, `FLOOR(x)`.\n\n**Watch out:** for negative numbers, 'down' means towards minus infinity, so -2.40 goes down to -3.",
+      "solutions": [
+        {
+          "label": "ROUND, CEIL, FLOOR",
+          "explain_md": "ROUND goes to the nearest whole number (halves go up), CEIL to the next whole number at or above, FLOOR to the next at or below.",
+          "sql": "SELECT invoice_id,\n       amount,\n       ROUND(amount) AS nearest_whole,\n       CEIL(amount) AS rounded_up,\n       FLOOR(amount) AS rounded_down\nFROM invoices\nORDER BY invoice_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "TRUNCATE just cuts off the decimals, which moves negative numbers upwards: -2.40 becomes -2 instead of -3.",
+          "sql": "SELECT invoice_id,\n       amount,\n       ROUND(amount) AS nearest_whole,\n       CEIL(amount) AS rounded_up,\n       TRUNCATE(amount, 0) AS rounded_down\nFROM invoices\nORDER BY invoice_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "invoice_id",
+          "amount",
+          "nearest_whole",
+          "rounded_up",
+          "rounded_down"
+        ],
+        "rows": [
+          [
+            "1",
+            "12.49",
+            "12",
+            "13",
+            "12"
+          ],
+          [
+            "2",
+            "7.50",
+            "8",
+            "8",
+            "7"
+          ],
+          [
+            "3",
+            "30.00",
+            "30",
+            "30",
+            "30"
+          ],
+          [
+            "4",
+            "18.01",
+            "18",
+            "19",
+            "18"
+          ],
+          [
+            "5",
+            "99.99",
+            "100",
+            "100",
+            "99"
+          ],
+          [
+            "6",
+            "-2.40",
+            "-2",
+            "-2",
+            "-3"
+          ],
+          [
+            "7",
+            "4.75",
+            "5",
+            "5",
+            "4"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B045",
+      "slug": "filter-by-year-and-month",
+      "title": "Filter by year and month",
+      "difficulty": "Easy",
+      "section": "Text, numbers and dates",
+      "topics": [
+        "Dates",
+        "Filtering"
+      ],
+      "statement_md": "A cinema wants its March 2026 sales. Return `sale_id`, `movie`, `sale_date` and `tickets` for every sale made in March 2026 (the 1st to the 31st inclusive). Order by `sale_date`, ties by `sale_id`.",
+      "tables": [
+        {
+          "name": "ticket_sales",
+          "description_md": "One row per sale.",
+          "columns": [
+            {
+              "name": "sale_id",
+              "type": "INT"
+            },
+            {
+              "name": "movie",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "sale_date",
+              "type": "DATE"
+            },
+            {
+              "name": "tickets",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Night Train",
+              "2026-02-28",
+              4
+            ],
+            [
+              2,
+              "Night Train",
+              "2026-03-01",
+              2
+            ],
+            [
+              3,
+              "Paper Moon",
+              "2026-03-15",
+              5
+            ],
+            [
+              4,
+              "Paper Moon",
+              "2025-03-15",
+              3
+            ],
+            [
+              5,
+              "Glass Garden",
+              "2026-03-31",
+              6
+            ],
+            [
+              6,
+              "Glass Garden",
+              "2026-04-01",
+              2
+            ],
+            [
+              7,
+              "Night Train",
+              "2026-03-20",
+              1
+            ],
+            [
+              8,
+              "Paper Moon",
+              "2024-03-09",
+              7
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "There are two ways: pull the year and month out of the date, or compare the date with a start and an end.",
+        "Which March? Check the year as well as the month."
+      ],
+      "notes_md": "**Concept:** a date column can be broken into parts, or compared against a range, to pick out a period.\n\n**Shape:** keep rows from the right month of the right year; the first and last days of the month are the edge cases.\n\n**Syntax:** `YEAR(d) = 2026`, `MONTH(d) = 3`, or `d >= 'start' AND d < 'next start'`.\n\n**Watch out:** `MONTH(d) = 3` alone matches March of every year.",
+      "solutions": [
+        {
+          "label": "YEAR and MONTH",
+          "explain_md": "YEAR() and MONTH() extract the parts; both must match.",
+          "sql": "SELECT sale_id, movie, sale_date, tickets\nFROM ticket_sales\nWHERE YEAR(sale_date) = 2026 AND MONTH(sale_date) = 3\nORDER BY sale_date, sale_id;"
+        },
+        {
+          "label": "Date range",
+          "explain_md": "Keeps dates from the first day of March up to, but not including, the first day of April.",
+          "sql": "SELECT sale_id, movie, sale_date, tickets\nFROM ticket_sales\nWHERE sale_date >= '2026-03-01' AND sale_date < '2026-04-01'\nORDER BY sale_date, sale_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Testing only the month number also keeps March 2025 and March 2024.",
+          "sql": "SELECT sale_id, movie, sale_date, tickets\nFROM ticket_sales\nWHERE MONTH(sale_date) = 3\nORDER BY sale_date, sale_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "sale_id",
+          "movie",
+          "sale_date",
+          "tickets"
+        ],
+        "rows": [
+          [
+            "2",
+            "Night Train",
+            "2026-03-01",
+            "2"
+          ],
+          [
+            "3",
+            "Paper Moon",
+            "2026-03-15",
+            "5"
+          ],
+          [
+            "7",
+            "Night Train",
+            "2026-03-20",
+            "1"
+          ],
+          [
+            "5",
+            "Glass Garden",
+            "2026-03-31",
+            "6"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B046",
+      "slug": "days-between-two-dates",
+      "title": "Days between two dates",
+      "difficulty": "Easy",
+      "section": "Text, numbers and dates",
+      "topics": [
+        "Dates"
+      ],
+      "statement_md": "A library wants to see how long each book was kept. Return `loan_id`, `book_title` and `days_kept`, the number of days from `borrowed_on` to `returned_on`. Order by `days_kept` from longest to shortest, ties by `loan_id`.",
+      "tables": [
+        {
+          "name": "loans",
+          "description_md": "One row per finished loan.",
+          "columns": [
+            {
+              "name": "loan_id",
+              "type": "INT"
+            },
+            {
+              "name": "book_title",
+              "type": "VARCHAR(40)"
+            },
+            {
+              "name": "borrowed_on",
+              "type": "DATE"
+            },
+            {
+              "name": "returned_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Atlas of Birds",
+              "2026-01-05",
+              "2026-01-19"
+            ],
+            [
+              2,
+              "Cooking for One",
+              "2025-12-28",
+              "2026-01-05"
+            ],
+            [
+              3,
+              "The Quiet Sea",
+              "2026-02-02",
+              "2026-02-09"
+            ],
+            [
+              4,
+              "Garden Basics",
+              "2026-01-10",
+              "2026-02-14"
+            ],
+            [
+              5,
+              "Night Sky Guide",
+              "2026-03-01",
+              "2026-03-01"
+            ],
+            [
+              6,
+              "Trail Maps",
+              "2026-02-20",
+              "2026-03-06"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "There is a function that subtracts two dates and gives a number of days.",
+        "Which date goes first in the function: the earlier or the later one?"
+      ],
+      "notes_md": "**Concept:** subtracting dates gives a count of days, which you can sort and compare like any number.\n\n**Shape:** one extra column computed from two date columns of the same row.\n\n**Syntax:** `DATEDIFF(later_date, earlier_date)` in MySQL (SQL Server takes `DATEDIFF(unit, earlier, later)`).\n\n**Watch out:** swap the two dates and every answer turns negative.",
+      "solutions": [
+        {
+          "label": "DATEDIFF",
+          "explain_md": "DATEDIFF(a, b) is a minus b in days, so the return date goes first.",
+          "sql": "SELECT loan_id, book_title, DATEDIFF(returned_on, borrowed_on) AS days_kept\nFROM loans\nORDER BY days_kept DESC, loan_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "With the arguments the wrong way round, every result is negative, so the sort order flips too.",
+          "sql": "SELECT loan_id, book_title, DATEDIFF(borrowed_on, returned_on) AS days_kept\nFROM loans\nORDER BY days_kept DESC, loan_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "loan_id",
+          "book_title",
+          "days_kept"
+        ],
+        "rows": [
+          [
+            "4",
+            "Garden Basics",
+            "35"
+          ],
+          [
+            "1",
+            "Atlas of Birds",
+            "14"
+          ],
+          [
+            "6",
+            "Trail Maps",
+            "14"
+          ],
+          [
+            "2",
+            "Cooking for One",
+            "8"
+          ],
+          [
+            "3",
+            "The Quiet Sea",
+            "7"
+          ],
+          [
+            "5",
+            "Night Sky Guide",
+            "0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B047",
+      "slug": "replace-missing-values",
+      "title": "Replace missing values",
+      "difficulty": "Easy",
+      "section": "Text, numbers and dates",
+      "topics": [
+        "NULL handling"
+      ],
+      "statement_md": "A garden centre prepares a pay and badge list. Return `staff_id`, `display_name` and `total_pay`. `display_name` is the `nickname` if there is one, otherwise the `staff_name`. `total_pay` is `salary` plus `bonus`, where a missing bonus counts as 0. Order by `staff_id`.",
+      "tables": [
+        {
+          "name": "staff",
+          "description_md": "One row per employee. `nickname` and `bonus` are NULL when there is none.",
+          "columns": [
+            {
+              "name": "staff_id",
+              "type": "INT"
+            },
+            {
+              "name": "staff_name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "nickname",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "salary",
+              "type": "DECIMAL(8,2)"
+            },
+            {
+              "name": "bonus",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Hannah Fischer",
+              "Hanni",
+              2400.0,
+              150.0
+            ],
+            [
+              2,
+              "Ibrahim Yusuf",
+              null,
+              2650.0,
+              null
+            ],
+            [
+              3,
+              "Jade Whitfield",
+              "JJ",
+              2300.0,
+              null
+            ],
+            [
+              4,
+              "Kofi Mensah",
+              null,
+              2500.0,
+              200.0
+            ],
+            [
+              5,
+              "Lucia Ferraro",
+              null,
+              2700.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Some nickname and bonus values are NULL. A function can swap a NULL for a fallback value.",
+        "What is `2300 + NULL`?"
+      ],
+      "notes_md": "**Concept:** NULL means 'unknown', and any arithmetic with NULL gives NULL. A fallback value fixes that for display or sums.\n\n**Shape:** two computed columns, each replacing NULL with a sensible default.\n\n**Syntax:** `COALESCE(a, b, ...)` returns the first non-NULL; `IFNULL(a, b)` is the two-argument MySQL form.\n\n**Watch out:** a 0 bonus is a real value and is not NULL.",
+      "solutions": [
+        {
+          "label": "COALESCE",
+          "explain_md": "COALESCE returns the first value that is not NULL: the nickname or else the name, and the bonus or else 0.",
+          "sql": "SELECT staff_id,\n       COALESCE(nickname, staff_name) AS display_name,\n       salary + COALESCE(bonus, 0) AS total_pay\nFROM staff\nORDER BY staff_id;"
+        },
+        {
+          "label": "IFNULL and CASE",
+          "explain_md": "IFNULL is MySQL's two-argument version. A CASE expression says the same thing step by step.",
+          "sql": "SELECT staff_id,\n       IFNULL(nickname, staff_name) AS display_name,\n       CASE WHEN bonus IS NULL THEN salary ELSE salary + bonus END AS total_pay\nFROM staff\nORDER BY staff_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`salary + bonus` is NULL whenever the bonus is NULL, so those employees show no pay at all.",
+          "sql": "SELECT staff_id,\n       COALESCE(nickname, staff_name) AS display_name,\n       salary + bonus AS total_pay\nFROM staff\nORDER BY staff_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "staff_id",
+          "display_name",
+          "total_pay"
+        ],
+        "rows": [
+          [
+            "1",
+            "Hanni",
+            "2550.00"
+          ],
+          [
+            "2",
+            "Ibrahim Yusuf",
+            "2650.00"
+          ],
+          [
+            "3",
+            "JJ",
+            "2300.00"
+          ],
+          [
+            "4",
+            "Kofi Mensah",
+            "2700.00"
+          ],
+          [
+            "5",
+            "Lucia Ferraro",
+            "2700.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B048",
+      "slug": "combine-two-lists",
+      "title": "Combine two lists",
+      "difficulty": "Easy",
+      "section": "Text, numbers and dates",
+      "topics": [
+        "Set operations"
+      ],
+      "statement_md": "A bookshop wants one mailing list from two sources: its newsletter and its workshop sign-ups. Return a single column `email` with every address that is in either list, each address once, in alphabetical order.",
+      "tables": [
+        {
+          "name": "newsletter",
+          "description_md": "One row per newsletter subscriber.",
+          "columns": [
+            {
+              "name": "email",
+              "type": "VARCHAR(40)"
+            }
+          ],
+          "rows": [
+            [
+              "ana@mail.com"
+            ],
+            [
+              "ben@mail.com"
+            ],
+            [
+              "cara@mail.com"
+            ],
+            [
+              "dan@mail.com"
+            ]
+          ]
+        },
+        {
+          "name": "workshop_signups",
+          "description_md": "One row per workshop sign-up.",
+          "columns": [
+            {
+              "name": "email",
+              "type": "VARCHAR(40)"
+            }
+          ],
+          "rows": [
+            [
+              "ben@mail.com"
+            ],
+            [
+              "elif@mail.com"
+            ],
+            [
+              "dan@mail.com"
+            ],
+            [
+              "fay@mail.com"
+            ],
+            [
+              "elif@mail.com"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You are stacking one result on top of another, not matching rows side by side.",
+        "Stacking has two flavours. One keeps repeats; the other removes them."
+      ],
+      "notes_md": "**Concept:** set operators stack the rows of two queries that have the same number of columns.\n\n**Shape:** `SELECT` the column from each table, stack them, and sort the final result once at the end.\n\n**Syntax:** `query1 UNION query2` removes duplicates; `query1 UNION ALL query2` keeps every row.\n\n**Watch out:** the one `ORDER BY` goes after the last query and sorts the combined result.",
+      "solutions": [
+        {
+          "label": "UNION",
+          "explain_md": "UNION stacks the two lists and removes duplicate rows, so each address appears once.",
+          "sql": "SELECT email FROM newsletter\nUNION\nSELECT email FROM workshop_signups\nORDER BY email;"
+        },
+        {
+          "label": "UNION ALL then DISTINCT",
+          "explain_md": "UNION ALL keeps every row; wrapping it in a query with DISTINCT removes the repeats afterwards.",
+          "sql": "SELECT DISTINCT email\nFROM (\n  SELECT email FROM newsletter\n  UNION ALL\n  SELECT email FROM workshop_signups\n) all_emails\nORDER BY email;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "UNION ALL keeps every row, so addresses in both lists (and repeated sign-ups) are listed more than once.",
+          "sql": "SELECT email FROM newsletter\nUNION ALL\nSELECT email FROM workshop_signups\nORDER BY email;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "email"
+        ],
+        "rows": [
+          [
+            "ana@mail.com"
+          ],
+          [
+            "ben@mail.com"
+          ],
+          [
+            "cara@mail.com"
+          ],
+          [
+            "dan@mail.com"
+          ],
+          [
+            "elif@mail.com"
+          ],
+          [
+            "fay@mail.com"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

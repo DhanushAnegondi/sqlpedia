@@ -16,7 +16,7 @@ const GROUP_BLURB = {
 function nextUp(catalog) {
   const last = state.lastTouched();
   if (last && last.status !== "solved" && catalog.byKey.get(last.key)) return { p: catalog.byKey.get(last.key), why: "Continue where you left off" };
-  const order = ["patterns", "apple", "campus", "shoplite"];
+  const order = ["basics", "patterns", "apple", "campus", "shoplite"];
   for (const c of order) {
     const p = catalog.problems.find((x) => x.c === c && state.status(x.key) !== "solved" && x.difficulty !== "Hard");
     if (p) return { p, why: last ? "Up next" : "Start here" };
@@ -51,7 +51,7 @@ export function renderHome(catalog) {
     </section>
 
     <h2 class="section-title">Problem collections <a href="#/problems">All problems →</a></h2>
-    <div class="grid g4">
+    <div class="grid g-coll">
       ${catalog.collections.map((c) => {
         const done = catalog.problems.filter((x) => x.c === c.id && state.status(x.key) === "solved").length;
         const [e, m, h] = c.difficulty;

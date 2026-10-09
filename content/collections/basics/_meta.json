@@ -1,0 +1,6 @@
+{
+  "id": "basics",
+  "title": "SQL Basics",
+  "description_md": "Start here: one concept per problem, from SELECT and WHERE through GROUP BY, CASE, joins, simple subqueries and everyday text, number and date functions. Small tables, short statements, and one common beginner mistake planted in each.",
+  "parts": ["part-1.json", "part-2.json", "part-3.json", "part-4.json"]
+}

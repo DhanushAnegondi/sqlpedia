@@ -1,0 +1,1792 @@
+{
+  "problems": [
+    {
+      "id": "B025",
+      "slug": "label-each-row",
+      "title": "Label each row",
+      "section": "CASE expressions",
+      "difficulty": "Easy",
+      "topics": [
+        "Conditional aggregation"
+      ],
+      "statement_md": "A cafe wants to tag every menu item with a price band: `'Premium'` for a price of 6.00 or more, `'Standard'` for 3.00 or more (but under 6.00), and `'Budget'` for anything cheaper. Return `item_id`, `name` and the band as `price_band`, ordered by `item_id`.",
+      "tables": [
+        {
+          "name": "menu_items",
+          "description_md": "One row per menu item.",
+          "columns": [
+            {
+              "name": "item_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "price",
+              "type": "DECIMAL(5,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Espresso",
+              2.5
+            ],
+            [
+              2,
+              "Latte",
+              3.0
+            ],
+            [
+              3,
+              "Mocha",
+              3.8
+            ],
+            [
+              4,
+              "Flat white",
+              3.2
+            ],
+            [
+              5,
+              "Cold brew",
+              6.0
+            ],
+            [
+              6,
+              "Iced matcha",
+              6.5
+            ],
+            [
+              7,
+              "Tea",
+              2.2
+            ],
+            [
+              8,
+              "Hot chocolate",
+              4.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "A CASE expression checks its WHEN branches from top to bottom and stops at the first one that is true.",
+        "Two items cost exactly 3.00 and 6.00. Which comparison operator keeps them in the higher band?"
+      ],
+      "notes_md": "**Concept:** CASE turns a value into a label, row by row.\n\n**Shape:** one table, no grouping. Add a computed column that picks a label from the price, then sort by id.\n\n**Syntax:** `CASE WHEN condition THEN result WHEN condition THEN result ELSE result END AS alias`.\n\n**Watch out:** branches are tested in order, so put the most specific test first; and decide whether a boundary value belongs to the lower or the higher band before choosing `>` or `>=`.",
+      "solutions": [
+        {
+          "label": "Highest band first",
+          "explain_md": "The first WHEN that is true wins, so the price is tested against 6.00, then 3.00, and ELSE catches everything cheaper. `>=` keeps the boundary values in the higher band.",
+          "sql": "SELECT item_id, name,\n       CASE WHEN price >= 6.00 THEN 'Premium'\n            WHEN price >= 3.00 THEN 'Standard'\n            ELSE 'Budget'\n       END AS price_band\nFROM menu_items\nORDER BY item_id;"
+        },
+        {
+          "label": "Lowest band first",
+          "explain_md": "The same rule read from the other end: below 3.00 is Budget, below 6.00 is Standard, the rest is Premium. A price of exactly 3.00 fails `< 3.00`, so it correctly falls into Standard.",
+          "sql": "SELECT item_id, name,\n       CASE WHEN price < 3.00 THEN 'Budget'\n            WHEN price < 6.00 THEN 'Standard'\n            ELSE 'Premium'\n       END AS price_band\nFROM menu_items\nORDER BY item_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`>` instead of `>=` pushes the two items priced exactly 6.00 and 3.00 into the band below.",
+          "sql": "SELECT item_id, name,\n       CASE WHEN price > 6.00 THEN 'Premium'\n            WHEN price > 3.00 THEN 'Standard'\n            ELSE 'Budget'\n       END AS price_band\nFROM menu_items\nORDER BY item_id;"
+        },
+        {
+          "explain_md": "Testing `price >= 3.00` first means every item of 3.00 or more stops at that branch, so 'Premium' is never produced.",
+          "sql": "SELECT item_id, name,\n       CASE WHEN price >= 3.00 THEN 'Standard'\n            WHEN price >= 6.00 THEN 'Premium'\n            ELSE 'Budget'\n       END AS price_band\nFROM menu_items\nORDER BY item_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "item_id",
+          "name",
+          "price_band"
+        ],
+        "rows": [
+          [
+            "1",
+            "Espresso",
+            "Budget"
+          ],
+          [
+            "2",
+            "Latte",
+            "Standard"
+          ],
+          [
+            "3",
+            "Mocha",
+            "Standard"
+          ],
+          [
+            "4",
+            "Flat white",
+            "Standard"
+          ],
+          [
+            "5",
+            "Cold brew",
+            "Premium"
+          ],
+          [
+            "6",
+            "Iced matcha",
+            "Premium"
+          ],
+          [
+            "7",
+            "Tea",
+            "Budget"
+          ],
+          [
+            "8",
+            "Hot chocolate",
+            "Standard"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B026",
+      "slug": "count-by-label",
+      "title": "Count by label",
+      "section": "CASE expressions",
+      "difficulty": "Easy",
+      "topics": [
+        "Conditional aggregation",
+        "Aggregation"
+      ],
+      "statement_md": "A library sorts its books by length: `'Short'` for under 200 pages, `'Medium'` for 200 to 399 pages, and `'Long'` for 400 pages or more. Return each length as `length_band` with the number of books in it as `book_count`, most books first, ties by `length_band` alphabetically.",
+      "tables": [
+        {
+          "name": "books",
+          "description_md": "One row per book.",
+          "columns": [
+            {
+              "name": "book_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(25)"
+            },
+            {
+              "name": "pages",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Tide Charts",
+              120
+            ],
+            [
+              2,
+              "The Long Road",
+              450
+            ],
+            [
+              3,
+              "Salt and Sparrow",
+              210
+            ],
+            [
+              4,
+              "Small Mercies",
+              199
+            ],
+            [
+              5,
+              "Paper Moons",
+              400
+            ],
+            [
+              6,
+              "Field Notes",
+              95
+            ],
+            [
+              7,
+              "Winter Orchard",
+              320
+            ],
+            [
+              8,
+              "Atlas of Rivers",
+              610
+            ],
+            [
+              9,
+              "Night Ferry",
+              199
+            ],
+            [
+              10,
+              "Quiet Harbour",
+              200
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "First turn each book into a label. Then ask which clause collapses rows that share the same label.",
+        "GROUP BY works on any expression, not only on a plain column."
+      ],
+      "notes_md": "**Concept:** group by a label you compute, not by a stored column.\n\n**Shape:** build the label with CASE, group on that same label, count rows per group.\n\n**Syntax:** GROUP BY accepts an expression, or the column of a subquery that already computes the label.\n\n**Watch out:** grouping by the raw column gives one group per distinct value, not one per label. Also keep the CASE identical in SELECT and GROUP BY.",
+      "solutions": [
+        {
+          "label": "Repeat the CASE in GROUP BY",
+          "explain_md": "The CASE decides the label for each book; GROUP BY uses the same expression so books with the same label are counted together.",
+          "sql": "SELECT CASE WHEN pages < 200 THEN 'Short'\n            WHEN pages < 400 THEN 'Medium'\n            ELSE 'Long'\n       END AS length_band,\n       COUNT(*) AS book_count\nFROM books\nGROUP BY CASE WHEN pages < 200 THEN 'Short'\n              WHEN pages < 400 THEN 'Medium'\n              ELSE 'Long'\n         END\nORDER BY book_count DESC, length_band;"
+        },
+        {
+          "label": "Label in a subquery first",
+          "explain_md": "The inner query adds the label to every book; the outer query then groups by that finished column, so the CASE is written only once.",
+          "sql": "SELECT length_band, COUNT(*) AS book_count\nFROM (\n  SELECT CASE WHEN pages < 200 THEN 'Short'\n              WHEN pages < 400 THEN 'Medium'\n              ELSE 'Long'\n         END AS length_band\n  FROM books\n) AS labelled\nGROUP BY length_band\nORDER BY book_count DESC, length_band;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Grouping by `pages` makes one group per distinct page count, so the labels repeat and most counts are 1 instead of one row per band.",
+          "sql": "SELECT CASE WHEN pages < 200 THEN 'Short'\n            WHEN pages < 400 THEN 'Medium'\n            ELSE 'Long'\n       END AS length_band,\n       COUNT(*) AS book_count\nFROM books\nGROUP BY pages\nORDER BY book_count DESC, length_band;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "length_band",
+          "book_count"
+        ],
+        "rows": [
+          [
+            "Short",
+            "4"
+          ],
+          [
+            "Long",
+            "3"
+          ],
+          [
+            "Medium",
+            "3"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B027",
+      "slug": "count-yes-and-no-in-one-row",
+      "title": "Count yes and no in one row",
+      "section": "CASE expressions",
+      "difficulty": "Medium",
+      "topics": [
+        "Conditional aggregation",
+        "Aggregation"
+      ],
+      "statement_md": "A teacher logs attendance one row per student for a single class. Return exactly one row with two numbers: `present_count` (students marked `'present'`) and `absent_count` (students marked `'absent'`). Students marked `'late'` are not counted in either column.",
+      "tables": [
+        {
+          "name": "attendance",
+          "description_md": "One row per student for today's class. `status` is `'present'`, `'absent'` or `'late'`.",
+          "columns": [
+            {
+              "name": "record_id",
+              "type": "INT"
+            },
+            {
+              "name": "student_name",
+              "type": "VARCHAR(15)"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Asha",
+              "present"
+            ],
+            [
+              2,
+              "Ben",
+              "absent"
+            ],
+            [
+              3,
+              "Chloe",
+              "present"
+            ],
+            [
+              4,
+              "Dev",
+              "late"
+            ],
+            [
+              5,
+              "Esha",
+              "present"
+            ],
+            [
+              6,
+              "Farid",
+              "absent"
+            ],
+            [
+              7,
+              "Gita",
+              "present"
+            ],
+            [
+              8,
+              "Hugo",
+              "present"
+            ],
+            [
+              9,
+              "Ivy",
+              "absent"
+            ],
+            [
+              10,
+              "Jon",
+              "late"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need two different counts from the same rows, so a WHERE filter alone cannot give both in one row.",
+        "Put a CASE inside the aggregate function so each row contributes only when it matches."
+      ],
+      "notes_md": "**Concept:** conditional aggregation: an aggregate that only sees the rows you choose, one column per condition.\n\n**Shape:** no GROUP BY; each output column is its own aggregate over the whole table with its own CASE inside.\n\n**Syntax:** `CASE WHEN cond THEN x ELSE y END` yields one value per row; an aggregate then combines those values.\n\n**Watch out:** COUNT counts every non-NULL value, including a 0. If the CASE returns 0 for non-matching rows, COUNT still counts them.",
+      "solutions": [
+        {
+          "label": "SUM of 1s and 0s",
+          "explain_md": "Each row turns into 1 if it matches and 0 if not, and SUM adds them up, which is the number of matching rows.",
+          "sql": "SELECT SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) AS present_count,\n       SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) AS absent_count\nFROM attendance;"
+        },
+        {
+          "label": "COUNT of non-NULL results",
+          "explain_md": "With no ELSE, non-matching rows produce NULL, and COUNT skips NULLs, so only matching rows are counted.",
+          "sql": "SELECT COUNT(CASE WHEN status = 'present' THEN 1 END) AS present_count,\n       COUNT(CASE WHEN status = 'absent' THEN 1 END) AS absent_count\nFROM attendance;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`ELSE 0` is a real value, not NULL, so COUNT counts every row. Both columns come out as the total number of rows (10).",
+          "sql": "SELECT COUNT(CASE WHEN status = 'present' THEN 1 ELSE 0 END) AS present_count,\n       COUNT(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) AS absent_count\nFROM attendance;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "present_count",
+          "absent_count"
+        ],
+        "rows": [
+          [
+            "5",
+            "3"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B028",
+      "slug": "default-for-missing-labels",
+      "title": "Default for missing labels",
+      "section": "CASE expressions",
+      "difficulty": "Easy",
+      "topics": [
+        "Conditional aggregation",
+        "NULL handling"
+      ],
+      "statement_md": "A parcel table stores a one-letter `delivery_code`: `'S'` means `'Standard'`, `'E'` means `'Express'` and `'P'` means `'Pickup point'`. Some parcels have an unknown code or no code at all. Return `parcel_id` and the service name as `service`, using `'Unknown'` for every parcel whose code is not one of the three, ordered by `parcel_id`.",
+      "tables": [
+        {
+          "name": "parcels",
+          "description_md": "One row per parcel. `delivery_code` may be NULL.",
+          "columns": [
+            {
+              "name": "parcel_id",
+              "type": "INT"
+            },
+            {
+              "name": "delivery_code",
+              "type": "VARCHAR(1)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "S"
+            ],
+            [
+              2,
+              "E"
+            ],
+            [
+              3,
+              "P"
+            ],
+            [
+              4,
+              "X"
+            ],
+            [
+              5,
+              null
+            ],
+            [
+              6,
+              "S"
+            ],
+            [
+              7,
+              "E"
+            ],
+            [
+              8,
+              "Z"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "What does CASE return when none of the WHEN branches is true and there is nothing else to fall back on?",
+        "A missing code is not equal to anything, so which part of the CASE has to deal with it?"
+      ],
+      "notes_md": "**Concept:** CASE with a default branch.\n\n**Shape:** map each known code to a name, and let one final branch cover everything else, including NULL.\n\n**Syntax:** searched form `CASE WHEN code = 'A' THEN ... ELSE ... END`; simple form `CASE code WHEN 'A' THEN ... ELSE ... END`.\n\n**Watch out:** without ELSE, an unmatched row gets NULL, not an error and not an empty string.",
+      "solutions": [
+        {
+          "label": "Searched CASE with ELSE",
+          "explain_md": "Each WHEN tests one code. Codes that match none of them, including NULL, reach ELSE and become 'Unknown'.",
+          "sql": "SELECT parcel_id,\n       CASE WHEN delivery_code = 'S' THEN 'Standard'\n            WHEN delivery_code = 'E' THEN 'Express'\n            WHEN delivery_code = 'P' THEN 'Pickup point'\n            ELSE 'Unknown'\n       END AS service\nFROM parcels\nORDER BY parcel_id;"
+        },
+        {
+          "label": "Simple CASE with ELSE",
+          "explain_md": "The column is named once after CASE and each WHEN supplies a value to compare it with. NULL matches no value, so it ends up in ELSE.",
+          "sql": "SELECT parcel_id,\n       CASE delivery_code\n            WHEN 'S' THEN 'Standard'\n            WHEN 'E' THEN 'Express'\n            WHEN 'P' THEN 'Pickup point'\n            ELSE 'Unknown'\n       END AS service\nFROM parcels\nORDER BY parcel_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without ELSE, parcels 4, 5 and 8 get NULL in `service` instead of 'Unknown'.",
+          "sql": "SELECT parcel_id,\n       CASE WHEN delivery_code = 'S' THEN 'Standard'\n            WHEN delivery_code = 'E' THEN 'Express'\n            WHEN delivery_code = 'P' THEN 'Pickup point'\n       END AS service\nFROM parcels\nORDER BY parcel_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "parcel_id",
+          "service"
+        ],
+        "rows": [
+          [
+            "1",
+            "Standard"
+          ],
+          [
+            "2",
+            "Express"
+          ],
+          [
+            "3",
+            "Pickup point"
+          ],
+          [
+            "4",
+            "Unknown"
+          ],
+          [
+            "5",
+            "Unknown"
+          ],
+          [
+            "6",
+            "Standard"
+          ],
+          [
+            "7",
+            "Express"
+          ],
+          [
+            "8",
+            "Unknown"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B029",
+      "slug": "match-rows-from-two-tables",
+      "title": "Match rows from two tables",
+      "section": "Joins",
+      "difficulty": "Easy",
+      "topics": [
+        "Joins"
+      ],
+      "statement_md": "A clinic keeps patients and appointments in separate tables. Return one row per appointment with `appt_id`, the patient's `name` and `appt_date`, earliest date first, ties by `appt_id`.",
+      "tables": [
+        {
+          "name": "patients",
+          "description_md": "One row per patient.",
+          "columns": [
+            {
+              "name": "patient_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Mina"
+            ],
+            [
+              2,
+              "Owen"
+            ],
+            [
+              3,
+              "Priya"
+            ],
+            [
+              4,
+              "Quinn"
+            ],
+            [
+              5,
+              "Rafael"
+            ]
+          ]
+        },
+        {
+          "name": "appointments",
+          "description_md": "One row per appointment. `patient_id` points to `patients`.",
+          "columns": [
+            {
+              "name": "appt_id",
+              "type": "INT"
+            },
+            {
+              "name": "patient_id",
+              "type": "INT"
+            },
+            {
+              "name": "appt_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              "2026-04-02"
+            ],
+            [
+              102,
+              3,
+              "2026-04-02"
+            ],
+            [
+              103,
+              1,
+              "2026-04-09"
+            ],
+            [
+              104,
+              5,
+              "2026-04-03"
+            ],
+            [
+              105,
+              3,
+              "2026-04-15"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The patient's name is in one table and the appointment is in the other. Which column do both tables share?",
+        "After JOIN, which keyword says how the rows of the two tables are paired up?"
+      ],
+      "notes_md": "**Concept:** INNER JOIN pairs rows from two tables that share a key.\n\n**Shape:** start from appointments, attach the matching patient row, select columns from both, sort.\n\n**Syntax:** `FROM a JOIN b ON a.key = b.key`; prefix columns with a table alias, e.g. `a.col`.\n\n**Watch out:** a join with no matching condition pairs every row of one table with every row of the other.",
+      "solutions": [
+        {
+          "label": "JOIN ... ON",
+          "explain_md": "Each appointment is paired with the patient row whose `patient_id` equals its own. Appointments always have a patient here, so nothing is lost.",
+          "sql": "SELECT a.appt_id, p.name, a.appt_date\nFROM appointments a\nJOIN patients p ON p.patient_id = a.patient_id\nORDER BY a.appt_date, a.appt_id;"
+        },
+        {
+          "label": "Start from patients",
+          "explain_md": "Same pairing written from the other side; the order of the tables in an INNER JOIN does not change the rows returned.",
+          "sql": "SELECT a.appt_id, p.name, a.appt_date\nFROM patients p\nINNER JOIN appointments a ON a.patient_id = p.patient_id\nORDER BY a.appt_date, a.appt_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Listing both tables with a comma and no matching condition pairs every appointment with every patient: 25 rows instead of 5.",
+          "sql": "SELECT a.appt_id, p.name, a.appt_date\nFROM appointments a, patients p\nORDER BY a.appt_date, a.appt_id, p.name;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "appt_id",
+          "name",
+          "appt_date"
+        ],
+        "rows": [
+          [
+            "101",
+            "Mina",
+            "2026-04-02"
+          ],
+          [
+            "102",
+            "Priya",
+            "2026-04-02"
+          ],
+          [
+            "104",
+            "Rafael",
+            "2026-04-03"
+          ],
+          [
+            "103",
+            "Mina",
+            "2026-04-09"
+          ],
+          [
+            "105",
+            "Priya",
+            "2026-04-15"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B030",
+      "slug": "keep-everyone-even-without-a-match",
+      "title": "Keep everyone, even without a match",
+      "section": "Joins",
+      "difficulty": "Easy",
+      "topics": [
+        "Joins"
+      ],
+      "statement_md": "A music academy wants every teacher listed with the instruments they teach, one row per lesson. A teacher with no lessons yet must still appear once, with `NULL` for the instrument. Return `name` and `instrument`, ordered by `teacher_id`, then `lesson_id`.",
+      "tables": [
+        {
+          "name": "teachers",
+          "description_md": "One row per teacher.",
+          "columns": [
+            {
+              "name": "teacher_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ortiz"
+            ],
+            [
+              2,
+              "Baker"
+            ],
+            [
+              3,
+              "Nakamura"
+            ],
+            [
+              4,
+              "Dube"
+            ]
+          ]
+        },
+        {
+          "name": "lessons",
+          "description_md": "One row per lesson. `teacher_id` points to `teachers`.",
+          "columns": [
+            {
+              "name": "lesson_id",
+              "type": "INT"
+            },
+            {
+              "name": "teacher_id",
+              "type": "INT"
+            },
+            {
+              "name": "instrument",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              11,
+              1,
+              "Piano"
+            ],
+            [
+              12,
+              1,
+              "Violin"
+            ],
+            [
+              13,
+              3,
+              "Guitar"
+            ],
+            [
+              14,
+              2,
+              "Drums"
+            ],
+            [
+              15,
+              3,
+              "Flute"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "An ordinary JOIN keeps only rows that find a partner. Is there a join type that keeps all rows of one side?",
+        "The table whose rows must all survive goes on the left of the keyword."
+      ],
+      "notes_md": "**Concept:** LEFT JOIN keeps every row of the left table; where the right table has no match, its columns are NULL.\n\n**Shape:** teachers on the left, lessons on the right, joined on the teacher key. Sort by the left table's id so unmatched teachers sort cleanly.\n\n**Syntax:** `FROM a LEFT JOIN b ON a.key = b.key`.\n\n**Watch out:** swap the table order and you swap which side is protected.",
+      "solutions": [
+        {
+          "label": "LEFT JOIN",
+          "explain_md": "Every teacher stays. Teachers with lessons repeat once per lesson; Dube has no lesson, so the instrument is NULL.",
+          "sql": "SELECT t.name, l.instrument\nFROM teachers t\nLEFT JOIN lessons l ON l.teacher_id = t.teacher_id\nORDER BY t.teacher_id, l.lesson_id;"
+        },
+        {
+          "label": "RIGHT JOIN, tables swapped",
+          "explain_md": "A RIGHT JOIN protects the right-hand table, so with teachers on the right the result is identical.",
+          "sql": "SELECT t.name, l.instrument\nFROM lessons l\nRIGHT JOIN teachers t ON l.teacher_id = t.teacher_id\nORDER BY t.teacher_id, l.lesson_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A plain JOIN only keeps teachers who have a lesson, so Dube vanishes.",
+          "sql": "SELECT t.name, l.instrument\nFROM teachers t\nJOIN lessons l ON l.teacher_id = t.teacher_id\nORDER BY t.teacher_id, l.lesson_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "name",
+          "instrument"
+        ],
+        "rows": [
+          [
+            "Ortiz",
+            "Piano"
+          ],
+          [
+            "Ortiz",
+            "Violin"
+          ],
+          [
+            "Baker",
+            "Drums"
+          ],
+          [
+            "Nakamura",
+            "Guitar"
+          ],
+          [
+            "Nakamura",
+            "Flute"
+          ],
+          [
+            "Dube",
+            null
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B031",
+      "slug": "who-has-nothing-yet",
+      "title": "Who has nothing yet",
+      "section": "Joins",
+      "difficulty": "Easy",
+      "topics": [
+        "Anti-joins",
+        "Joins",
+        "NULL handling"
+      ],
+      "statement_md": "A bookshop wants to email customers who have never placed an order. Return `customer_id` and `name` of every customer with no row in `orders`, ordered by `customer_id`.",
+      "tables": [
+        {
+          "name": "customers",
+          "description_md": "One row per customer.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Hana"
+            ],
+            [
+              2,
+              "Ivor"
+            ],
+            [
+              3,
+              "Jules"
+            ],
+            [
+              4,
+              "Kofi"
+            ],
+            [
+              5,
+              "Lena"
+            ],
+            [
+              6,
+              "Moe"
+            ]
+          ]
+        },
+        {
+          "name": "orders",
+          "description_md": "One row per order. `customer_id` points to `customers`.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "order_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-05-01"
+            ],
+            [
+              2,
+              1,
+              "2026-05-03"
+            ],
+            [
+              3,
+              3,
+              "2026-05-04"
+            ],
+            [
+              4,
+              5,
+              "2026-05-06"
+            ],
+            [
+              5,
+              3,
+              "2026-05-09"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "When a LEFT JOIN finds no partner, what do the right table's columns contain?",
+        "Which test checks for NULL: `= NULL` or something else?"
+      ],
+      "notes_md": "**Concept:** anti-join: keep rows that have no partner in another table.\n\n**Shape:** LEFT JOIN so everyone stays, then keep only the rows where the right side came back empty.\n\n**Syntax:** LEFT JOIN fills the right-side columns with NULL when there is no match; test for NULL with `IS NULL`.\n\n**Watch out:** test a column of the right table that is never NULL when a match exists; and NULL is checked with `IS NULL`, never `= NULL`.",
+      "solutions": [
+        {
+          "label": "LEFT JOIN and IS NULL",
+          "explain_md": "Customers with no order get NULL in every `orders` column. Filtering on `o.order_id IS NULL` keeps exactly those customers.",
+          "sql": "SELECT c.customer_id, c.name\nFROM customers c\nLEFT JOIN orders o ON o.customer_id = c.customer_id\nWHERE o.order_id IS NULL\nORDER BY c.customer_id;"
+        },
+        {
+          "label": "NOT EXISTS",
+          "explain_md": "For each customer, the subquery looks for any order; NOT EXISTS keeps the customer only when it finds none.",
+          "sql": "SELECT c.customer_id, c.name\nFROM customers c\nWHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.customer_id)\nORDER BY c.customer_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`= NULL` is never true, not even for NULL, so the WHERE removes every row and the result is empty.",
+          "sql": "SELECT c.customer_id, c.name\nFROM customers c\nLEFT JOIN orders o ON o.customer_id = c.customer_id\nWHERE o.order_id = NULL\nORDER BY c.customer_id;"
+        },
+        {
+          "explain_md": "Checking the left table's key for NULL is pointless: it is never NULL, so no row survives.",
+          "sql": "SELECT c.customer_id, c.name\nFROM customers c\nLEFT JOIN orders o ON o.customer_id = c.customer_id\nWHERE c.customer_id IS NULL\nORDER BY c.customer_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "name"
+        ],
+        "rows": [
+          [
+            "2",
+            "Ivor"
+          ],
+          [
+            "4",
+            "Kofi"
+          ],
+          [
+            "6",
+            "Moe"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B032",
+      "slug": "totals-across-a-join",
+      "title": "Totals across a join",
+      "section": "Joins",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Aggregation",
+        "NULL handling"
+      ],
+      "statement_md": "A food-delivery app wants each customer's total spend. Return `customer_id`, `name` and `total_spent` (the sum of their order `amount`s). Customers who have not ordered must still appear, with a total of 0. Order by `total_spent` highest first, ties by `customer_id`.",
+      "tables": [
+        {
+          "name": "customers",
+          "description_md": "One row per customer.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Alba"
+            ],
+            [
+              2,
+              "Bruno"
+            ],
+            [
+              3,
+              "Cleo"
+            ],
+            [
+              4,
+              "Dara"
+            ],
+            [
+              5,
+              "Emil"
+            ]
+          ]
+        },
+        {
+          "name": "orders",
+          "description_md": "One row per order. `customer_id` points to `customers`.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              18.5
+            ],
+            [
+              2,
+              1,
+              22.0
+            ],
+            [
+              3,
+              2,
+              9.9
+            ],
+            [
+              4,
+              4,
+              31.25
+            ],
+            [
+              5,
+              4,
+              12.75
+            ],
+            [
+              6,
+              1,
+              7.5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need all customers, so which join type? And which clause turns many order rows into one row per customer?",
+        "SUM over zero rows gives NULL, not 0. Which function replaces a NULL with a value?"
+      ],
+      "notes_md": "**Concept:** join first, then aggregate the joined rows.\n\n**Shape:** customers LEFT JOIN orders, group by the customer, add up the amount, then replace a missing total with 0.\n\n**Syntax:** `COALESCE(x, fallback)` returns the fallback when x is NULL.\n\n**Watch out:** an inner join silently drops customers with no orders, and SUM of nothing is NULL rather than 0.",
+      "solutions": [
+        {
+          "label": "LEFT JOIN, GROUP BY, COALESCE",
+          "explain_md": "LEFT JOIN keeps customers without orders (their `amount` is NULL). SUM ignores NULLs and returns NULL when nothing is left, and COALESCE turns that NULL into 0.",
+          "sql": "SELECT c.customer_id, c.name, COALESCE(SUM(o.amount), 0) AS total_spent\nFROM customers c\nLEFT JOIN orders o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id, c.name\nORDER BY total_spent DESC, c.customer_id;"
+        },
+        {
+          "label": "Total per customer first, then join",
+          "explain_md": "The subquery adds up orders per customer; the outer LEFT JOIN attaches those totals to every customer, and COALESCE fills the missing ones with 0.",
+          "sql": "SELECT c.customer_id, c.name, COALESCE(t.total, 0) AS total_spent\nFROM customers c\nLEFT JOIN (\n  SELECT customer_id, SUM(amount) AS total\n  FROM orders\n  GROUP BY customer_id\n) AS t ON t.customer_id = c.customer_id\nORDER BY total_spent DESC, c.customer_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "An inner join only keeps customers who have orders, so Cleo and Emil are missing.",
+          "sql": "SELECT c.customer_id, c.name, COALESCE(SUM(o.amount), 0) AS total_spent\nFROM customers c\nJOIN orders o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id, c.name\nORDER BY total_spent DESC, c.customer_id;"
+        },
+        {
+          "explain_md": "SUM over only NULL amounts is NULL, so Cleo and Emil show NULL instead of 0.",
+          "sql": "SELECT c.customer_id, c.name, SUM(o.amount) AS total_spent\nFROM customers c\nLEFT JOIN orders o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id, c.name\nORDER BY total_spent DESC, c.customer_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "name",
+          "total_spent"
+        ],
+        "rows": [
+          [
+            "1",
+            "Alba",
+            "48.00"
+          ],
+          [
+            "4",
+            "Dara",
+            "44.00"
+          ],
+          [
+            "2",
+            "Bruno",
+            "9.90"
+          ],
+          [
+            "3",
+            "Cleo",
+            "0.00"
+          ],
+          [
+            "5",
+            "Emil",
+            "0.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B033",
+      "slug": "three-tables-in-one-query",
+      "title": "Three tables in one query",
+      "section": "Joins",
+      "difficulty": "Easy",
+      "topics": [
+        "Joins"
+      ],
+      "statement_md": "An evening college stores students, courses and enrolments separately. Return one row per enrolment with `enrolment_id`, the student's `name` and the course `title`, ordered by `enrolment_id`.",
+      "tables": [
+        {
+          "name": "students",
+          "description_md": "One row per student.",
+          "columns": [
+            {
+              "name": "student_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Tara"
+            ],
+            [
+              2,
+              "Uri"
+            ],
+            [
+              3,
+              "Vik"
+            ],
+            [
+              4,
+              "Wen"
+            ]
+          ]
+        },
+        {
+          "name": "courses",
+          "description_md": "One row per course.",
+          "columns": [
+            {
+              "name": "course_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Algebra"
+            ],
+            [
+              2,
+              "Biology"
+            ],
+            [
+              3,
+              "Chemistry"
+            ],
+            [
+              4,
+              "Drawing"
+            ]
+          ]
+        },
+        {
+          "name": "enrolments",
+          "description_md": "One row per student signed up for a course. Both ids point to the other tables.",
+          "columns": [
+            {
+              "name": "enrolment_id",
+              "type": "INT"
+            },
+            {
+              "name": "student_id",
+              "type": "INT"
+            },
+            {
+              "name": "course_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              2
+            ],
+            [
+              2,
+              1,
+              3
+            ],
+            [
+              3,
+              2,
+              1
+            ],
+            [
+              4,
+              3,
+              3
+            ],
+            [
+              5,
+              4,
+              2
+            ],
+            [
+              6,
+              3,
+              1
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "`enrolments` is the link between the other two. Start from it and attach one table at a time.",
+        "Each JOIN gets its own ON, and each ON pairs a foreign key with the key it points to."
+      ],
+      "notes_md": "**Concept:** a chain of joins; each JOIN adds one more table.\n\n**Shape:** the middle (link) table connects the other two: link to students on the student key, link to courses on the course key.\n\n**Syntax:** `FROM a JOIN b ON b.a_id = a.id JOIN c ON c.id = b.c_id`.\n\n**Watch out:** match each key to the table it actually refers to. Ids such as 1, 2, 3 exist in every table, so a wrong pairing still returns rows, just wrong ones.",
+      "solutions": [
+        {
+          "label": "Start from the link table",
+          "explain_md": "`enrolments` is joined to `students` through the student id and to `courses` through the course id, so every enrolment gets its student name and course title.",
+          "sql": "SELECT e.enrolment_id, s.name, c.title\nFROM enrolments e\nJOIN students s ON s.student_id = e.student_id\nJOIN courses c ON c.course_id = e.course_id\nORDER BY e.enrolment_id;"
+        },
+        {
+          "label": "Start from students",
+          "explain_md": "Same chain, built outward from students; the rows returned are the same.",
+          "sql": "SELECT e.enrolment_id, s.name, c.title\nFROM students s\nJOIN enrolments e ON e.student_id = s.student_id\nJOIN courses c ON c.course_id = e.course_id\nORDER BY e.enrolment_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The course is matched against the student's id instead of the enrolment's course id, so rows come back with the wrong course titles.",
+          "sql": "SELECT e.enrolment_id, s.name, c.title\nFROM enrolments e\nJOIN students s ON s.student_id = e.student_id\nJOIN courses c ON c.course_id = s.student_id\nORDER BY e.enrolment_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "enrolment_id",
+          "name",
+          "title"
+        ],
+        "rows": [
+          [
+            "1",
+            "Tara",
+            "Biology"
+          ],
+          [
+            "2",
+            "Tara",
+            "Chemistry"
+          ],
+          [
+            "3",
+            "Uri",
+            "Algebra"
+          ],
+          [
+            "4",
+            "Vik",
+            "Chemistry"
+          ],
+          [
+            "5",
+            "Wen",
+            "Biology"
+          ],
+          [
+            "6",
+            "Vik",
+            "Algebra"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B034",
+      "slug": "join-condition-in-on-vs-where",
+      "title": "Join condition in ON vs WHERE",
+      "section": "Joins",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Aggregation"
+      ],
+      "statement_md": "A gym wants to know how many times each member checked in during March 2026 (from 2026-03-01 up to and including 2026-03-31). Every member must be listed, with 0 if they did not come in March. Return `member_id`, `name` and `march_checkins`, most check-ins first, ties by `member_id`.",
+      "tables": [
+        {
+          "name": "members",
+          "description_md": "One row per member.",
+          "columns": [
+            {
+              "name": "member_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ada"
+            ],
+            [
+              2,
+              "Bo"
+            ],
+            [
+              3,
+              "Cy"
+            ],
+            [
+              4,
+              "Dee"
+            ],
+            [
+              5,
+              "Eli"
+            ]
+          ]
+        },
+        {
+          "name": "checkins",
+          "description_md": "One row per visit. `member_id` points to `members`.",
+          "columns": [
+            {
+              "name": "checkin_id",
+              "type": "INT"
+            },
+            {
+              "name": "member_id",
+              "type": "INT"
+            },
+            {
+              "name": "checkin_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-03-02"
+            ],
+            [
+              2,
+              1,
+              "2026-03-15"
+            ],
+            [
+              3,
+              1,
+              "2026-02-27"
+            ],
+            [
+              4,
+              2,
+              "2026-02-20"
+            ],
+            [
+              5,
+              2,
+              "2026-04-01"
+            ],
+            [
+              6,
+              3,
+              "2026-03-31"
+            ],
+            [
+              7,
+              3,
+              "2026-03-01"
+            ],
+            [
+              8,
+              3,
+              "2026-03-10"
+            ],
+            [
+              9,
+              4,
+              "2026-03-20"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "After a LEFT JOIN, a WHERE condition on the right table removes rows with NULL there too. Where else can a condition about the right table go?",
+        "To count visits and not rows, count a column from the right table instead of `*`."
+      ],
+      "notes_md": "**Concept:** in an outer join, ON decides which rows pair up; WHERE then filters the finished result.\n\n**Shape:** keep all members, but pair each only with March check-ins by putting the date test in the join condition; then group and count.\n\n**Syntax:** `COUNT(b.id)` ignores NULLs, `COUNT(*)` does not.\n\n**Watch out:** moving a right-table filter into WHERE quietly turns a LEFT JOIN into an inner join.",
+      "solutions": [
+        {
+          "label": "Date test inside ON",
+          "explain_md": "The March test is part of the join condition, so members with no March check-in still get one row (with NULL check-in columns). COUNT of the check-in id counts only real visits.",
+          "sql": "SELECT m.member_id, m.name, COUNT(c.checkin_id) AS march_checkins\nFROM members m\nLEFT JOIN checkins c\n       ON c.member_id = m.member_id\n      AND c.checkin_date >= '2026-03-01'\n      AND c.checkin_date < '2026-04-01'\nGROUP BY m.member_id, m.name\nORDER BY march_checkins DESC, m.member_id;"
+        },
+        {
+          "label": "Filter the right table first",
+          "explain_md": "A subquery keeps only March visits, and the LEFT JOIN then attaches them to all members.",
+          "sql": "SELECT m.member_id, m.name, COUNT(c.checkin_id) AS march_checkins\nFROM members m\nLEFT JOIN (\n  SELECT checkin_id, member_id\n  FROM checkins\n  WHERE checkin_date >= '2026-03-01' AND checkin_date < '2026-04-01'\n) AS c ON c.member_id = m.member_id\nGROUP BY m.member_id, m.name\nORDER BY march_checkins DESC, m.member_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The date test in WHERE throws away the NULL rows of members with no March visit, so Bo and Eli disappear instead of showing 0.",
+          "sql": "SELECT m.member_id, m.name, COUNT(c.checkin_id) AS march_checkins\nFROM members m\nLEFT JOIN checkins c ON c.member_id = m.member_id\nWHERE c.checkin_date >= '2026-03-01' AND c.checkin_date < '2026-04-01'\nGROUP BY m.member_id, m.name\nORDER BY march_checkins DESC, m.member_id;"
+        },
+        {
+          "explain_md": "COUNT(*) counts the single NULL-filled row of a member with no visits, so Bo and Eli show 1 instead of 0.",
+          "sql": "SELECT m.member_id, m.name, COUNT(*) AS march_checkins\nFROM members m\nLEFT JOIN checkins c\n       ON c.member_id = m.member_id\n      AND c.checkin_date >= '2026-03-01'\n      AND c.checkin_date < '2026-04-01'\nGROUP BY m.member_id, m.name\nORDER BY march_checkins DESC, m.member_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "member_id",
+          "name",
+          "march_checkins"
+        ],
+        "rows": [
+          [
+            "3",
+            "Cy",
+            "3"
+          ],
+          [
+            "1",
+            "Ada",
+            "2"
+          ],
+          [
+            "4",
+            "Dee",
+            "1"
+          ],
+          [
+            "2",
+            "Bo",
+            "0"
+          ],
+          [
+            "5",
+            "Eli",
+            "0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B035",
+      "slug": "employee-and-their-managers-name",
+      "title": "Employee and their manager's name",
+      "section": "Joins",
+      "difficulty": "Medium",
+      "topics": [
+        "Self-joins",
+        "Joins"
+      ],
+      "statement_md": "A garden centre stores all staff in one table; `manager_id` holds the `employee_id` of the person's manager. Return each employee as `employee` and their manager's name as `manager`. The owner has no manager and must still appear, with `NULL` as manager. Order by the employee's `employee_id`.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per staff member. `manager_id` is NULL for the owner.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Greta",
+              null
+            ],
+            [
+              2,
+              "Hugo",
+              1
+            ],
+            [
+              3,
+              "Isla",
+              1
+            ],
+            [
+              4,
+              "Joel",
+              2
+            ],
+            [
+              5,
+              "Kai",
+              2
+            ],
+            [
+              6,
+              "Lia",
+              3
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Both the employee and the manager are rows of the same table. How can one table be used twice in one query?",
+        "Give each copy its own alias. Which join keeps the employee whose manager is NULL?"
+      ],
+      "notes_md": "**Concept:** self-join: a table joined to itself, playing two roles.\n\n**Shape:** one alias for the employee, another alias for the manager, joined where the employee's manager id equals the manager's own id.\n\n**Syntax:** Give each use of the same table its own alias, e.g. `FROM t AS x ... t AS y`, and prefix every column with the alias you mean.\n\n**Watch out:** an inner join drops anyone with no manager, since NULL matches nothing.",
+      "solutions": [
+        {
+          "label": "LEFT self-join",
+          "explain_md": "The table appears twice, as `e` (employee) and `m` (manager). LEFT JOIN keeps Greta, whose `manager_id` is NULL and matches no manager row.",
+          "sql": "SELECT e.name AS employee, m.name AS manager\nFROM employees e\nLEFT JOIN employees m ON m.employee_id = e.manager_id\nORDER BY e.employee_id;"
+        },
+        {
+          "label": "Scalar subquery",
+          "explain_md": "For each employee the subquery looks up the manager's name; if there is no manager it returns NULL.",
+          "sql": "SELECT e.name AS employee,\n       (SELECT m.name FROM employees m WHERE m.employee_id = e.manager_id) AS manager\nFROM employees e\nORDER BY e.employee_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "An inner self-join needs a manager row, so Greta (no manager) is missing.",
+          "sql": "SELECT e.name AS employee, m.name AS manager\nFROM employees e\nJOIN employees m ON m.employee_id = e.manager_id\nORDER BY e.employee_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "employee",
+          "manager"
+        ],
+        "rows": [
+          [
+            "Greta",
+            null
+          ],
+          [
+            "Hugo",
+            "Greta"
+          ],
+          [
+            "Isla",
+            "Greta"
+          ],
+          [
+            "Joel",
+            "Hugo"
+          ],
+          [
+            "Kai",
+            "Hugo"
+          ],
+          [
+            "Lia",
+            "Isla"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B036",
+      "slug": "duplicate-rows-from-a-join",
+      "title": "Duplicate rows from a join",
+      "section": "Joins",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Aggregation"
+      ],
+      "statement_md": "A bakery orders table holds one `delivery_fee` per order, and the items table holds one row per product line (`price` times `qty`). Return `order_id` and `order_total` = the sum of its item lines plus its delivery fee, with the fee counted once. Order by `order_id`.",
+      "tables": [
+        {
+          "name": "orders",
+          "description_md": "One row per order, with a single delivery fee.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "customer_name",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "delivery_fee",
+              "type": "DECIMAL(5,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Noor",
+              3.0
+            ],
+            [
+              2,
+              "Omar",
+              2.5
+            ],
+            [
+              3,
+              "Pia",
+              1.5
+            ],
+            [
+              4,
+              "Quin",
+              4.0
+            ]
+          ]
+        },
+        {
+          "name": "order_items",
+          "description_md": "One row per product line of an order.",
+          "columns": [
+            {
+              "name": "item_id",
+              "type": "INT"
+            },
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "price",
+              "type": "DECIMAL(6,2)"
+            },
+            {
+              "name": "qty",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              2.5,
+              2
+            ],
+            [
+              2,
+              1,
+              4.0,
+              1
+            ],
+            [
+              3,
+              1,
+              1.2,
+              5
+            ],
+            [
+              4,
+              2,
+              12.0,
+              1
+            ],
+            [
+              5,
+              3,
+              3.5,
+              3
+            ],
+            [
+              6,
+              3,
+              2.25,
+              2
+            ],
+            [
+              7,
+              4,
+              18.0,
+              1
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "After joining, an order with three item lines appears three times. What happens to a fee that is added up on every one of those rows?",
+        "Either add the fee after summing the lines, or add up the lines per order before joining."
+      ],
+      "notes_md": "**Concept:** a one-to-many join repeats the 'one' side's values once per matching row.\n\n**Shape:** sum the item lines per order, and add the order-level fee exactly once.\n\n**Syntax:** A subquery in FROM (`FROM (SELECT ...) AS s`) can pre-aggregate a table before it is joined.\n\n**Watch out:** summing an order-level column after joining to a many-side table multiplies it by the number of lines.",
+      "solutions": [
+        {
+          "label": "Add the fee once, after SUM",
+          "explain_md": "The fee is not summed; it is grouped on and added to the SUM of the lines, so it counts once however many lines the order has.",
+          "sql": "SELECT o.order_id, SUM(i.price * i.qty) + o.delivery_fee AS order_total\nFROM orders o\nJOIN order_items i ON i.order_id = o.order_id\nGROUP BY o.order_id, o.delivery_fee\nORDER BY o.order_id;"
+        },
+        {
+          "label": "Sum the lines in a subquery first",
+          "explain_md": "The subquery reduces `order_items` to one row per order, so the join with `orders` can no longer repeat anything.",
+          "sql": "SELECT o.order_id, t.lines_total + o.delivery_fee AS order_total\nFROM orders o\nJOIN (\n  SELECT order_id, SUM(price * qty) AS lines_total\n  FROM order_items\n  GROUP BY order_id\n) AS t ON t.order_id = o.order_id\nORDER BY o.order_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Adding the fee inside the SUM adds it once per item line, so orders 1 and 3 (several lines) are overcharged.",
+          "sql": "SELECT o.order_id, SUM(i.price * i.qty + o.delivery_fee) AS order_total\nFROM orders o\nJOIN order_items i ON i.order_id = o.order_id\nGROUP BY o.order_id\nORDER BY o.order_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "order_id",
+          "order_total"
+        ],
+        "rows": [
+          [
+            "1",
+            "18.00"
+          ],
+          [
+            "2",
+            "14.50"
+          ],
+          [
+            "3",
+            "16.50"
+          ],
+          [
+            "4",
+            "22.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

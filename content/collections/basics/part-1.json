@@ -1,0 +1,1532 @@
+{
+  "problems": [
+    {
+      "id": "B001",
+      "slug": "pick-the-columns-you-need",
+      "title": "Pick the columns you need",
+      "difficulty": "Easy",
+      "topics": [
+        "Sorting"
+      ],
+      "section": "Selecting and filtering",
+      "statement_md": "A cafe wants a simple price list. Return only the `item_name` and `price` of every item on the menu, listed in menu order (`item_id`).",
+      "tables": [
+        {
+          "name": "menu_items",
+          "description_md": "One row per item on the cafe menu.",
+          "columns": [
+            {
+              "name": "item_id",
+              "type": "INT"
+            },
+            {
+              "name": "item_name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "category",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "price",
+              "type": "DECIMAL(5,2)"
+            },
+            {
+              "name": "calories",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Flat white",
+              "Coffee",
+              3.2,
+              120
+            ],
+            [
+              2,
+              "Espresso",
+              "Coffee",
+              2.4,
+              5
+            ],
+            [
+              3,
+              "Chai latte",
+              "Tea",
+              3.6,
+              180
+            ],
+            [
+              4,
+              "Blueberry muffin",
+              "Bakery",
+              2.9,
+              410
+            ],
+            [
+              5,
+              "Cheese toastie",
+              "Food",
+              5.5,
+              520
+            ],
+            [
+              6,
+              "Lemon tart",
+              "Bakery",
+              3.8,
+              350
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "After the word SELECT you list the columns you want, separated by commas. The order you list them is the order they come out.",
+        "You can sort by a column even if you do not show it in the output."
+      ],
+      "notes_md": "**Concept:** choosing columns - SELECT decides which columns appear, FROM decides which table to read.\n\n**Shape:** one table, no filter, every row comes back; only the columns are picked, then the rows are ordered.\n\n**Syntax:** `SELECT col_a, col_b FROM some_table ORDER BY col_c;`\n\n**Watch out:** `SELECT *` returns every column, which is handy for exploring but not what a question that names its columns wants.",
+      "solutions": [
+        {
+          "label": "Name the columns",
+          "explain_md": "SELECT lists the two columns in the order asked, FROM names the table, and ORDER BY puts the rows in menu order.",
+          "sql": "SELECT item_name, price\nFROM menu_items\nORDER BY item_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`SELECT *` returns every column, including `item_id`, `category` and `calories`, which the question did not ask for.",
+          "sql": "SELECT *\nFROM menu_items\nORDER BY item_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "item_name",
+          "price"
+        ],
+        "rows": [
+          [
+            "Flat white",
+            "3.20"
+          ],
+          [
+            "Espresso",
+            "2.40"
+          ],
+          [
+            "Chai latte",
+            "3.60"
+          ],
+          [
+            "Blueberry muffin",
+            "2.90"
+          ],
+          [
+            "Cheese toastie",
+            "5.50"
+          ],
+          [
+            "Lemon tart",
+            "3.80"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B002",
+      "slug": "rows-matching-one-condition",
+      "title": "Rows matching one condition",
+      "difficulty": "Easy",
+      "topics": [
+        "Filtering"
+      ],
+      "section": "Selecting and filtering",
+      "statement_md": "A library wants to list its fantasy shelf. Return the `title` and `pages` of every book whose `genre` is exactly `'Fantasy'`, ordered by `title` (ties by `book_id`).",
+      "tables": [
+        {
+          "name": "books",
+          "description_md": "One row per book. `genre` is a single label such as `'Mystery'` or `'Science Fantasy'`.",
+          "columns": [
+            {
+              "name": "book_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(40)"
+            },
+            {
+              "name": "genre",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "pages",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "The Salt Road",
+              "Fantasy",
+              410
+            ],
+            [
+              2,
+              "Quiet Harbour",
+              "Mystery",
+              280
+            ],
+            [
+              3,
+              "Embers of Aldor",
+              "Science Fantasy",
+              520
+            ],
+            [
+              4,
+              "Night Ledger",
+              "Mystery",
+              330
+            ],
+            [
+              5,
+              "The Glass Orchard",
+              "Fantasy",
+              360
+            ],
+            [
+              6,
+              "Tidewater",
+              "Historical",
+              450
+            ],
+            [
+              7,
+              "Crown of Thorns and Ash",
+              "Fantasy",
+              600
+            ],
+            [
+              8,
+              "Paper Lanterns",
+              "Romance",
+              250
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Which clause keeps only the rows that meet a condition?",
+        "Text values are written in single quotes. Does the question ask for a book that merely contains the word, or one whose genre is the word?"
+      ],
+      "notes_md": "**Concept:** WHERE keeps only the rows for which a condition is true; everything else is dropped before the output is built.\n\n**Shape:** one table, one equality test on a text column, then an ORDER BY.\n\n**Syntax:** `WHERE column = 'text'` (single quotes around text, none around numbers).\n\n**Watch out:** `=` means the whole value matches. Pattern matching is a different tool and can let in values you did not mean.",
+      "solutions": [
+        {
+          "label": "Equality test",
+          "explain_md": "`WHERE genre = 'Fantasy'` keeps only rows whose genre is exactly that word; the other genres are filtered out before ordering.",
+          "sql": "SELECT title, pages\nFROM books\nWHERE genre = 'Fantasy'\nORDER BY title, book_id;"
+        },
+        {
+          "label": "IN with one value",
+          "explain_md": "`IN` is a shorter way to write several equality tests; with a single value it behaves exactly like `=`.",
+          "sql": "SELECT title, pages\nFROM books\nWHERE genre IN ('Fantasy')\nORDER BY title, book_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`LIKE '%Fantasy%'` matches any genre that contains the word, so `'Science Fantasy'` sneaks in.",
+          "sql": "SELECT title, pages\nFROM books\nWHERE genre LIKE '%Fantasy%'\nORDER BY title, book_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "title",
+          "pages"
+        ],
+        "rows": [
+          [
+            "Crown of Thorns and Ash",
+            "600"
+          ],
+          [
+            "The Glass Orchard",
+            "360"
+          ],
+          [
+            "The Salt Road",
+            "410"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B003",
+      "slug": "price-range",
+      "title": "Price range",
+      "difficulty": "Easy",
+      "topics": [
+        "Filtering"
+      ],
+      "section": "Selecting and filtering",
+      "statement_md": "A garden centre has a shelf for plants priced from 5.00 to 15.00, with both end prices included. Return the `plant_name` and `price` of every plant on that shelf, cheapest first (ties by `plant_id`).",
+      "tables": [
+        {
+          "name": "plants",
+          "description_md": "One row per plant for sale.",
+          "columns": [
+            {
+              "name": "plant_id",
+              "type": "INT"
+            },
+            {
+              "name": "plant_name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "price",
+              "type": "DECIMAL(6,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Lavender",
+              5.0
+            ],
+            [
+              2,
+              "Basil",
+              3.5
+            ],
+            [
+              3,
+              "Fuchsia",
+              9.99
+            ],
+            [
+              4,
+              "Rosemary",
+              7.25
+            ],
+            [
+              5,
+              "Hydrangea",
+              15.0
+            ],
+            [
+              6,
+              "Japanese maple",
+              45.0
+            ],
+            [
+              7,
+              "Mint",
+              4.99
+            ],
+            [
+              8,
+              "Camellia",
+              15.01
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Two conditions have to be true at once: not below the lower price, not above the upper price.",
+        "Look at the plants priced exactly 5.00 and exactly 15.00. Should they be on the shelf?"
+      ],
+      "notes_md": "**Concept:** range filter with both ends included.\n\n**Shape:** one table, one WHERE that bounds a number from below and from above, then ORDER BY price.\n\n**Syntax:** `col BETWEEN low AND high` is the same as `col >= low AND col <= high`.\n\n**Watch out:** `>` and `<` leave out the boundary values; plants priced exactly on a limit disappear.",
+      "solutions": [
+        {
+          "label": "BETWEEN",
+          "explain_md": "`BETWEEN 5 AND 15` includes both 5 and 15 themselves.",
+          "sql": "SELECT plant_name, price\nFROM plants\nWHERE price BETWEEN 5 AND 15\nORDER BY price, plant_id;"
+        },
+        {
+          "label": "Two comparisons",
+          "explain_md": "Greater-or-equal and less-or-equal joined with AND say the same thing.",
+          "sql": "SELECT plant_name, price\nFROM plants\nWHERE price >= 5 AND price <= 15\nORDER BY price, plant_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Strict `>` and `<` exclude the plants priced exactly 5.00 and 15.00.",
+          "sql": "SELECT plant_name, price\nFROM plants\nWHERE price > 5 AND price < 15\nORDER BY price, plant_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "plant_name",
+          "price"
+        ],
+        "rows": [
+          [
+            "Lavender",
+            "5.00"
+          ],
+          [
+            "Rosemary",
+            "7.25"
+          ],
+          [
+            "Fuchsia",
+            "9.99"
+          ],
+          [
+            "Hydrangea",
+            "15.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B004",
+      "slug": "two-conditions-together",
+      "title": "Two conditions together",
+      "difficulty": "Easy",
+      "topics": [
+        "Filtering"
+      ],
+      "section": "Selecting and filtering",
+      "statement_md": "A cinema wants cheap weekend screenings. Return `screening_id`, `movie`, `day_name` and `ticket_price` for screenings on `'Sat'` or `'Sun'` that cost less than 10.00, ordered by `screening_id`.",
+      "tables": [
+        {
+          "name": "screenings",
+          "description_md": "One row per screening. `day_name` is a three-letter day such as `'Fri'`.",
+          "columns": [
+            {
+              "name": "screening_id",
+              "type": "INT"
+            },
+            {
+              "name": "movie",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "day_name",
+              "type": "VARCHAR(3)"
+            },
+            {
+              "name": "ticket_price",
+              "type": "DECIMAL(4,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Moon Garden",
+              "Fri",
+              8.5
+            ],
+            [
+              2,
+              "Moon Garden",
+              "Sat",
+              12.0
+            ],
+            [
+              3,
+              "Paper Boats",
+              "Sat",
+              8.0
+            ],
+            [
+              4,
+              "Paper Boats",
+              "Sun",
+              9.5
+            ],
+            [
+              5,
+              "Iron Orchard",
+              "Sun",
+              11.0
+            ],
+            [
+              6,
+              "Iron Orchard",
+              "Mon",
+              6.0
+            ],
+            [
+              7,
+              "Late Train",
+              "Sat",
+              9.0
+            ],
+            [
+              8,
+              "Late Train",
+              "Sun",
+              7.5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The price rule must hold for both weekend days, not just one of them.",
+        "AND is evaluated before OR, just like multiplication before addition. What do brackets do here?"
+      ],
+      "notes_md": "**Concept:** combining conditions with AND and OR.\n\n**Shape:** one table; one group of alternatives (either day) that must also satisfy a second, separate condition (the price).\n\n**Syntax:** `WHERE (a = 1 OR a = 2) AND b < 10`.\n\n**Watch out:** AND binds tighter than OR, so without brackets `a OR b AND c` means `a OR (b AND c)`.",
+      "solutions": [
+        {
+          "label": "Brackets around the OR",
+          "explain_md": "The two days are grouped in brackets so the price test applies to both.",
+          "sql": "SELECT screening_id, movie, day_name, ticket_price\nFROM screenings\nWHERE (day_name = 'Sat' OR day_name = 'Sun')\n  AND ticket_price < 10\nORDER BY screening_id;"
+        },
+        {
+          "label": "IN list",
+          "explain_md": "`IN` groups the alternatives for you, so no brackets are needed.",
+          "sql": "SELECT screening_id, movie, day_name, ticket_price\nFROM screenings\nWHERE day_name IN ('Sat', 'Sun')\n  AND ticket_price < 10\nORDER BY screening_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without brackets, AND is applied first: the price test only guards Sunday, so every Saturday screening passes, including the 12.00 one.",
+          "sql": "SELECT screening_id, movie, day_name, ticket_price\nFROM screenings\nWHERE day_name = 'Sat' OR day_name = 'Sun' AND ticket_price < 10\nORDER BY screening_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "screening_id",
+          "movie",
+          "day_name",
+          "ticket_price"
+        ],
+        "rows": [
+          [
+            "3",
+            "Paper Boats",
+            "Sat",
+            "8.00"
+          ],
+          [
+            "4",
+            "Paper Boats",
+            "Sun",
+            "9.50"
+          ],
+          [
+            "7",
+            "Late Train",
+            "Sat",
+            "9.00"
+          ],
+          [
+            "8",
+            "Late Train",
+            "Sun",
+            "7.50"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B005",
+      "slug": "in-a-list-of-values",
+      "title": "In a list of values",
+      "difficulty": "Easy",
+      "topics": [
+        "Filtering"
+      ],
+      "section": "Selecting and filtering",
+      "statement_md": "A courier does not deliver to Leeds, York or Hull this week. Return `parcel_id` and `destination_city` for every parcel that is going anywhere else, ordered by `parcel_id`.",
+      "tables": [
+        {
+          "name": "parcels",
+          "description_md": "One row per parcel waiting to ship.",
+          "columns": [
+            {
+              "name": "parcel_id",
+              "type": "INT"
+            },
+            {
+              "name": "destination_city",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "weight_kg",
+              "type": "DECIMAL(5,1)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Leeds",
+              2.5
+            ],
+            [
+              2,
+              "Bristol",
+              1.0
+            ],
+            [
+              3,
+              "York",
+              4.2
+            ],
+            [
+              4,
+              "Cardiff",
+              0.8
+            ],
+            [
+              5,
+              "Hull",
+              3.0
+            ],
+            [
+              6,
+              "Norwich",
+              6.5
+            ],
+            [
+              7,
+              "Leeds",
+              1.2
+            ],
+            [
+              8,
+              "Bristol",
+              2.2
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "There is a short way to ask whether a value is one of a list of values, and a negated version of it.",
+        "Think about one parcel going to Leeds. If you chain three 'not equal' tests with OR, does it pass any of them?"
+      ],
+      "notes_md": "**Concept:** testing a value against a list.\n\n**Shape:** one table; one WHERE that excludes a fixed set of values.\n\n**Syntax:** `col IN ('a','b','c')` and `col NOT IN ('a','b','c')`.\n\n**Watch out:** 'not A or not B' is true for every row, because no value is both A and B. Use AND between the not-equal tests, or NOT IN.",
+      "solutions": [
+        {
+          "label": "NOT IN",
+          "explain_md": "`NOT IN` keeps a row only if its city is none of the listed cities.",
+          "sql": "SELECT parcel_id, destination_city\nFROM parcels\nWHERE destination_city NOT IN ('Leeds', 'York', 'Hull')\nORDER BY parcel_id;"
+        },
+        {
+          "label": "AND of not-equals",
+          "explain_md": "Each city must be different from all three at the same time, so the tests are joined with AND.",
+          "sql": "SELECT parcel_id, destination_city\nFROM parcels\nWHERE destination_city <> 'Leeds'\n  AND destination_city <> 'York'\n  AND destination_city <> 'Hull'\nORDER BY parcel_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "With OR, every city passes at least one of the not-equal tests (Leeds is not York), so nothing is filtered out and all 8 parcels come back.",
+          "sql": "SELECT parcel_id, destination_city\nFROM parcels\nWHERE destination_city <> 'Leeds'\n   OR destination_city <> 'York'\n   OR destination_city <> 'Hull'\nORDER BY parcel_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "parcel_id",
+          "destination_city"
+        ],
+        "rows": [
+          [
+            "2",
+            "Bristol"
+          ],
+          [
+            "4",
+            "Cardiff"
+          ],
+          [
+            "6",
+            "Norwich"
+          ],
+          [
+            "8",
+            "Bristol"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B006",
+      "slug": "names-that-start-with",
+      "title": "Names that start with ...",
+      "difficulty": "Easy",
+      "topics": [
+        "Filtering",
+        "String functions"
+      ],
+      "section": "Selecting and filtering",
+      "statement_md": "A pet shelter is printing small name tags for animals whose `pet_name` starts with `B` and is exactly four letters long. Return `pet_id` and `pet_name` for those animals, ordered by `pet_id`.",
+      "tables": [
+        {
+          "name": "pets",
+          "description_md": "One row per animal at the shelter.",
+          "columns": [
+            {
+              "name": "pet_id",
+              "type": "INT"
+            },
+            {
+              "name": "pet_name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "species",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Bean",
+              "dog"
+            ],
+            [
+              2,
+              "Bobby",
+              "dog"
+            ],
+            [
+              3,
+              "Bo",
+              "rabbit"
+            ],
+            [
+              4,
+              "Buddy",
+              "dog"
+            ],
+            [
+              5,
+              "Bear",
+              "dog"
+            ],
+            [
+              6,
+              "Milo",
+              "cat"
+            ],
+            [
+              7,
+              "Abby",
+              "cat"
+            ],
+            [
+              8,
+              "Biko",
+              "cat"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "LIKE compares text to a pattern. One wildcard stands for any number of characters, another stands for exactly one character.",
+        "Count the letters after the B that you need."
+      ],
+      "notes_md": "**Concept:** pattern matching with LIKE.\n\n**Shape:** one table; one WHERE with a pattern, then ORDER BY.\n\n**Syntax:** `%` matches any run of characters (including none); `_` matches exactly one character. `LIKE 'A%'` starts with A; `LIKE 'A__'` is A plus two characters.\n\n**Watch out:** `%` does not limit the length. If the length matters, use `_` for each character or add a length test.",
+      "solutions": [
+        {
+          "label": "Underscore wildcards",
+          "explain_md": "`B___` is a B followed by exactly three more characters, four in all.",
+          "sql": "SELECT pet_id, pet_name\nFROM pets\nWHERE pet_name LIKE 'B___'\nORDER BY pet_id;"
+        },
+        {
+          "label": "Prefix plus length",
+          "explain_md": "`B%` checks the first letter and CHAR_LENGTH checks the total length.",
+          "sql": "SELECT pet_id, pet_name\nFROM pets\nWHERE pet_name LIKE 'B%' AND CHAR_LENGTH(pet_name) = 4\nORDER BY pet_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`'B%'` accepts any length, so Bobby, Bo and Buddy are included too.",
+          "sql": "SELECT pet_id, pet_name\nFROM pets\nWHERE pet_name LIKE 'B%'\nORDER BY pet_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "pet_id",
+          "pet_name"
+        ],
+        "rows": [
+          [
+            "1",
+            "Bean"
+          ],
+          [
+            "5",
+            "Bear"
+          ],
+          [
+            "8",
+            "Biko"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B007",
+      "slug": "missing-values",
+      "title": "Missing values",
+      "difficulty": "Easy",
+      "topics": [
+        "NULL handling",
+        "Filtering"
+      ],
+      "section": "Selecting and filtering",
+      "statement_md": "A clinic needs to find appointments that have no doctor assigned yet (`doctor_id` is empty). Return `appointment_id`, `patient_name` and `appt_date` for them, ordered by `appt_date` then `appointment_id`.",
+      "tables": [
+        {
+          "name": "appointments",
+          "description_md": "One row per booked appointment. `doctor_id` is NULL until a doctor is assigned.",
+          "columns": [
+            {
+              "name": "appointment_id",
+              "type": "INT"
+            },
+            {
+              "name": "patient_name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "appt_date",
+              "type": "DATE"
+            },
+            {
+              "name": "doctor_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Hana",
+              "2026-05-04",
+              11
+            ],
+            [
+              2,
+              "Idris",
+              "2026-05-04",
+              null
+            ],
+            [
+              3,
+              "Joy",
+              "2026-05-05",
+              12
+            ],
+            [
+              4,
+              "Karl",
+              "2026-05-05",
+              null
+            ],
+            [
+              5,
+              "Lena",
+              "2026-05-06",
+              11
+            ],
+            [
+              6,
+              "Marek",
+              "2026-05-06",
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "NULL means 'unknown or missing', not a value. Can anything be equal to an unknown?",
+        "SQL has a special test written with the word IS."
+      ],
+      "notes_md": "**Concept:** NULL is the absence of a value, and it needs its own test.\n\n**Shape:** one table; one WHERE on the nullable column.\n\n**Syntax:** `col IS NULL` and `col IS NOT NULL`.\n\n**Watch out:** `col = NULL` is never true (not even for NULL rows), so it silently returns nothing. The same goes for `<> NULL`.",
+      "solutions": [
+        {
+          "label": "IS NULL",
+          "explain_md": "`IS NULL` is true exactly for rows where the doctor is missing.",
+          "sql": "SELECT appointment_id, patient_name, appt_date\nFROM appointments\nWHERE doctor_id IS NULL\nORDER BY appt_date, appointment_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`= NULL` compares with an unknown value, so the result is never true and the query returns no rows.",
+          "sql": "SELECT appointment_id, patient_name, appt_date\nFROM appointments\nWHERE doctor_id = NULL\nORDER BY appt_date, appointment_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "appointment_id",
+          "patient_name",
+          "appt_date"
+        ],
+        "rows": [
+          [
+            "2",
+            "Idris",
+            "2026-05-04"
+          ],
+          [
+            "4",
+            "Karl",
+            "2026-05-05"
+          ],
+          [
+            "6",
+            "Marek",
+            "2026-05-06"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B008",
+      "slug": "sort-by-two-columns",
+      "title": "Sort by two columns",
+      "difficulty": "Easy",
+      "topics": [
+        "Sorting"
+      ],
+      "section": "Sorting, limits and distinct",
+      "statement_md": "A teacher wants the front page of a scoreboard for two classes. Sort the students by `class_name` A to Z, and within each class by `score` from highest to lowest (ties by `student_id`), then return only the first 5 rows with the columns `class_name`, `name` and `score`.",
+      "tables": [
+        {
+          "name": "results",
+          "description_md": "One row per student with a test score.",
+          "columns": [
+            {
+              "name": "student_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "class_name",
+              "type": "VARCHAR(5)"
+            },
+            {
+              "name": "score",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Aiden",
+              "7B",
+              82
+            ],
+            [
+              2,
+              "Bella",
+              "7A",
+              91
+            ],
+            [
+              3,
+              "Carlos",
+              "7B",
+              91
+            ],
+            [
+              4,
+              "Dina",
+              "7A",
+              75
+            ],
+            [
+              5,
+              "Eli",
+              "7A",
+              91
+            ],
+            [
+              6,
+              "Farah",
+              "7B",
+              67
+            ],
+            [
+              7,
+              "Gus",
+              "7A",
+              75
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "ORDER BY accepts several columns separated by commas. The first is the main sort; later ones only break ties.",
+        "Each column can have its own direction, ASC or DESC."
+      ],
+      "notes_md": "**Concept:** multi-column sorting.\n\n**Shape:** one table; ORDER BY with three keys (group, then score, then id for ties), then LIMIT keeps the first rows.\n\n**Syntax:** `ORDER BY a ASC, b DESC, c`. ASC is the default.\n\n**Watch out:** the order of the columns in ORDER BY is the order of importance. Swap them and you get a very different list.",
+      "solutions": [
+        {
+          "label": "Three sort keys",
+          "explain_md": "Class first (A to Z), then score highest first, then student_id to settle ties; LIMIT 5 keeps the top of that list.",
+          "sql": "SELECT class_name, name, score\nFROM results\nORDER BY class_name ASC, score DESC, student_id\nLIMIT 5;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The score is the main key here, so the classes are mixed together instead of grouped, and the first five rows are a different set of students.",
+          "sql": "SELECT class_name, name, score\nFROM results\nORDER BY score DESC, class_name ASC, student_id\nLIMIT 5;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "class_name",
+          "name",
+          "score"
+        ],
+        "rows": [
+          [
+            "7A",
+            "Bella",
+            "91"
+          ],
+          [
+            "7A",
+            "Eli",
+            "91"
+          ],
+          [
+            "7A",
+            "Dina",
+            "75"
+          ],
+          [
+            "7A",
+            "Gus",
+            "75"
+          ],
+          [
+            "7B",
+            "Carlos",
+            "91"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B009",
+      "slug": "top-3-most-expensive",
+      "title": "Top 3 most expensive",
+      "difficulty": "Easy",
+      "topics": [
+        "Sorting"
+      ],
+      "section": "Sorting, limits and distinct",
+      "statement_md": "A bookshop wants to feature its three most expensive books. Return `title` and `price` of those three books, most expensive first. (Every book has a different price.)",
+      "tables": [
+        {
+          "name": "books",
+          "description_md": "One row per book on sale; prices are all different.",
+          "columns": [
+            {
+              "name": "book_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "price",
+              "type": "DECIMAL(6,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Atlas of Birds",
+              24.5
+            ],
+            [
+              2,
+              "Pocket Poems",
+              8.99
+            ],
+            [
+              3,
+              "The Long Orbit",
+              18.0
+            ],
+            [
+              4,
+              "Bread Science",
+              32.0
+            ],
+            [
+              5,
+              "Night Garden",
+              12.75
+            ],
+            [
+              6,
+              "Chess Endgames",
+              27.9
+            ],
+            [
+              7,
+              "Tiny Habits Journal",
+              9.5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "First put the books in the order you want, then keep only the first few.",
+        "Which direction puts the biggest price at the top?"
+      ],
+      "notes_md": "**Concept:** top-N: sort, then cut.\n\n**Shape:** one table; ORDER BY decides which rows come first, LIMIT keeps the first N of them.\n\n**Syntax:** `ORDER BY col ASC|DESC` sets the order; `LIMIT n` keeps the first n rows.\n\n**Watch out:** LIMIT only cuts. Without an ORDER BY you get 'any' three rows, and with ASC you get the smallest values instead of the largest.",
+      "solutions": [
+        {
+          "label": "ORDER BY then LIMIT",
+          "explain_md": "Sort by price from high to low, then LIMIT keeps the first three rows.",
+          "sql": "SELECT title, price\nFROM books\nORDER BY price DESC, book_id\nLIMIT 3;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The default direction is ascending, so this returns the three cheapest books.",
+          "sql": "SELECT title, price\nFROM books\nORDER BY price, book_id\nLIMIT 3;"
+        },
+        {
+          "explain_md": "Without ORDER BY, LIMIT 3 just takes the first three rows stored, not the most expensive.",
+          "sql": "SELECT title, price\nFROM books\nLIMIT 3;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "title",
+          "price"
+        ],
+        "rows": [
+          [
+            "Bread Science",
+            "32.00"
+          ],
+          [
+            "Chess Endgames",
+            "27.90"
+          ],
+          [
+            "Atlas of Birds",
+            "24.50"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B010",
+      "slug": "unique-values",
+      "title": "Unique values",
+      "difficulty": "Easy",
+      "topics": [
+        "Deduplication"
+      ],
+      "section": "Sorting, limits and distinct",
+      "statement_md": "A bike-share scheme wants to know which kinds of bike have been rented at which station. Return each distinct `station` and `bike_type` combination once, ordered by `station` then `bike_type`.",
+      "tables": [
+        {
+          "name": "rentals",
+          "description_md": "One row per rental; the same station and bike type appear many times.",
+          "columns": [
+            {
+              "name": "rental_id",
+              "type": "INT"
+            },
+            {
+              "name": "station",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "bike_type",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Riverside",
+              "road"
+            ],
+            [
+              2,
+              "Riverside",
+              "e-bike"
+            ],
+            [
+              3,
+              "Market Sq",
+              "road"
+            ],
+            [
+              4,
+              "Riverside",
+              "road"
+            ],
+            [
+              5,
+              "Market Sq",
+              "e-bike"
+            ],
+            [
+              6,
+              "Market Sq",
+              "road"
+            ],
+            [
+              7,
+              "Station",
+              "e-bike"
+            ],
+            [
+              8,
+              "Riverside",
+              "e-bike"
+            ],
+            [
+              9,
+              "Station",
+              "e-bike"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "There is a keyword that goes right after SELECT and removes repeated rows.",
+        "With two columns listed, a row counts as a repeat only when both values match an earlier row."
+      ],
+      "notes_md": "**Concept:** removing duplicate rows.\n\n**Shape:** one table; pick the columns, drop repeats, order the result.\n\n**Syntax:** `SELECT DISTINCT a FROM t;` for one column, `SELECT DISTINCT a, b FROM t;` for pairs. DISTINCT covers all the listed columns together.\n\n**Watch out:** DISTINCT is not a function of one column; `DISTINCT a, b` does not make `a` unique on its own.",
+      "solutions": [
+        {
+          "label": "DISTINCT",
+          "explain_md": "DISTINCT keeps one copy of each (station, bike_type) pair.",
+          "sql": "SELECT DISTINCT station, bike_type\nFROM rentals\nORDER BY station, bike_type;"
+        },
+        {
+          "label": "GROUP BY",
+          "explain_md": "Grouping by both columns also gives one row per pair.",
+          "sql": "SELECT station, bike_type\nFROM rentals\nGROUP BY station, bike_type\nORDER BY station, bike_type;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without DISTINCT, every rental produces a row, so the same pair repeats (Riverside + road appears twice, Station + e-bike twice, and so on).",
+          "sql": "SELECT station, bike_type\nFROM rentals\nORDER BY station, bike_type;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "station",
+          "bike_type"
+        ],
+        "rows": [
+          [
+            "Market Sq",
+            "e-bike"
+          ],
+          [
+            "Market Sq",
+            "road"
+          ],
+          [
+            "Riverside",
+            "e-bike"
+          ],
+          [
+            "Riverside",
+            "road"
+          ],
+          [
+            "Station",
+            "e-bike"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B011",
+      "slug": "calculated-column-with-an-alias",
+      "title": "Calculated column with an alias",
+      "difficulty": "Easy",
+      "topics": [
+        "Numeric functions"
+      ],
+      "section": "Sorting, limits and distinct",
+      "statement_md": "A market stall adds an 8% service charge to every order line. Return the `item` and a calculated column named `line_total`: `unit_price` times `quantity` times 1.08, rounded to 2 decimal places. Order by `line_id`.",
+      "tables": [
+        {
+          "name": "order_lines",
+          "description_md": "One row per item on an order.",
+          "columns": [
+            {
+              "name": "line_id",
+              "type": "INT"
+            },
+            {
+              "name": "item",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "unit_price",
+              "type": "DECIMAL(6,2)"
+            },
+            {
+              "name": "quantity",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Honey jar",
+              6.45,
+              3
+            ],
+            [
+              2,
+              "Sourdough loaf",
+              4.2,
+              2
+            ],
+            [
+              3,
+              "Goat cheese",
+              7.95,
+              1
+            ],
+            [
+              4,
+              "Plum jam",
+              3.75,
+              4
+            ],
+            [
+              5,
+              "Rye crackers",
+              2.6,
+              5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You can do arithmetic inside SELECT, and give the result a name with the keyword AS.",
+        "ROUND takes the value first, then how many decimal places to keep."
+      ],
+      "notes_md": "**Concept:** a calculated column, named with an alias.\n\n**Shape:** one table; one expression in the SELECT list with an alias; rows ordered by id.\n\n**Syntax:** `SELECT a * b AS product` and `ROUND(value, decimals)`.\n\n**Watch out:** `ROUND(x)` with no second argument rounds to a whole number. Also remember the alias is just a label in the output, the table has no such column.",
+      "solutions": [
+        {
+          "label": "ROUND around the whole expression",
+          "explain_md": "Multiply price, quantity and 1.08 first, then round the final number to 2 places and call it line_total.",
+          "sql": "SELECT item, ROUND(unit_price * quantity * 1.08, 2) AS line_total\nFROM order_lines\nORDER BY line_id;"
+        },
+        {
+          "label": "Charge added separately",
+          "explain_md": "The subtotal plus 8% of the subtotal is the same amount; the result is still rounded once at the end.",
+          "sql": "SELECT item, ROUND(unit_price * quantity + unit_price * quantity * 0.08, 2) AS line_total\nFROM order_lines\nORDER BY line_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`ROUND(x)` without the second argument rounds to a whole number, so 20.898 becomes 21 instead of 20.90.",
+          "sql": "SELECT item, ROUND(unit_price * quantity * 1.08) AS line_total\nFROM order_lines\nORDER BY line_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "item",
+          "line_total"
+        ],
+        "rows": [
+          [
+            "Honey jar",
+            "20.90"
+          ],
+          [
+            "Sourdough loaf",
+            "9.07"
+          ],
+          [
+            "Goat cheese",
+            "8.59"
+          ],
+          [
+            "Plum jam",
+            "16.20"
+          ],
+          [
+            "Rye crackers",
+            "14.04"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B012",
+      "slug": "sort-by-a-calculated-column",
+      "title": "Sort by a calculated column",
+      "difficulty": "Medium",
+      "topics": [
+        "Numeric functions",
+        "Sorting",
+        "Filtering"
+      ],
+      "section": "Sorting, limits and distinct",
+      "statement_md": "A hardware shop wants its big order lines. A line's total is `unit_price * quantity`. Return `item` and that total as `line_total` for lines whose total is at least 50.00, biggest total first (ties by `line_id`).",
+      "tables": [
+        {
+          "name": "order_lines",
+          "description_md": "One row per item on an order.",
+          "columns": [
+            {
+              "name": "line_id",
+              "type": "INT"
+            },
+            {
+              "name": "item",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "unit_price",
+              "type": "DECIMAL(6,2)"
+            },
+            {
+              "name": "quantity",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Cordless drill",
+              64.0,
+              1
+            ],
+            [
+              2,
+              "Wood screws",
+              4.5,
+              10
+            ],
+            [
+              3,
+              "Paint tin",
+              12.5,
+              4
+            ],
+            [
+              4,
+              "Hammer",
+              15.0,
+              2
+            ],
+            [
+              5,
+              "Sandpaper pack",
+              2.25,
+              30
+            ],
+            [
+              6,
+              "Spirit level",
+              22.0,
+              3
+            ],
+            [
+              7,
+              "Door hinge",
+              3.1,
+              8
+            ],
+            [
+              8,
+              "Ladder",
+              120.0,
+              1
+            ],
+            [
+              9,
+              "Garden hose",
+              18.0,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The total is not stored in the table. Which clause is allowed to repeat the arithmetic so the filter can use it?",
+        "You may sort by the alias you gave in SELECT. Which value should the biggest-first order use?"
+      ],
+      "notes_md": "**Concept:** filtering and sorting on a calculated value.\n\n**Shape:** one table; compute price times quantity once for output, once for the filter, and sort by it.\n\n**Syntax:** `SELECT a * b AS total` names a calculated column. ORDER BY can use that alias; WHERE cannot, because WHERE runs before SELECT.\n\n**Watch out:** check whether the boundary value counts (`>=` versus `>`), and filter on the calculated total, not on a raw column that only looks related.",
+      "solutions": [
+        {
+          "label": "Repeat the expression in WHERE",
+          "explain_md": "WHERE runs before the alias exists, so the arithmetic is repeated there; ORDER BY may use the alias.",
+          "sql": "SELECT item, unit_price * quantity AS line_total\nFROM order_lines\nWHERE unit_price * quantity >= 50\nORDER BY line_total DESC, line_id;"
+        },
+        {
+          "label": "Calculate in a subquery first",
+          "explain_md": "The inner query creates line_total as a real column, so the outer WHERE can use the name.",
+          "sql": "SELECT item, line_total\nFROM (\n  SELECT line_id, item, unit_price * quantity AS line_total\n  FROM order_lines\n) AS t\nWHERE line_total >= 50\nORDER BY line_total DESC, line_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`>` drops the paint tin, whose total is exactly 50.00; the question says 'at least'.",
+          "sql": "SELECT item, unit_price * quantity AS line_total\nFROM order_lines\nWHERE unit_price * quantity > 50\nORDER BY line_total DESC, line_id;"
+        },
+        {
+          "explain_md": "Testing `unit_price >= 50` looks at the price of one unit, not the line total, so lines like 4 x 18.00 are missed.",
+          "sql": "SELECT item, unit_price * quantity AS line_total\nFROM order_lines\nWHERE unit_price >= 50\nORDER BY line_total DESC, line_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "item",
+          "line_total"
+        ],
+        "rows": [
+          [
+            "Ladder",
+            "120.00"
+          ],
+          [
+            "Garden hose",
+            "72.00"
+          ],
+          [
+            "Sandpaper pack",
+            "67.50"
+          ],
+          [
+            "Spirit level",
+            "66.00"
+          ],
+          [
+            "Cordless drill",
+            "64.00"
+          ],
+          [
+            "Paint tin",
+            "50.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

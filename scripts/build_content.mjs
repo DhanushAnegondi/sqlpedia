@@ -78,7 +78,7 @@ function ownTablesCollection(doc) {
   const problems = doc.problems.map((p) => {
     if (!p.expected) errors.push(`${doc.id}/${p.id}: expected is null - run scripts/verify/fill_expected.py`);
     return {
-      id: p.id, slug: p.slug, title: p.title, difficulty: p.difficulty, topics: p.topics || [],
+      id: p.id, slug: p.slug, title: p.title, difficulty: p.difficulty, topics: p.topics || [], section: p.section || null,
       statement_md: p.statement_md, dialect_note_md: p.dialect_note_md || null, hints_md: p.hints_md || [],
       notes_md: p.notes_md || "", tables: p.tables || [], source: p.source || null,
       parts: [{
@@ -115,7 +115,7 @@ function loadCollections() {
   if (existsSync(join(legacy, "index.json")))
     for (const s of read(join(legacy, "index.json")).sets) out.push(legacyCollection(read(join(legacy, `${s.id}.json`))));
   // Display order
-  const ORDER = ["patterns", "apple", "campus", "shoplite"];
+  const ORDER = ["basics", "patterns", "apple", "campus", "shoplite"];
   return out.sort((a, b) => (ORDER.indexOf(a.id) + 99 * (ORDER.indexOf(a.id) < 0)) - (ORDER.indexOf(b.id) + 99 * (ORDER.indexOf(b.id) < 0)));
 }
 
@@ -146,7 +146,7 @@ function main() {
       if (seen.has(p.slug)) errors.push(`${c.id}: duplicate slug ${p.slug}`);
       seen.add(p.slug);
       p.handbook = [...new Set(p.topics.map((t) => HANDBOOK_FOR_TOPIC[t]).filter((id) => id && pageIds.has(id)))];
-      summaries.push({ key: `${c.id}/${p.id}`, c: c.id, id: p.id, slug: p.slug, title: p.title, difficulty: p.difficulty, topics: p.topics });
+      summaries.push({ key: `${c.id}/${p.id}`, c: c.id, id: p.id, slug: p.slug, title: p.title, difficulty: p.difficulty, topics: p.topics, section: p.section || null });
       for (const t of p.topics) topicCount.set(t, (topicCount.get(t) || 0) + 1);
     }
     writeFileSync(join(OUT, "c", `${c.id}.json`), JSON.stringify(c));

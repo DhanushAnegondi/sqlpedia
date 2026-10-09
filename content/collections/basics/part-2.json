@@ -1,0 +1,1536 @@
+{
+  "problems": [
+    {
+      "id": "B013",
+      "slug": "count-the-rows",
+      "title": "Count the rows",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation"
+      ],
+      "section": "Counting and totals",
+      "statement_md": "A cafe wants to know how busy it has been. Return one row with one column, `order_count`, holding the number of orders in the table.",
+      "tables": [
+        {
+          "name": "cafe_orders",
+          "description_md": "One row per order. `tip` is NULL when the customer left no tip.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "item",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "price",
+              "type": "DECIMAL(5,2)"
+            },
+            {
+              "name": "tip",
+              "type": "DECIMAL(4,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Latte",
+              3.8,
+              0.5
+            ],
+            [
+              2,
+              "Espresso",
+              2.5,
+              null
+            ],
+            [
+              3,
+              "Muffin",
+              2.9,
+              null
+            ],
+            [
+              4,
+              "Mocha",
+              4.2,
+              1.0
+            ],
+            [
+              5,
+              "Tea",
+              2.2,
+              null
+            ],
+            [
+              6,
+              "Latte",
+              3.8,
+              0.4
+            ],
+            [
+              7,
+              "Bagel",
+              3.1,
+              0.6
+            ],
+            [
+              8,
+              "Cappuccino",
+              3.9,
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Which aggregate function counts how many rows there are?",
+        "Some `tip` values are NULL. Is that a reason to leave any order out of the count?"
+      ],
+      "notes_md": "**Concept:** an aggregate function squeezes many rows into one value.\n\n**Shape:** no grouping, no filter. The whole table collapses into a single row.\n\n**Syntax:** `COUNT(*)` counts rows; `COUNT(column)` counts only the rows where that column is not NULL.\n\n**Watch out:** counting a column that contains NULLs silently skips those rows.",
+      "solutions": [
+        {
+          "label": "COUNT(*)",
+          "explain_md": "`COUNT(*)` counts every row, whatever the values are.",
+          "sql": "SELECT COUNT(*) AS order_count\nFROM cafe_orders;"
+        },
+        {
+          "label": "COUNT of a column without NULLs",
+          "explain_md": "`order_id` is never NULL, so counting it gives the same number as counting rows.",
+          "sql": "SELECT COUNT(order_id) AS order_count\nFROM cafe_orders;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`COUNT(tip)` only counts orders that have a tip. The orders with a NULL tip are skipped, so the answer is too small.",
+          "sql": "SELECT COUNT(tip) AS order_count\nFROM cafe_orders;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "order_count"
+        ],
+        "rows": [
+          [
+            "8"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B014",
+      "slug": "count-star-versus-count-column",
+      "title": "COUNT(*) versus COUNT(column)",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation",
+        "NULL handling"
+      ],
+      "section": "Counting and totals",
+      "statement_md": "A library keeps a record of every loan. A loan that has not come back yet has a NULL `returned_on`. Return one row with `total_loans` (all loans) and `returned_loans` (loans that have been returned).",
+      "tables": [
+        {
+          "name": "loans",
+          "description_md": "One row per loan. `returned_on` is NULL while the book is still out.",
+          "columns": [
+            {
+              "name": "loan_id",
+              "type": "INT"
+            },
+            {
+              "name": "member_name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "book_title",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "loaned_on",
+              "type": "DATE"
+            },
+            {
+              "name": "returned_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Anita",
+              "Salt Roads",
+              "2026-05-02",
+              "2026-05-16"
+            ],
+            [
+              2,
+              "Bruno",
+              "Night Ferry",
+              "2026-05-03",
+              null
+            ],
+            [
+              3,
+              "Chloe",
+              "Salt Roads",
+              "2026-05-05",
+              "2026-05-19"
+            ],
+            [
+              4,
+              "Dev",
+              "Paper Lanterns",
+              "2026-05-06",
+              "2026-05-20"
+            ],
+            [
+              5,
+              "Anita",
+              "Night Ferry",
+              "2026-05-18",
+              null
+            ],
+            [
+              6,
+              "Elena",
+              "Tidewater",
+              "2026-05-20",
+              "2026-06-01"
+            ],
+            [
+              7,
+              "Bruno",
+              "Tidewater",
+              "2026-05-25",
+              null
+            ],
+            [
+              8,
+              "Chloe",
+              "Paper Lanterns",
+              "2026-05-28",
+              "2026-06-09"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "One of the two numbers should count every row, the other only rows where a column has a value.",
+        "Which form of `COUNT` ignores NULLs?"
+      ],
+      "notes_md": "**Concept:** `COUNT(*)` and `COUNT(column)` are different questions: how many rows, versus how many non-NULL values.\n\n**Shape:** one table, no grouping, two aggregates side by side in one row.\n\n**Syntax:** `COUNT(*)`, `COUNT(some_column)`.\n\n**Watch out:** if a column has no NULLs at all the two forms agree, which hides the difference until real data arrives.",
+      "solutions": [
+        {
+          "label": "COUNT(*) and COUNT(column)",
+          "explain_md": "`COUNT(*)` counts all loans; `COUNT(returned_on)` skips the NULLs, leaving only returned loans.",
+          "sql": "SELECT COUNT(*) AS total_loans,\n       COUNT(returned_on) AS returned_loans\nFROM loans;"
+        },
+        {
+          "label": "SUM of a yes/no test",
+          "explain_md": "A CASE expression gives 1 for a returned loan and 0 otherwise; adding them up counts the returned ones.",
+          "sql": "SELECT COUNT(*) AS total_loans,\n       SUM(CASE WHEN returned_on IS NOT NULL THEN 1 ELSE 0 END) AS returned_loans\nFROM loans;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`COUNT(returned_on)` is used for both columns, so `total_loans` only counts returned loans.",
+          "sql": "SELECT COUNT(returned_on) AS total_loans,\n       COUNT(returned_on) AS returned_loans\nFROM loans;"
+        },
+        {
+          "explain_md": "`COUNT(*)` is used for both columns, so `returned_loans` is just the total again.",
+          "sql": "SELECT COUNT(*) AS total_loans,\n       COUNT(*) AS returned_loans\nFROM loans;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "total_loans",
+          "returned_loans"
+        ],
+        "rows": [
+          [
+            "8",
+            "5"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B015",
+      "slug": "how-many-different",
+      "title": "How many different customers",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation"
+      ],
+      "section": "Counting and totals",
+      "statement_md": "A bookshop wants to know how many different customers have bought something. Return one row with one column, `customer_count`. A customer who bought several times counts once.",
+      "tables": [
+        {
+          "name": "bookshop_sales",
+          "description_md": "One row per purchase. The same `customer_id` can appear many times.",
+          "columns": [
+            {
+              "name": "sale_id",
+              "type": "INT"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "sold_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              101,
+              "The Quiet Orchard",
+              "2026-04-01"
+            ],
+            [
+              2,
+              102,
+              "Harbour Lights",
+              "2026-04-01"
+            ],
+            [
+              3,
+              101,
+              "Small Engines",
+              "2026-04-03"
+            ],
+            [
+              4,
+              103,
+              "The Quiet Orchard",
+              "2026-04-04"
+            ],
+            [
+              5,
+              104,
+              "Maps of Rain",
+              "2026-04-04"
+            ],
+            [
+              6,
+              102,
+              "Small Engines",
+              "2026-04-06"
+            ],
+            [
+              7,
+              101,
+              "Harbour Lights",
+              "2026-04-08"
+            ],
+            [
+              8,
+              105,
+              "Maps of Rain",
+              "2026-04-09"
+            ],
+            [
+              9,
+              103,
+              "Harbour Lights",
+              "2026-04-10"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Counting rows would count a repeat customer every time they appear. How can you ask `COUNT` to ignore repeats?",
+        "Look for a keyword you can put inside the brackets."
+      ],
+      "notes_md": "**Concept:** counting unique values rather than rows.\n\n**Shape:** no grouping; one aggregate over a single column, with duplicates removed before counting.\n\n**Syntax:** `COUNT(DISTINCT column)`.\n\n**Watch out:** `COUNT(column)` and `COUNT(DISTINCT column)` only differ when values repeat, so test on data that does repeat.",
+      "solutions": [
+        {
+          "label": "COUNT(DISTINCT)",
+          "explain_md": "`DISTINCT` inside `COUNT` removes repeated customer ids before counting.",
+          "sql": "SELECT COUNT(DISTINCT customer_id) AS customer_count\nFROM bookshop_sales;"
+        },
+        {
+          "label": "Count a list of distinct ids",
+          "explain_md": "First build the list of unique customer ids, then count its rows.",
+          "sql": "SELECT COUNT(*) AS customer_count\nFROM (SELECT DISTINCT customer_id FROM bookshop_sales) AS unique_customers;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`COUNT(customer_id)` counts purchases, not people, so repeat customers are counted every time.",
+          "sql": "SELECT COUNT(customer_id) AS customer_count\nFROM bookshop_sales;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "customer_count"
+        ],
+        "rows": [
+          [
+            "5"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B016",
+      "slug": "total-average-smallest-largest",
+      "title": "Total, average, smallest, largest",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation",
+        "Numeric functions"
+      ],
+      "section": "Counting and totals",
+      "statement_md": "A garden centre wants a quick summary of its plant prices. Return one row with `total_value` (sum of all prices), `average_price` (rounded to 2 decimals), `cheapest` and `priciest`.",
+      "tables": [
+        {
+          "name": "plants",
+          "description_md": "One row per plant on sale.",
+          "columns": [
+            {
+              "name": "plant_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "price",
+              "type": "DECIMAL(6,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Lavender",
+              4.5
+            ],
+            [
+              2,
+              "Rose bush",
+              12.0
+            ],
+            [
+              3,
+              "Fern",
+              7.25
+            ],
+            [
+              4,
+              "Olive tree",
+              18.99
+            ],
+            [
+              5,
+              "Basil pot",
+              3.75
+            ],
+            [
+              6,
+              "Lemon tree",
+              22.5
+            ],
+            [
+              7,
+              "Hydrangea",
+              9.8
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Four different aggregate functions are needed, each on the `price` column.",
+        "Which function rounds a number to a chosen number of decimals? Its second argument is the number of decimals."
+      ],
+      "notes_md": "**Concept:** several aggregates can be calculated together in a single pass over the table.\n\n**Shape:** one row out; each output column is its own aggregate. The rounding goes around the average.\n\n**Syntax:** `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`, `ROUND(value, decimals)`.\n\n**Watch out:** an average often has many decimals; round it only in the final output.",
+      "solutions": [
+        {
+          "label": "Four aggregates",
+          "explain_md": "`SUM`, `AVG`, `MIN` and `MAX` all look at the whole table; `ROUND(..., 2)` trims the average.",
+          "sql": "SELECT SUM(price) AS total_value,\n       ROUND(AVG(price), 2) AS average_price,\n       MIN(price) AS cheapest,\n       MAX(price) AS priciest\nFROM plants;"
+        },
+        {
+          "label": "Average as sum divided by count",
+          "explain_md": "The average is just the total divided by the number of plants.",
+          "sql": "SELECT SUM(price) AS total_value,\n       ROUND(SUM(price) / COUNT(*), 2) AS average_price,\n       MIN(price) AS cheapest,\n       MAX(price) AS priciest\nFROM plants;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`ROUND(AVG(price), 1)` keeps only 1 decimal, but the question asks for 2.",
+          "sql": "SELECT SUM(price) AS total_value,\n       ROUND(AVG(price), 1) AS average_price,\n       MIN(price) AS cheapest,\n       MAX(price) AS priciest\nFROM plants;"
+        },
+        {
+          "explain_md": "`ROUND(AVG(price))` with no second argument rounds to a whole number.",
+          "sql": "SELECT SUM(price) AS total_value,\n       ROUND(AVG(price)) AS average_price,\n       MIN(price) AS cheapest,\n       MAX(price) AS priciest\nFROM plants;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "total_value",
+          "average_price",
+          "cheapest",
+          "priciest"
+        ],
+        "rows": [
+          [
+            "78.79",
+            "11.26",
+            "3.75",
+            "22.50"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B017",
+      "slug": "average-ignores-nulls",
+      "title": "Average ignores NULLs",
+      "difficulty": "Medium",
+      "topics": [
+        "Aggregation",
+        "NULL handling"
+      ],
+      "section": "Counting and totals",
+      "statement_md": "A recipe site lets visitors leave a comment with or without a star rating; when no stars were given, `stars` is NULL. Return one row with `avg_stars`: the average star rating over the ratings that actually have stars, rounded to 2 decimals.",
+      "tables": [
+        {
+          "name": "recipe_ratings",
+          "description_md": "One row per visitor response. `stars` is 1 to 5, or NULL if the visitor only left a comment.",
+          "columns": [
+            {
+              "name": "rating_id",
+              "type": "INT"
+            },
+            {
+              "name": "recipe",
+              "type": "VARCHAR(25)"
+            },
+            {
+              "name": "stars",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Lentil soup",
+              5
+            ],
+            [
+              2,
+              "Lentil soup",
+              4
+            ],
+            [
+              3,
+              "Lentil soup",
+              null
+            ],
+            [
+              4,
+              "Lemon tart",
+              3
+            ],
+            [
+              5,
+              "Lemon tart",
+              5
+            ],
+            [
+              6,
+              "Lemon tart",
+              null
+            ],
+            [
+              7,
+              "Flatbread",
+              4
+            ],
+            [
+              8,
+              "Flatbread",
+              2
+            ],
+            [
+              9,
+              "Flatbread",
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Think about what `AVG` does with a NULL value in the column. Does it need your help?",
+        "If you replace NULL by a number before averaging, you change the denominator. Is a missing rating the same as a 0-star rating?"
+      ],
+      "notes_md": "**Concept:** aggregate functions other than `COUNT(*)` skip NULLs, which is usually what you want.\n\n**Shape:** one table, no grouping, one aggregate, rounded at the end.\n\n**Syntax:** `AVG(column)` averages the non-NULL values; `COALESCE(col, 0)` swaps NULL for 0.\n\n**Watch out:** turning NULL into 0 before averaging pulls the average down, because the missing values now count as real zeros.",
+      "solutions": [
+        {
+          "label": "AVG skips NULLs",
+          "explain_md": "`AVG` only looks at rows where `stars` has a value, so the missing ratings are left out of both the sum and the count.",
+          "sql": "SELECT ROUND(AVG(stars), 2) AS avg_stars\nFROM recipe_ratings;"
+        },
+        {
+          "label": "Filter the NULLs out first",
+          "explain_md": "`WHERE` removes the rows without stars, then `AVG` averages what is left. Same answer, more explicit.",
+          "sql": "SELECT ROUND(AVG(stars), 2) AS avg_stars\nFROM recipe_ratings\nWHERE stars IS NOT NULL;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`COALESCE(stars, 0)` turns every missing rating into a 0-star rating, so those rows now count in the average and drag it down.",
+          "sql": "SELECT ROUND(AVG(COALESCE(stars, 0)), 2) AS avg_stars\nFROM recipe_ratings;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "avg_stars"
+        ],
+        "rows": [
+          [
+            "3.83"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B018",
+      "slug": "totals-per-group",
+      "title": "Totals per group",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation",
+        "Sorting"
+      ],
+      "section": "GROUP BY and HAVING",
+      "statement_md": "A cinema wants to know which snack type earns the most. Return `product_type` and `total_amount` (the sum of `amount`) for each product type, highest total first, ties by `product_type`.",
+      "tables": [
+        {
+          "name": "concession_sales",
+          "description_md": "One row per snack sale at the cinema kiosk.",
+          "columns": [
+            {
+              "name": "sale_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_type",
+              "type": "VARCHAR(15)"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(6,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "popcorn",
+              6.5
+            ],
+            [
+              2,
+              "drinks",
+              4.0
+            ],
+            [
+              3,
+              "nachos",
+              8.0
+            ],
+            [
+              4,
+              "popcorn",
+              6.5
+            ],
+            [
+              5,
+              "candy",
+              2.5
+            ],
+            [
+              6,
+              "drinks",
+              4.5
+            ],
+            [
+              7,
+              "popcorn",
+              7.0
+            ],
+            [
+              8,
+              "nachos",
+              8.0
+            ],
+            [
+              9,
+              "drinks",
+              4.0
+            ],
+            [
+              10,
+              "candy",
+              3.0
+            ],
+            [
+              11,
+              "drinks",
+              3.5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You want one output row per product type. Which clause makes rows with the same value collapse into one group?",
+        "Every column in `SELECT` must either be in that clause or be inside an aggregate function."
+      ],
+      "notes_md": "**Concept:** `GROUP BY` splits the rows into buckets by a column, then each aggregate is calculated per bucket.\n\n**Shape:** one row per distinct product type, with the sum of its amounts, sorted by that sum.\n\n**Syntax:** `GROUP BY key` makes one group per key value; an aggregate in SELECT (`SUM`, `COUNT`, ...) is computed once per group.\n\n**Watch out:** grouping by a unique column (like an id) makes every row its own group, so nothing is combined.",
+      "solutions": [
+        {
+          "label": "GROUP BY with SUM",
+          "explain_md": "Rows are grouped by `product_type`; `SUM(amount)` adds up each group. The sort puts the largest total first, with the name as tie-break.",
+          "sql": "SELECT product_type, SUM(amount) AS total_amount\nFROM concession_sales\nGROUP BY product_type\nORDER BY total_amount DESC, product_type;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Grouping by `sale_id` makes every sale its own group, so nothing is totalled per product type.",
+          "sql": "SELECT product_type, SUM(amount) AS total_amount\nFROM concession_sales\nGROUP BY sale_id, product_type\nORDER BY total_amount DESC, product_type;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "product_type",
+          "total_amount"
+        ],
+        "rows": [
+          [
+            "popcorn",
+            "20.00"
+          ],
+          [
+            "drinks",
+            "16.00"
+          ],
+          [
+            "nachos",
+            "16.00"
+          ],
+          [
+            "candy",
+            "5.50"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B019",
+      "slug": "count-per-group",
+      "title": "Count per group",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation",
+        "Sorting"
+      ],
+      "section": "GROUP BY and HAVING",
+      "statement_md": "A school wants to see how many students are in each class. Return `class_name` and `student_count`, largest class first, ties by `class_name`.",
+      "tables": [
+        {
+          "name": "students",
+          "description_md": "One row per student. `club` is NULL when the student has not joined a club.",
+          "columns": [
+            {
+              "name": "student_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(15)"
+            },
+            {
+              "name": "class_name",
+              "type": "VARCHAR(5)"
+            },
+            {
+              "name": "club",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ravi",
+              "7A",
+              "chess"
+            ],
+            [
+              2,
+              "Sana",
+              "7A",
+              null
+            ],
+            [
+              3,
+              "Tomas",
+              "7A",
+              "drama"
+            ],
+            [
+              4,
+              "Uma",
+              "8A",
+              null
+            ],
+            [
+              5,
+              "Viktor",
+              "8A",
+              null
+            ],
+            [
+              6,
+              "Wen",
+              "8A",
+              null
+            ],
+            [
+              7,
+              "Xavier",
+              "7B",
+              "chess"
+            ],
+            [
+              8,
+              "Yara",
+              "7B",
+              null
+            ],
+            [
+              9,
+              "Zoe",
+              "8B",
+              "drama"
+            ],
+            [
+              10,
+              "Arjun",
+              "8B",
+              "chess"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You want one row per class, so group by the class column.",
+        "Which form of `COUNT` counts rows no matter what the other columns contain?"
+      ],
+      "notes_md": "**Concept:** counting rows inside each group.\n\n**Shape:** group by class, count the rows in each group, then sort by that count with the class name as tie-break.\n\n**Syntax:** `GROUP BY key` makes one group per key value; an aggregate in SELECT is computed once per group. ORDER BY can sort by an aggregate.\n\n**Watch out:** `COUNT(column)` skips NULLs in that column, so a group can look smaller than it really is.",
+      "solutions": [
+        {
+          "label": "COUNT(*) per class",
+          "explain_md": "Each class forms a group; `COUNT(*)` counts its rows. Sorting by the count descending and then by name makes the order stable.",
+          "sql": "SELECT class_name, COUNT(*) AS student_count\nFROM students\nGROUP BY class_name\nORDER BY student_count DESC, class_name;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`COUNT(club)` skips students without a club, so the class sizes are wrong and the order changes.",
+          "sql": "SELECT class_name, COUNT(club) AS student_count\nFROM students\nGROUP BY class_name\nORDER BY student_count DESC, class_name;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "class_name",
+          "student_count"
+        ],
+        "rows": [
+          [
+            "7A",
+            "3"
+          ],
+          [
+            "8A",
+            "3"
+          ],
+          [
+            "7B",
+            "2"
+          ],
+          [
+            "8B",
+            "2"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B020",
+      "slug": "group-by-two-columns",
+      "title": "Group by two columns",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation",
+        "Sorting"
+      ],
+      "section": "GROUP BY and HAVING",
+      "statement_md": "A bakery chain sells bread, cakes and pastry in two stores. Return `store`, `category` and `total_amount` (the sum of `amount`) for every store and category pair that has sales, ordered by `store` and then `category`.",
+      "tables": [
+        {
+          "name": "bakery_sales",
+          "description_md": "One row per sale.",
+          "columns": [
+            {
+              "name": "sale_id",
+              "type": "INT"
+            },
+            {
+              "name": "store",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "category",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(6,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Harbour",
+              "bread",
+              3.5
+            ],
+            [
+              2,
+              "Harbour",
+              "bread",
+              4.0
+            ],
+            [
+              3,
+              "Harbour",
+              "cakes",
+              18.0
+            ],
+            [
+              4,
+              "Harbour",
+              "pastry",
+              2.75
+            ],
+            [
+              5,
+              "Uptown",
+              "bread",
+              3.5
+            ],
+            [
+              6,
+              "Uptown",
+              "cakes",
+              22.0
+            ],
+            [
+              7,
+              "Uptown",
+              "cakes",
+              19.5
+            ],
+            [
+              8,
+              "Uptown",
+              "pastry",
+              2.75
+            ],
+            [
+              9,
+              "Uptown",
+              "pastry",
+              3.25
+            ],
+            [
+              10,
+              "Harbour",
+              "pastry",
+              3.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "A group here is a combination: one store and one category together.",
+        "You can list more than one column after the grouping keyword, separated by commas."
+      ],
+      "notes_md": "**Concept:** a group can be defined by several columns at once; each distinct combination is one group.\n\n**Shape:** one row per store and category pair, with a sum, sorted by both.\n\n**Syntax:** `GROUP BY a, b`.\n\n**Watch out:** every non-aggregate column in `SELECT` must also appear in `GROUP BY`; leaving one out loses that detail from the output.",
+      "solutions": [
+        {
+          "label": "GROUP BY store, category",
+          "explain_md": "Each store and category pair is one group, and `SUM(amount)` totals its sales.",
+          "sql": "SELECT store, category, SUM(amount) AS total_amount\nFROM bakery_sales\nGROUP BY store, category\nORDER BY store, category;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Grouping by store alone loses the category: the category breakdown is gone and you only get one total per store.",
+          "sql": "SELECT store, SUM(amount) AS total_amount\nFROM bakery_sales\nGROUP BY store\nORDER BY store;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "store",
+          "category",
+          "total_amount"
+        ],
+        "rows": [
+          [
+            "Harbour",
+            "bread",
+            "7.50"
+          ],
+          [
+            "Harbour",
+            "cakes",
+            "18.00"
+          ],
+          [
+            "Harbour",
+            "pastry",
+            "5.75"
+          ],
+          [
+            "Uptown",
+            "bread",
+            "3.50"
+          ],
+          [
+            "Uptown",
+            "cakes",
+            "41.50"
+          ],
+          [
+            "Uptown",
+            "pastry",
+            "6.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B021",
+      "slug": "only-groups-above-a-threshold",
+      "title": "Only groups above a threshold",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation",
+        "Filtering"
+      ],
+      "section": "GROUP BY and HAVING",
+      "statement_md": "A delivery company wants to reward its busiest couriers. Return `courier` and `deliveries` (the number of deliveries) for couriers with more than 2 deliveries, most deliveries first, ties by `courier`.",
+      "tables": [
+        {
+          "name": "deliveries",
+          "description_md": "One row per completed delivery.",
+          "columns": [
+            {
+              "name": "delivery_id",
+              "type": "INT"
+            },
+            {
+              "name": "courier",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "delivered_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Asha",
+              "2026-06-01"
+            ],
+            [
+              2,
+              "Ben",
+              "2026-06-01"
+            ],
+            [
+              3,
+              "Chen",
+              "2026-06-01"
+            ],
+            [
+              4,
+              "Asha",
+              "2026-06-02"
+            ],
+            [
+              5,
+              "Dara",
+              "2026-06-02"
+            ],
+            [
+              6,
+              "Asha",
+              "2026-06-03"
+            ],
+            [
+              7,
+              "Chen",
+              "2026-06-03"
+            ],
+            [
+              8,
+              "Ben",
+              "2026-06-04"
+            ],
+            [
+              9,
+              "Asha",
+              "2026-06-04"
+            ],
+            [
+              10,
+              "Chen",
+              "2026-06-05"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "First count deliveries per courier. Then you need a condition on that count.",
+        "Which clause filters groups after they have been formed, the way `WHERE` filters individual rows?"
+      ],
+      "notes_md": "**Concept:** `HAVING` is the filter for groups, applied after the aggregates are calculated.\n\n**Shape:** group by courier, count, keep only groups whose count passes the test, then sort.\n\n**Syntax:** `HAVING` filters groups after GROUP BY, and may use aggregates; `WHERE` filters rows before grouping and may not.\n\n**Watch out:** \"more than 2\" and \"at least 2\" are different; check what happens to a group of exactly 2.",
+      "solutions": [
+        {
+          "label": "HAVING COUNT(*) > 2",
+          "explain_md": "The rows are grouped per courier and counted; `HAVING` then drops the groups that did not pass the test.",
+          "sql": "SELECT courier, COUNT(*) AS deliveries\nFROM deliveries\nGROUP BY courier\nHAVING COUNT(*) > 2\nORDER BY deliveries DESC, courier;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`>= 2` lets in couriers with exactly 2 deliveries, but the question says more than 2.",
+          "sql": "SELECT courier, COUNT(*) AS deliveries\nFROM deliveries\nGROUP BY courier\nHAVING COUNT(*) >= 2\nORDER BY deliveries DESC, courier;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "courier",
+          "deliveries"
+        ],
+        "rows": [
+          [
+            "Asha",
+            "4"
+          ],
+          [
+            "Chen",
+            "3"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B022",
+      "slug": "where-before-having-after",
+      "title": "WHERE before, HAVING after",
+      "difficulty": "Medium",
+      "topics": [
+        "Aggregation",
+        "Filtering"
+      ],
+      "section": "GROUP BY and HAVING",
+      "statement_md": "A clinic wants to find doctors who earned more than 200 from appointments that were actually completed. Return `doctor` and `completed_total` (the sum of `fee` over completed appointments) for those doctors, highest total first, ties by `doctor`. Cancelled appointments must not count.",
+      "tables": [
+        {
+          "name": "appointments",
+          "description_md": "One row per booked appointment. `status` is `'completed'` or `'cancelled'`.",
+          "columns": [
+            {
+              "name": "appt_id",
+              "type": "INT"
+            },
+            {
+              "name": "doctor",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "fee",
+              "type": "DECIMAL(6,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Rao",
+              "completed",
+              120.0
+            ],
+            [
+              2,
+              "Rao",
+              "completed",
+              100.0
+            ],
+            [
+              3,
+              "Rao",
+              "cancelled",
+              80.0
+            ],
+            [
+              4,
+              "Lee",
+              "completed",
+              90.0
+            ],
+            [
+              5,
+              "Lee",
+              "cancelled",
+              150.0
+            ],
+            [
+              6,
+              "Lee",
+              "cancelled",
+              60.0
+            ],
+            [
+              7,
+              "Kim",
+              "completed",
+              110.0
+            ],
+            [
+              8,
+              "Kim",
+              "completed",
+              130.0
+            ],
+            [
+              9,
+              "Ortiz",
+              "completed",
+              60.0
+            ],
+            [
+              10,
+              "Ortiz",
+              "cancelled",
+              50.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "There are two separate conditions: one about single rows (their status) and one about the group total. Which clause suits each?",
+        "Rows you do not want in a total should be removed before the total is calculated."
+      ],
+      "notes_md": "**Concept:** `WHERE` filters rows before grouping; `HAVING` filters groups after aggregating. Each condition belongs to the right stage.\n\n**Shape:** first keep only the completed rows, then group per doctor and sum, then keep groups whose sum passes the test.\n\n**Syntax:** `WHERE row_condition GROUP BY key HAVING aggregate_condition`.\n\n**Watch out:** if the row filter is missing, the unwanted rows are still added into every total before `HAVING` looks at it.",
+      "solutions": [
+        {
+          "label": "WHERE then HAVING",
+          "explain_md": "`WHERE` throws away cancelled appointments first, so they never reach the sum; `HAVING` then tests the total.",
+          "sql": "SELECT doctor, SUM(fee) AS completed_total\nFROM appointments\nWHERE status = 'completed'\nGROUP BY doctor\nHAVING SUM(fee) > 200\nORDER BY completed_total DESC, doctor;"
+        },
+        {
+          "label": "Conditional sum inside HAVING",
+          "explain_md": "No `WHERE`: a `CASE` adds the fee only when the appointment was completed, and `HAVING` tests that sum.",
+          "sql": "SELECT doctor,\n       SUM(CASE WHEN status = 'completed' THEN fee ELSE 0 END) AS completed_total\nFROM appointments\nGROUP BY doctor\nHAVING SUM(CASE WHEN status = 'completed' THEN fee ELSE 0 END) > 200\nORDER BY completed_total DESC, doctor;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "With no row filter, cancelled appointments are added into each total, so Lee passes with fees that were never earned and the other totals are inflated.",
+          "sql": "SELECT doctor, SUM(fee) AS completed_total\nFROM appointments\nGROUP BY doctor\nHAVING SUM(fee) > 200\nORDER BY completed_total DESC, doctor;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "doctor",
+          "completed_total"
+        ],
+        "rows": [
+          [
+            "Kim",
+            "240.00"
+          ],
+          [
+            "Rao",
+            "220.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B023",
+      "slug": "groups-with-at-least-two-different",
+      "title": "Groups with at least two different",
+      "difficulty": "Medium",
+      "topics": [
+        "Aggregation",
+        "Filtering"
+      ],
+      "section": "GROUP BY and HAVING",
+      "statement_md": "A music app wants to find listeners who explore. Return `listener` and `artist_count` (the number of different artists they played) for listeners who played at least 2 different artists, highest `artist_count` first, ties by `listener`.",
+      "tables": [
+        {
+          "name": "plays",
+          "description_md": "One row per song played. The same listener can play the same artist many times.",
+          "columns": [
+            {
+              "name": "play_id",
+              "type": "INT"
+            },
+            {
+              "name": "listener",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "artist",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Mia",
+              "Nova"
+            ],
+            [
+              2,
+              "Mia",
+              "Nova"
+            ],
+            [
+              3,
+              "Mia",
+              "Nova"
+            ],
+            [
+              4,
+              "Noor",
+              "Nova"
+            ],
+            [
+              5,
+              "Noor",
+              "Echo"
+            ],
+            [
+              6,
+              "Omar",
+              "Echo"
+            ],
+            [
+              7,
+              "Omar",
+              "Echo"
+            ],
+            [
+              8,
+              "Pia",
+              "Nova"
+            ],
+            [
+              9,
+              "Pia",
+              "Echo"
+            ],
+            [
+              10,
+              "Pia",
+              "Tide"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You are counting something different from rows here. What did you use in an earlier problem to count unique values?",
+        "You need that unique count both in the output and as the group filter."
+      ],
+      "notes_md": "**Concept:** combine `COUNT(DISTINCT ...)` with `HAVING` to filter groups by how many different values they hold.\n\n**Shape:** group per listener, count unique artists, keep groups with at least two, sort.\n\n**Syntax:** `HAVING` filters groups after GROUP BY, and may use aggregates. `COUNT(DISTINCT col)` counts unique non-NULL values.\n\n**Watch out:** a plain `COUNT(*)` counts repeated plays of the same artist, so one fan of one artist can look adventurous.",
+      "solutions": [
+        {
+          "label": "HAVING COUNT(DISTINCT)",
+          "explain_md": "Per listener, `COUNT(DISTINCT artist)` ignores repeated plays of the same artist; `HAVING` keeps those with at least two.",
+          "sql": "SELECT listener, COUNT(DISTINCT artist) AS artist_count\nFROM plays\nGROUP BY listener\nHAVING COUNT(DISTINCT artist) >= 2\nORDER BY artist_count DESC, listener;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`COUNT(*)` counts plays, not artists, so Mia and Omar pass by replaying a single artist.",
+          "sql": "SELECT listener, COUNT(*) AS artist_count\nFROM plays\nGROUP BY listener\nHAVING COUNT(*) >= 2\nORDER BY artist_count DESC, listener;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "listener",
+          "artist_count"
+        ],
+        "rows": [
+          [
+            "Pia",
+            "3"
+          ],
+          [
+            "Noor",
+            "2"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "B024",
+      "slug": "the-biggest-group",
+      "title": "The biggest group",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation",
+        "Sorting"
+      ],
+      "section": "GROUP BY and HAVING",
+      "statement_md": "A gym wants to know which city most of its members live in. Return one row with `city` and `member_count` for the city with the most members. There is no tie for first place.",
+      "tables": [
+        {
+          "name": "gym_members",
+          "description_md": "One row per member.",
+          "columns": [
+            {
+              "name": "member_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(15)"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "Leeds"
+            ],
+            [
+              2,
+              "Bram",
+              "York"
+            ],
+            [
+              3,
+              "Cleo",
+              "Leeds"
+            ],
+            [
+              4,
+              "Dmitri",
+              "Bath"
+            ],
+            [
+              5,
+              "Esi",
+              "Leeds"
+            ],
+            [
+              6,
+              "Finn",
+              "York"
+            ],
+            [
+              7,
+              "Gita",
+              "Hull"
+            ],
+            [
+              8,
+              "Hugo",
+              "Leeds"
+            ],
+            [
+              9,
+              "Iris",
+              "Bath"
+            ],
+            [
+              10,
+              "Jon",
+              "York"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "First produce a member count per city. Then think about how to sort those counts so the largest is on top.",
+        "After sorting, how can you keep only the first row?"
+      ],
+      "notes_md": "**Concept:** a group count can be sorted like any column, then trimmed to the top row.\n\n**Shape:** group by city, count, order by the count with the biggest first, keep one row.\n\n**Syntax:** ORDER BY can sort by an aggregate or its alias; `LIMIT n` keeps the top n rows.\n\n**Watch out:** `ORDER BY` sorts ascending by default, so forgetting `DESC` returns the smallest group.",
+      "solutions": [
+        {
+          "label": "ORDER BY count DESC LIMIT 1",
+          "explain_md": "Group per city, sort the groups by their count from largest to smallest, and `LIMIT 1` keeps only the top group.",
+          "sql": "SELECT city, COUNT(*) AS member_count\nFROM gym_members\nGROUP BY city\nORDER BY member_count DESC, city\nLIMIT 1;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without `DESC` the sort starts at the smallest group, so the city with the fewest members is returned.",
+          "sql": "SELECT city, COUNT(*) AS member_count\nFROM gym_members\nGROUP BY city\nORDER BY member_count, city\nLIMIT 1;"
+        },
+        {
+          "explain_md": "Sorting by the city name instead of the count returns the alphabetically first city, which has nothing to do with size.",
+          "sql": "SELECT city, COUNT(*) AS member_count\nFROM gym_members\nGROUP BY city\nORDER BY city\nLIMIT 1;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "city",
+          "member_count"
+        ],
+        "rows": [
+          [
+            "Leeds",
+            "4"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

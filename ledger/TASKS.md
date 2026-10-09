@@ -16,6 +16,9 @@ unchecked item in "Pending". The throwaway MySQL used for verification starts wi
 - Clean app look (top nav, decluttered), Handbook in a calm reading layout. Remove "See also" and the big navbox.
 
 ## Completed
+- [x] 2026-10-09 SQL Basics collection (48, B001-B048, 8 sections) — user found the set too hard / window-heavy.
+      Verified real MySQL + engine; reviewer FAIL on Notes spoilers -> fixed. Library filter bar (difficulty toggles,
+      topic dropdown, multi-select) + section headings. Not committed yet.
 - [x] 2026-10-09 Two versions (user request): classic Wikipedia site kept at /classic/ (site/classic/, own progress key,
       one-time copy of shared progress), new site at /. Cross-links both ways. Committed and pushed.
 - [x] 2026-10-09 Reviewer pass (FAIL -> fixed): approach notes moved behind a fold; translator now matches MySQL for

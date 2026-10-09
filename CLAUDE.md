@@ -15,7 +15,8 @@ Task board: `ledger/TASKS.md`. Content formats: `content/SCHEMA.md`. Project ski
       Handbook pages, checklist), Submissions (history, load into editor, mark solved / attempted / undo).
 - [x] Editor: MySQL / SQL Server switch, drafts saved per problem and dialect, Ctrl+Enter run,
       Ctrl+Shift+Enter submit, verdict with missing / unexpected row diff, resizable split.
-- [x] Library: collections, difficulty, status, topic families (collapsed) — no clutter.
+- [x] Library: rail (collection, status) + filter bar (difficulty toggles, topic dropdown, multi-select), section
+      headings inside a collection — no clutter.
 - [x] Handbook: 29 pages in 5 groups, dialect switch, every argument annotated, editable runnable examples,
       outputs verified on MySQL 8.0.
 - [x] Home, Progress (heatmap, streaks, by collection / difficulty, log, export / import), dataset pages
@@ -34,6 +35,7 @@ Task board: `ledger/TASKS.md`. Content formats: `content/SCHEMA.md`. Project ski
 ## Content
 | Collection | Source | Problems | Tables |
 |---|---|---|---|
+| SQL Basics | `content/collections/basics/` (_meta + part-1..4, `section` per problem) | 48 | own per problem |
 | Interview Patterns | `content/collections/patterns/` (_meta + part-a/b/c) | 48 | own per problem |
 | Apple SDE – Data prep | `content/collections/apple.json` (from `Apple_prep/.sql_cheatsheet_validation/validated_bank.json` via `scripts/authoring/import_apple_bank.py`) | 60 | own per problem |
 | Campus | `sets/campus/` (MySQL-native, `## Topic N` sections) | 31 | shared dataset |
