@@ -1,200 +1,112 @@
 # SQLpedia — build brief
 
-A local website that looks and behaves like Wikipedia (Vector 2022 skin), where every article
-is a SQL interview problem. It is a reading platform: statement, schema, input data and
-expected output rendered properly, plus a LeetCode-style practice tracker. Queries are
-written and run by the user in MySQL Workbench against their local MySQL 8.0 — the site does
-not execute SQL.
+A static SQL interview-practice site (GitHub Pages: https://dhanushanegondi.github.io/sqlpedia/).
+Problems come with their own tables and a DataLemur-style workspace — tabs Question / Solution / Notes /
+Submissions on the left, an editor with Run and Submit on the right. SQL runs in the browser (DuckDB-WASM)
+through a translator that accepts MySQL 8.0 or SQL Server syntax. A Handbook explains every topic with
+annotated syntax and runnable examples. Progress lives in the browser.
 
-This file is the contract for every build session. Global rules (ledger, loop, model tiers)
-come from `~/.claude/CLAUDE.md`. Phased build: `PLAN.md`. Project skills: `.claude/skills/`.
+This file is the contract. Global rules (ledger, loop, model tiers) come from `~/.claude/CLAUDE.md`.
+Task board: `ledger/TASKS.md`. Content formats: `content/SCHEMA.md`. Project skills: `.claude/skills/`.
 
-## Why this exists
-- Problem sets arrive as Markdown (`starter_pac/QUESTIONS.md`). Reading pipes and dashes in an
-  editor is unpleasant. The site turns each question into a clean article with real tables.
-- Sets today: **ShopLite** (`starter_pac/`, 30 problems, difficulty tiers, Postgres originals
-  ported to MySQL) and **Campus** (`sets/campus/`, 31 problems, university domain, grouped by
-  interview pattern, authored natively in MySQL 8.0). Adding a set must be "drop a folder,
-  run one command", never editing app code.
+## What "done" means (current phase)
+- [x] Workspace: Question (statement, tables, expected output, hints, MySQL note), Solution (reveal-gated,
+      approaches, common wrong answers, Postgres original for ShopLite), Notes (memory joggers, related
+      Handbook pages, checklist), Submissions (history, load into editor, mark solved / attempted / undo).
+- [x] Editor: MySQL / SQL Server switch, drafts saved per problem and dialect, Ctrl+Enter run,
+      Ctrl+Shift+Enter submit, verdict with missing / unexpected row diff, resizable split.
+- [x] Library: collections, difficulty, status, topic families (collapsed) — no clutter.
+- [x] Handbook: 29 pages in 5 groups, dialect switch, every argument annotated, editable runnable examples,
+      outputs verified on MySQL 8.0.
+- [x] Home, Progress (heatmap, streaks, by collection / difficulty, log, export / import), dataset pages
+      for ShopLite / Campus.
+- [x] Every reference solution and every handbook example passes on real MySQL and in the browser engine.
+- [ ] Reviewer pass findings applied; deployed.
 
-## Definition of done (v1)
-- [ ] Wikipedia look: Vector 2022 layout, typography, colors, light and dark mode.
-- [ ] Section navigation: left "Main menu" sidebar plus a section dropdown in the header
-      (sets, tiers, topics, Progress, Random problem). Works at phone width.
-- [ ] Problem article: statement, schema, input data, expected output, hints, solutions —
-      rendered as proper tables and diagrams, never Markdown pipes or ASCII lines.
-- [ ] Copy buttons for the dataset `setup.sql` and every solution, so pasting into Workbench
-      is one click.
-- [ ] Solutions shown in MySQL 8.0 dialect (ported from the Postgres originals), hidden until
-      revealed.
-- [ ] Practice tracker: "Mark as completed" per problem (optional pasted answer + note),
-      activity heatmap of practice days, current and longest streak, solved count per set and
-      tier, per-problem status.
-- [ ] Adding a second set needs zero changes to app code.
-- [ ] Verified in a served browser session: every page, both themes, 1280px and 375px,
-      console clean.
+## Two versions
+- New site at `/sqlpedia/` (`site/`), classic Wikipedia-skin site at `/sqlpedia/classic/` (`site/classic/`,
+  restored from commit 3f3bb4f). They link to each other.
+- The classic site reads the legacy set files that `scripts/build_content.mjs` copies to `site/classic/data/`
+  (ShopLite + Campus only) and stores progress under `sqlpedia.classic.v1` (it copies `sqlpedia.v1` once on first
+  visit, never writes it — its older store would drop the new site's submissions).
+- The classic site is frozen: fix bugs there only if asked; new features go to the new site.
 
-## Environment (verified 2026-10-07)
-- MySQL Community Server 8.0.39 (service `MySQL80`), Workbench and MySQL Shell 8.0 — the
-  user's execution environment. Node 24.16.0 (importer only), Python 3.11 (static server).
-- MySQL 8.0 has window functions, `WITH RECURSIVE`, `LATERAL`; it lacks `PERCENTILE_CONT`,
-  `generate_series`, `FILTER`, `DATE_TRUNC`, `DISTINCT ON`, and `||` means OR.
+## Content
+| Collection | Source | Problems | Tables |
+|---|---|---|---|
+| Interview Patterns | `content/collections/patterns/` (_meta + part-a/b/c) | 48 | own per problem |
+| Apple SDE – Data prep | `content/collections/apple.json` (from `Apple_prep/.sql_cheatsheet_validation/validated_bank.json` via `scripts/authoring/import_apple_bank.py`) | 60 | own per problem |
+| Campus | `sets/campus/` (MySQL-native, `## Topic N` sections) | 31 | shared dataset |
+| ShopLite | `starter_pac/` (read-only; Postgres originals, ports in `mysql/shoplite/`) | 30 | shared dataset |
 
-## Source content (read-only)
-`starter_pac/` is set 1 ("ShopLite"). Never edit these files; parse them.
+Handbook: `content/handbook/<page>.json` + shared tables `content/handbook/_dataset.json`.
 
-| File | Holds | Parse rules |
-|---|---|---|
-| `QUESTIONS.md` | Intro, ER diagram (mermaid), table summary, conventions, planted traps, "do these 10 first", questions grouped in sections | Section = `## Tier X — …` (difficulty) or `## Topic N — …` (pattern); the word sets the set's `group_kind`, and the UI labels Topic sections by their title. Problem = `### Q<n> · <title>` + optional `` `≈ LC <n>` ``. Statement = text until the first `<details>`. `<summary>Hint</summary>` = hint. `<summary>Expected…</summary>` = expected output; may repeat (`Expected (a)`, `Expected (b)`). Prose after a table inside the fold = note. `NULL` cell = SQL NULL. |
-| `setup.sql` | DDL + inserts, 4 tables | Runs as-is in MySQL. Parse `CREATE TABLE` for schema (column, type, PK/FK, inline `--` comment as note) and `INSERT` rows for the input-data tables. |
-| `solutions.sql` | PostgreSQL solutions keyed `-- @Q1` … `-- @Q30`, parts `-- @Q5a/b` | Block = marker to next marker. Approaches split on `-- (a)` / `-- (b)`. `-- @noeq` = DML/no single result (Q4). `-- TRAP` = common wrong answer (callout, never the answer). Shown only as a collapsed "PostgreSQL original". |
+Rules:
+- Expected outputs are never typed. `python scripts/verify/fill_expected.py <file>` runs the SQL on a
+  throwaway MySQL 8.0.39 (127.0.0.1:33079) and writes `expected` back. Then
+  `node scripts/verify/content_check.mjs <file>` runs MySQL and T-SQL through the browser engine.
+- Anything visible before Reveal (statement, hints, notes, MySQL notes, starter query) may warn about a
+  difference or name the pattern family, never the solution technique. (lessons.md)
+- Original wording only — never copy DataLemur / LeetCode questions, names or data.
+- Source sets (`starter_pac/`, `sets/<id>/`) are read-only; ShopLite/Campus parsing rules are in
+  `scripts/import.mjs` (sections `## Tier X — …` or `## Topic N — …`, `### Q<n> · title`, `<details>` folds,
+  `-- @Q<n>` solution markers, `-- TRAP`, `-- @noeq`).
 
-MySQL versions of Postgres solutions live in `mysql/<set-id>/solutions.sql`, same markers,
-written with the `port-to-mysql` skill. A set with no `mysql/<set-id>/` folder is
-**MySQL-native**: its own `solutions.sql` is the MySQL answer and there is no Postgres fold.
+## Build and verify
+```
+npm run import     # scripts/import.mjs (legacy sets -> .build/legacy) + scripts/build_content.mjs -> site/data/
+npm run serve      # http://localhost:8130
+npm run verify     # real MySQL (verify_mysql.py) + engine (engine_check.mjs) for ShopLite / Campus
+```
+`site/data/` (catalog.json, c/<collection>.json, h/<page>.json) is generated, gitignored, and rebuilt by the
+GitHub Actions workflow on every push to `main`.
 
-### Authoring a new MySQL-native set
-- Write `setup.sql` and `solutions.sql` (MySQL 8.0) in `sets/<set-id>/`, plus a generator
-  like `scripts/authoring/gen_campus.py` holding statements, hints and a DuckDB twin of each
-  reference query. The generator runs the twins on `setup.sql` and writes `QUESTIONS.md`,
-  so every expected table comes from execution, never from hand-typing.
-- Keep the twin logically identical to the MySQL answer; only dialect differs (`DATEDIFF` →
-  date subtraction, `GROUP_CONCAT` → `string_agg`, `DATE_SUB(d, INTERVAL n DAY)` → `d - n`).
-  Cast rounded values to DECIMAL so they print like MySQL (`3.70`, not `3.7`).
-- Check rounding at .x5 boundaries by hand: MySQL rounds DECIMAL exactly, DuckDB rounds DOUBLE.
+Throwaway MySQL for verification (never the user's MySQL80 service):
+`mysqld --no-defaults --initialize-insecure --datadir=<dir>` once, then
+`mysqld --no-defaults --datadir=<dir> --port=33079 --bind-address=127.0.0.1 --mysqlx=OFF`.
 
 ## Architecture
-Static site, no framework, no build step, no backend. Node runs only the importer.
-
 ```
-SQL/
-  CLAUDE.md  PLAN.md  package.json
-  starter_pac/                  source set 1, ShopLite (read-only)
-  sets/campus/                  set 2, Campus (MySQL-native)
-  sets/<set-id>/                future sets, same 3 files
-  scripts/authoring/            generators that compute expected outputs (DuckDB)
-  mysql/<set-id>/solutions.sql  MySQL ports
-  sets-meta/<set-id>.json       tags, dialect notes per problem (hand-written)
-  scripts/import.mjs            source + port + meta -> site/data/<set-id>.json + index.json
-  site/
-    index.html                  single page, hash router
-    css/wiki.css                Vector 2022 tokens + components
-    js/app.js (router + shell) data.js state.js util.js mermaid.js
-    js/views/ main.js problem.js set.js lists.js progress.js search.js parts.js
-    data/                       generated, never hand-edited
-  .claude/launch.json  .claude/skills/
-  ledger/
+site/
+  index.html                 shell: top bar (Problems, Handbook, Progress), search, streak, theme
+  css/app.css                design tokens (light/dark), app shell, workspace, handbook reading layout
+  js/app.js                  hash router, search, theme, copy
+  js/data.js                 catalog / collection / handbook loaders, topic families
+  js/state.js                progress store (localStorage "sqlpedia.v1")
+  js/util.js                 esc, md (fences, tables, lists), SQL highlighter, dataTable, icons, dates
+  js/ui/editor.js            textarea + highlight overlay editor
+  js/engine/translate.js     MySQL / T-SQL -> DuckDB (raises TranslateError for unsupported syntax)
+  js/engine/duck.js          duckdb-wasm 1.32.0 loader, fresh schema per run, Arrow -> MySQL-style strings
+  js/engine/judge.js         multiset compare with numeric tolerance
+  js/engine/fixtures.js      per-problem tables -> DDL + INSERT
+  js/views/                  home, library, workspace, handbook, progress, dataset, common
 ```
+Routes: `#/`, `#/problems?c=&topic=&d=&s=&q=`, `#/p/<collection>/<slug>[/solution|notes|submissions]`,
+`#/handbook`, `#/handbook/<page>[#section]`, `#/handbook/dataset`, `#/data/<collection>`, `#/progress`.
 
-Run: `python -m http.server 8130 --directory site` -> `http://localhost:8130`
-(`.claude/launch.json` entry `sqlpedia`). Import all sets: `npm run import`.
+### Engine notes
+- Session settings mimic MySQL / SQL Server: NULLs sort lowest, case-insensitive comparisons and LIKE.
+- DATE + INTERVAL returns a TIMESTAMP in DuckDB; all-midnight timestamp columns display as dates.
+- SQL Server is emulated: integer ÷ integer and AVG of ints return decimals (real SQL Server truncates) —
+  shown as a note in the UI. Known unsupported: REGEXP, PATINDEX, variables / temp tables, multi-table
+  DELETE, named time zones, TOP ... PERCENT.
+- When a writer or user hits a gap, fix it in `translate.js` and re-run `engine_check.mjs` + `content_check.mjs`.
 
-### Generated data contract (do not drift)
-`site/data/<set-id>.json`:
-```
-{ id, title, full_title, description_md, conventions_md, planted_traps[], essentials[],
-  setup_sql, er_mermaid,
-  tables: [{ name, columns: [{ name, type, pk, fk ("table.col"|null), nullable, note }], rows[][] }],
-  problems: [{
-    id ("Q1"), slug, number, title, tier, tier_title, lc_ref (string|null, e.g. "180 / 601"),
-    statement_md, dialect_note_md (string|null), tables_used[], tags[], hints_md[],
-    parts: [{ label ("" | "a" | "b"), expected: { columns[], rows[][] } | null, intro_md, note_md }],
-    solutions: [{ part, noeq, intro_md, mysql: [{ label, sql, comment_md }],
-                  traps: [{ label, sql, comment_md }], postgres_original }]
-  }] }
-```
-`site/data/index.json`: `{ sets: [{ id, title, full_title, problem_count, tiers: [{ id, title }] }] }`.
-Cell values are strings exactly as written in `QUESTIONS.md` / `setup.sql`; SQL NULL is `null`.
-- `tables_used` = tables named in the MySQL solution SQL.
-- `tags`, `dialect_note_md` come from `sets-meta/<set-id>.json`, written from the question
-  text only. Dialect notes cover where the Postgres wording doesn't hold in MySQL (Q20
-  `PERCENTILE_CONT`, Q28 `generate_series`, Q3/Q4 case-insensitive default collation, Q2
-  `LIMIT` inside subqueries).
-- `essentials` from the "Short on time? Do these N first" line.
-
-### Practice tracker
-- localStorage key `sqlpedia.v1`: `{ version: 1, problems: { "<set>/<id>": { status
-  ("new"|"attempted"|"solved"), completed_at, answer_sql, note, revealed, history: [{ at,
-  action ("completed"|"practiced"|"attempted"), note }] } }, days: { "YYYY-MM-DD": {
-  completed: [key], attempted: [key] } } }`. Appearance prefs live in `sqlpedia.appearance`.
-- "Practised again today" on a completed problem logs another practice (spaced review).
-- "Mark as completed" opens a small form: optional pasted query, optional note. "Mark as
-  attempted" exists too. Undo allowed.
-- Day keys in local time, never UTC. Streak = consecutive days with any logged practice
-  (completed or attempted); the current streak still counts if today is empty but yesterday isn't.
-- Progress page: export JSON (download) and import (confirm before replace). Banner warns
-  that clearing browser data deletes progress — export regularly. Every storage access in
-  try/catch; the site renders fine with storage unavailable.
-
-## Pages (Wikipedia mapping)
-| Wikipedia | SQLpedia |
-|---|---|
-| Main Page | Featured problem (next unsolved essential), "Did you know…" (planted traps), "In the news" (streak, last completed), set portals |
-| Article | Problem page |
-| Tabs Article / Talk, Read / View history | Problem / Solutions (reveal-gated); History = your completions of this problem |
-| Infobox | Set, tier, LC equivalent (plain text), tables used, tags, status, essential badge |
-| Table of contents (sticky) | Statement, Schema, Input data, Expected output, Hints, Solutions |
-| Category pages | One per tier and per tag |
-| Special:AllPages | All problems, filter by set / tier / tag / status |
-| Special:Random | Random unsolved problem |
-| Special:MyContributions | Progress page |
-| Dataset article | Per set: description, ER diagram, every table in full, conventions, traps, copyable `setup.sql` |
-| Search box | Client-side over titles, tags, statement text |
-
-Problem page:
-- Hatnote: set conventions in one line + link to the dataset article + "Copy setup.sql".
-- Lead = the statement, then the infobox (floats right on desktop; after the statement on
-  phones so the question is the first thing read), then the MySQL note.
-- Schema: one wikitable per used table (column, type, key, note) and the ER diagram.
-- Input data: each used table as a collapsible wikitable (collapsed if over 15 rows), row
-  count in the caption. NULL cells visibly marked (the planted traps are listed on the dataset
-  page).
-- Expected output: wikitable per part, note underneath.
-- Hints: collapsed "show" boxes.
-- Solutions: hidden until "Reveal" (confirm). MySQL approaches with copy buttons; traps as
-  warning callouts; Postgres original collapsed.
-- Status bar with Mark completed / attempted; prev / next navbox at the bottom.
+### Progress store
+`{ version: 1, problems: { "<collection>/<id>": { status, completed_at, revealed, note, answer_sql,
+history: [{ at, action }], submissions: [{ at, verdict, dialect, sql, ms }] } }, days: { "YYYY-MM-DD":
+{ completed: [key], attempted: [key] } } }`. Local-time day keys. Streak = consecutive days with any
+practice. Normalised on load and import. Testing must never write to a real user's store — call the
+engine directly or snapshot / restore localStorage.
 
 ## Design
-Fidelity to Wikipedia beats taste. Don't turn it into a SaaS app.
-- Port from `F:\Personal\Projects\wikistyle-demo\index.html` (self-contained Vector 2022
-  clone) and `F:\Personal\Projects\dhanuspedia\src\assets\css\wiki.css` + layouts.
-- Fonts: `sans-serif` body, Linux Libertine/Georgia serif headings, monospace code; content
-  width ~46em.
-- Own name and simple logo; never the Wikipedia wordmark, globe or the word "Wikipedia".
-- New components (tracker bar, heatmap, copy buttons) look native to MediaWiki: flat,
-  `#a2a9b1` borders, `#eaecf0` fills, `#3366cc` links, notice-box styling.
-- SQL syntax highlighting: the built-in tokenizer in `site/js/util.js` (no library).
-- Mermaid `10.9.1` from jsdelivr, lazy-loaded only on pages with a diagram, themed light and
-  dark; falls back to the diagram source if offline.
-- Heatmap: 53x7 grid, last 12 months, 4 steps of Wikipedia blue, tooltips, keyboard reachable.
-- WCAG AA both themes, visible focus, keyboard reachable, reduced motion respected.
-- CDN libraries from cdnjs or jsdelivr with exact pinned versions only. Today: mermaid only.
-
-## Skills
-Phase-by-phase mapping is in `PLAN.md`.
-- Project (`.claude/skills/`): `port-to-mysql`, `add-problem-set`, `verify-site`.
-- Design (`F:\Personal\Projects\frontend_designs\`): `skills/01-taste-and-craft/impeccable`,
-  `skills/05-audit-and-redesign/web-design-guidelines`, `.claude/skills/emil-design-eng`,
-  `website/library/` folders 03, 05, 08, 09.
-- Installed: `data:sql-queries` (dialect help), `dataviz` (heatmap), `run` /
-  `anthropic-skills:built-in-browser` (verification), `code-review`, `handoff`.
-- Skip taste skills that fight a faithful clone (gpt-taste, high-end-visual-design,
-  industrial-brutalist-ui, minimalist-ui).
-
-## Reviewer must check
-- Expected outputs match `QUESTIONS.md` cell for cell (spot-check 5, plus Q5, Q10, Q14, Q30).
-- No content invented: titles, statements, numbers, LC refs from the source files.
-- MySQL ports: no Postgres-only syntax left (`::`, `||`, `DATE_TRUNC`, `FILTER`,
-  `PERCENTILE_CONT`, `generate_series`, `DISTINCT ON`, `USING` deletes). Ideally the user has
-  run them in Workbench and confirmed the expected output (log the result in the ledger).
-- Wikipedia fidelity at 1280px and 375px, light and dark; no brand assets.
-- Heatmap local dates; streak correct across a missed day; export -> clear -> import restores.
-- Console clean on every page; every CDN URL pinned.
+Clean app shell (system sans, one blue accent, difficulty colours only on pills, light / dark tokens) and a
+calm Wikipedia-style reading layout for the Handbook (serif headings, left page nav, right section TOC).
+WCAG AA, visible focus, keyboard reachable, reduced motion respected, no page overflow at 375px.
+CDN: only `mermaid@10.9.1` and `@duckdb/duckdb-wasm@1.32.0` from jsdelivr, exact versions.
 
 ## Hard rules
-- Source sets are read-only. Generated JSON is never hand-edited — fix the importer.
-- Solutions shown as the answer are MySQL 8.0; Postgres only as the collapsed original.
-- No backend, no network calls besides pinned CDN libraries.
-- Never show a solution before the user asks.
-- Sentence-case headings, no emoji in committed files.
+- Never show a solution before the user asks (Reveal).
+- Source sets read-only; generated data never hand-edited.
+- No backend; only the two pinned CDN libraries.
+- Commit or push only when the user asks. Sentence-case headings; no emoji in committed files.

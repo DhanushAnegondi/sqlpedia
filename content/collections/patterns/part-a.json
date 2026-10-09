@@ -1,0 +1,2430 @@
+{
+  "problems": [
+    {
+      "id": "P001",
+      "slug": "urgent-tickets-still-open",
+      "title": "Urgent tickets still open",
+      "difficulty": "Easy",
+      "topics": [
+        "Filtering",
+        "Sorting",
+        "NULL handling"
+      ],
+      "statement_md": "A help desk wants a worklist. Return every ticket whose `priority` is `'high'` or `'urgent'` and that is not closed. A ticket with no status yet (`NULL`, not triaged) counts as not closed. Output `ticket_id`, `customer_id`, `priority`, `opened_at`, oldest `opened_at` first, ties by `ticket_id`.",
+      "tables": [
+        {
+          "name": "support_tickets",
+          "description_md": "One row per ticket. `status` is `'open'`, `'pending'`, `'closed'` or NULL (not triaged yet).",
+          "columns": [
+            {
+              "name": "ticket_id",
+              "type": "INT"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "priority",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "opened_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              101,
+              "high",
+              "open",
+              "2026-03-01 09:00:00"
+            ],
+            [
+              2,
+              102,
+              "urgent",
+              "closed",
+              "2026-03-01 09:30:00"
+            ],
+            [
+              3,
+              103,
+              "low",
+              "open",
+              "2026-03-02 10:00:00"
+            ],
+            [
+              4,
+              104,
+              "urgent",
+              null,
+              "2026-03-02 08:15:00"
+            ],
+            [
+              5,
+              101,
+              "high",
+              "closed",
+              "2026-03-03 14:00:00"
+            ],
+            [
+              6,
+              105,
+              "high",
+              "pending",
+              "2026-03-02 08:15:00"
+            ],
+            [
+              7,
+              106,
+              "medium",
+              null,
+              "2026-03-04 11:00:00"
+            ],
+            [
+              8,
+              107,
+              "urgent",
+              "open",
+              "2026-03-05 16:45:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "What does `status <> 'closed'` evaluate to when `status` is NULL?",
+        "AND binds tighter than OR. Do you need brackets?"
+      ],
+      "notes_md": "**Pattern family:** filtering with mixed AND/OR and NULL-able columns.\n\n**Shape:** one table, one WHERE. Keep the priority test and the status test as two separate conditions, then order the result.\n\n**Syntax:** `col IN ('a','b')`, `col IS NULL`, `ORDER BY a, b`.\n\n**Trap:** a comparison with NULL is never true, so `<>` silently drops NULL rows; and an unbracketed OR can swallow the other condition.",
+      "solutions": [
+        {
+          "label": "Brackets around the NULL test",
+          "explain_md": "`IN` handles the two priorities; the status test is bracketed so NULL is kept explicitly.",
+          "sql": "SELECT ticket_id, customer_id, priority, opened_at\nFROM support_tickets\nWHERE priority IN ('high', 'urgent')\n  AND (status IS NULL OR status <> 'closed')\nORDER BY opened_at, ticket_id;"
+        },
+        {
+          "label": "COALESCE the status",
+          "explain_md": "Replace NULL status by a harmless value before comparing.",
+          "sql": "SELECT ticket_id, customer_id, priority, opened_at\nFROM support_tickets\nWHERE priority IN ('high', 'urgent')\n  AND COALESCE(status, 'untriaged') <> 'closed'\nORDER BY opened_at, ticket_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`status <> 'closed'` is unknown for NULL status, so ticket 4 (never triaged) disappears.",
+          "sql": "SELECT ticket_id, customer_id, priority, opened_at\nFROM support_tickets\nWHERE priority IN ('high', 'urgent') AND status <> 'closed'\nORDER BY opened_at, ticket_id;"
+        },
+        {
+          "explain_md": "AND binds tighter than OR, so every `'high'` ticket passes, including closed ones.",
+          "sql": "SELECT ticket_id, customer_id, priority, opened_at\nFROM support_tickets\nWHERE priority = 'high' OR priority = 'urgent' AND (status IS NULL OR status <> 'closed')\nORDER BY opened_at, ticket_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "ticket_id",
+          "customer_id",
+          "priority",
+          "opened_at"
+        ],
+        "rows": [
+          [
+            "1",
+            "101",
+            "high",
+            "2026-03-01 09:00:00"
+          ],
+          [
+            "4",
+            "104",
+            "urgent",
+            "2026-03-02 08:15:00"
+          ],
+          [
+            "6",
+            "105",
+            "high",
+            "2026-03-02 08:15:00"
+          ],
+          [
+            "8",
+            "107",
+            "urgent",
+            "2026-03-05 16:45:00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P002",
+      "slug": "listeners-per-artist",
+      "title": "Plays versus listeners per artist",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation",
+        "NULL handling"
+      ],
+      "statement_md": "For each artist return `artist`, `plays` (number of play rows) and `listeners` (number of different signed-in users who played them). Anonymous plays have a NULL `user_id`: they count as plays but not as listeners. Order by `listeners` descending, then `artist`.",
+      "tables": [
+        {
+          "name": "plays",
+          "description_md": "One row per play. `user_id` is NULL for anonymous (logged-out) plays.",
+          "columns": [
+            {
+              "name": "play_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "artist",
+              "type": "VARCHAR(30)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              10,
+              "Nova Lane"
+            ],
+            [
+              2,
+              10,
+              "Nova Lane"
+            ],
+            [
+              3,
+              11,
+              "Nova Lane"
+            ],
+            [
+              4,
+              null,
+              "Nova Lane"
+            ],
+            [
+              5,
+              12,
+              "Brass Owls"
+            ],
+            [
+              6,
+              12,
+              "Brass Owls"
+            ],
+            [
+              7,
+              12,
+              "Brass Owls"
+            ],
+            [
+              8,
+              11,
+              "Tiny Orchard"
+            ],
+            [
+              9,
+              null,
+              "Tiny Orchard"
+            ],
+            [
+              10,
+              13,
+              "Tiny Orchard"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "How many times does one user appear in `plays` for the same artist?",
+        "Which counting forms skip NULLs, and which count rows?"
+      ],
+      "notes_md": "**Pattern family:** aggregation, counting rows versus counting distinct values.\n\n**Shape:** GROUP BY artist, two different counts side by side.\n\n**Syntax:** `COUNT(*)` counts rows, `COUNT(col)` counts non-NULL values, `COUNT(DISTINCT col)` counts different non-NULL values.\n\n**Trap:** `COUNT(col)` is not a distinct count; it only skips NULLs.",
+      "solutions": [
+        {
+          "label": "COUNT(*) and COUNT(DISTINCT)",
+          "explain_md": "Rows are plays; distinct non-NULL user ids are listeners.",
+          "sql": "SELECT artist, COUNT(*) AS plays, COUNT(DISTINCT user_id) AS listeners\nFROM plays\nGROUP BY artist\nORDER BY listeners DESC, artist;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`COUNT(user_id)` skips NULLs but still counts repeat listeners, so one fan who plays a track 3 times looks like 3 listeners.",
+          "sql": "SELECT artist, COUNT(*) AS plays, COUNT(user_id) AS listeners\nFROM plays\nGROUP BY artist\nORDER BY listeners DESC, artist;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "artist",
+          "plays",
+          "listeners"
+        ],
+        "rows": [
+          [
+            "Nova Lane",
+            "4",
+            "2"
+          ],
+          [
+            "Tiny Orchard",
+            "3",
+            "2"
+          ],
+          [
+            "Brass Owls",
+            "3",
+            "1"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P003",
+      "slug": "videos-watched-histogram",
+      "title": "Histogram of videos watched in March",
+      "difficulty": "Medium",
+      "topics": [
+        "Aggregation",
+        "Joins",
+        "NULL handling",
+        "Dates"
+      ],
+      "statement_md": "Build a histogram: how many users watched exactly 0, 1, 2, ... videos during March 2026 (timestamps from `2026-03-01 00:00:00` up to but not including `2026-04-01 00:00:00`)? Every registered user counts, including those who watched nothing. Return `views_count` and `users`, one row per views_count that occurs, ordered by `views_count`.",
+      "tables": [
+        {
+          "name": "users",
+          "description_md": "One row per registered user.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Asha"
+            ],
+            [
+              2,
+              "Bram"
+            ],
+            [
+              3,
+              "Chen"
+            ],
+            [
+              4,
+              "Dara"
+            ],
+            [
+              5,
+              "Eli"
+            ],
+            [
+              6,
+              "Faye"
+            ],
+            [
+              7,
+              "Gio"
+            ]
+          ]
+        },
+        {
+          "name": "views",
+          "description_md": "One row per video view.",
+          "columns": [
+            {
+              "name": "view_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "viewed_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-03-01 00:00:00"
+            ],
+            [
+              2,
+              1,
+              "2026-03-10 12:00:00"
+            ],
+            [
+              3,
+              2,
+              "2026-03-15 09:00:00"
+            ],
+            [
+              4,
+              3,
+              "2026-03-31 23:59:59"
+            ],
+            [
+              5,
+              3,
+              "2026-04-01 00:00:00"
+            ],
+            [
+              6,
+              3,
+              "2026-03-20 18:30:00"
+            ],
+            [
+              7,
+              4,
+              "2026-02-28 23:59:59"
+            ],
+            [
+              8,
+              5,
+              "2026-03-05 10:00:00"
+            ],
+            [
+              9,
+              5,
+              "2026-03-06 10:00:00"
+            ],
+            [
+              10,
+              2,
+              "2026-03-16 11:00:00"
+            ],
+            [
+              11,
+              5,
+              "2026-03-07 08:00:00"
+            ],
+            [
+              12,
+              2,
+              "2026-03-17 21:00:00"
+            ],
+            [
+              13,
+              6,
+              "2026-03-12 14:00:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need a count per user first, then a count of users per count.",
+        "Where does a date condition have to live so that users with no views in the window are not lost?"
+      ],
+      "notes_md": "**Pattern family:** aggregation of an aggregation (count of counts), outer join.\n\n**Shape:** inner step gives one count per user, starting from the users table so zero-activity users exist; outer step groups those counts and counts users.\n\n**Syntax:** `COUNT(right.id)` is 0 for unmatched rows from a LEFT JOIN; a derived table `FROM (SELECT ...) t`.\n\n**Trap:** a window filter in WHERE after a LEFT JOIN turns it back into an inner join; also check the half-open upper boundary.",
+      "solutions": [
+        {
+          "label": "LEFT JOIN with the window in ON",
+          "explain_md": "Start from users; the date window is part of the join condition so non-viewers survive with a count of 0.",
+          "sql": "SELECT per_user.views_count, COUNT(*) AS users\nFROM (\n  SELECT u.user_id, COUNT(v.view_id) AS views_count\n  FROM users u\n  LEFT JOIN views v\n    ON v.user_id = u.user_id\n   AND v.viewed_at >= '2026-03-01' AND v.viewed_at < '2026-04-01'\n  GROUP BY u.user_id\n) per_user\nGROUP BY per_user.views_count\nORDER BY per_user.views_count;"
+        },
+        {
+          "label": "Correlated scalar count",
+          "explain_md": "Count each user's in-window views in a scalar subquery; zero appears naturally.",
+          "sql": "SELECT t.views_count, COUNT(*) AS users\nFROM (\n  SELECT u.user_id,\n         (SELECT COUNT(*) FROM views v\n           WHERE v.user_id = u.user_id\n             AND v.viewed_at >= '2026-03-01' AND v.viewed_at < '2026-04-01') AS views_count\n  FROM users u\n) t\nGROUP BY t.views_count\nORDER BY t.views_count;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The date filter in WHERE removes the NULL-padded rows of non-viewers, so the 0 bucket vanishes (and users whose only views are outside March vanish with it).",
+          "sql": "SELECT per_user.views_count, COUNT(*) AS users\nFROM (\n  SELECT u.user_id, COUNT(v.view_id) AS views_count\n  FROM users u\n  LEFT JOIN views v ON v.user_id = u.user_id\n  WHERE v.viewed_at >= '2026-03-01' AND v.viewed_at < '2026-04-01'\n  GROUP BY u.user_id\n) per_user\nGROUP BY per_user.views_count\nORDER BY per_user.views_count;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "views_count",
+          "users"
+        ],
+        "rows": [
+          [
+            "0",
+            "2"
+          ],
+          [
+            "1",
+            "1"
+          ],
+          [
+            "2",
+            "2"
+          ],
+          [
+            "3",
+            "2"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P004",
+      "slug": "net-revenue-by-category",
+      "title": "Net revenue by category",
+      "difficulty": "Medium",
+      "topics": [
+        "Aggregation",
+        "Joins"
+      ],
+      "statement_md": "Per product `category`, report `gross_revenue` (sum of `quantity * unit_price` over order lines), `refunded` (sum of refund amounts against those lines) and `net_revenue` (gross minus refunded). A line can have zero, one or several partial refunds. Include only categories with at least one sold line. Order by `net_revenue` descending, then `category`.",
+      "tables": [
+        {
+          "name": "products",
+          "description_md": "One row per product.",
+          "columns": [
+            {
+              "name": "product_id",
+              "type": "INT"
+            },
+            {
+              "name": "category",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Audio"
+            ],
+            [
+              2,
+              "Audio"
+            ],
+            [
+              3,
+              "Kitchen"
+            ],
+            [
+              4,
+              "Kitchen"
+            ],
+            [
+              5,
+              "Garden"
+            ]
+          ]
+        },
+        {
+          "name": "order_items",
+          "description_md": "One row per order line.",
+          "columns": [
+            {
+              "name": "item_id",
+              "type": "INT"
+            },
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_id",
+              "type": "INT"
+            },
+            {
+              "name": "quantity",
+              "type": "INT"
+            },
+            {
+              "name": "unit_price",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1001,
+              1,
+              2,
+              50.0
+            ],
+            [
+              2,
+              1001,
+              3,
+              1,
+              30.0
+            ],
+            [
+              3,
+              1002,
+              2,
+              1,
+              120.0
+            ],
+            [
+              4,
+              1003,
+              3,
+              3,
+              30.0
+            ],
+            [
+              5,
+              1003,
+              4,
+              1,
+              45.5
+            ],
+            [
+              6,
+              1004,
+              1,
+              1,
+              50.0
+            ]
+          ]
+        },
+        {
+          "name": "refunds",
+          "description_md": "One row per refund event; a line may be refunded in several parts.",
+          "columns": [
+            {
+              "name": "refund_id",
+              "type": "INT"
+            },
+            {
+              "name": "item_id",
+              "type": "INT"
+            },
+            {
+              "name": "refund_amount",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              20.0
+            ],
+            [
+              2,
+              1,
+              15.0
+            ],
+            [
+              3,
+              4,
+              30.0
+            ],
+            [
+              4,
+              3,
+              120.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "If a line has two refunds, how many rows does it become after joining refunds?",
+        "Can you reduce refunds to one row per line before joining?"
+      ],
+      "notes_md": "**Pattern family:** revenue across a one-to-many chain; fan-out.\n\n**Shape:** shrink each many-side table to the grain you join on (one row per item) before joining, then sum by category. LEFT JOIN the refunds because most lines have none.\n\n**Syntax:** `COALESCE(x, 0)`, derived table `LEFT JOIN (SELECT k, SUM(v) AS s FROM t GROUP BY k) r ON ...`.\n\n**Trap:** joining items to refunds directly repeats an item once per refund, inflating every SUM taken from the item side.",
+      "solutions": [
+        {
+          "label": "Pre-aggregate refunds per line",
+          "explain_md": "Collapse refunds to one row per item_id so the join cannot multiply lines.",
+          "sql": "SELECT p.category,\n       SUM(i.quantity * i.unit_price) AS gross_revenue,\n       SUM(COALESCE(r.refunded, 0)) AS refunded,\n       SUM(i.quantity * i.unit_price) - SUM(COALESCE(r.refunded, 0)) AS net_revenue\nFROM order_items i\nJOIN products p ON p.product_id = i.product_id\nLEFT JOIN (\n  SELECT item_id, SUM(refund_amount) AS refunded FROM refunds GROUP BY item_id\n) r ON r.item_id = i.item_id\nGROUP BY p.category\nORDER BY net_revenue DESC, p.category;"
+        },
+        {
+          "label": "Two aggregates joined by category",
+          "explain_md": "Aggregate each side to category separately, then combine.",
+          "sql": "SELECT g.category, g.gross_revenue, COALESCE(f.refunded, 0) AS refunded,\n       g.gross_revenue - COALESCE(f.refunded, 0) AS net_revenue\nFROM (\n  SELECT p.category, SUM(i.quantity * i.unit_price) AS gross_revenue\n  FROM order_items i JOIN products p ON p.product_id = i.product_id\n  GROUP BY p.category\n) g\nLEFT JOIN (\n  SELECT p.category, SUM(r.refund_amount) AS refunded\n  FROM refunds r\n  JOIN order_items i ON i.item_id = r.item_id\n  JOIN products p ON p.product_id = i.product_id\n  GROUP BY p.category\n) f ON f.category = g.category\nORDER BY net_revenue DESC, g.category;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Line 1 has two refunds, so it appears twice and its revenue is added twice; Audio gross is overstated.",
+          "sql": "SELECT p.category,\n       SUM(i.quantity * i.unit_price) AS gross_revenue,\n       SUM(COALESCE(r.refund_amount, 0)) AS refunded,\n       SUM(i.quantity * i.unit_price) - SUM(COALESCE(r.refund_amount, 0)) AS net_revenue\nFROM order_items i\nJOIN products p ON p.product_id = i.product_id\nLEFT JOIN refunds r ON r.item_id = i.item_id\nGROUP BY p.category\nORDER BY net_revenue DESC, p.category;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "category",
+          "gross_revenue",
+          "refunded",
+          "net_revenue"
+        ],
+        "rows": [
+          [
+            "Kitchen",
+            "165.50",
+            "30.00",
+            "135.50"
+          ],
+          [
+            "Audio",
+            "270.00",
+            "155.00",
+            "115.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P005",
+      "slug": "members-who-never-checked-in",
+      "title": "Members who never checked in",
+      "difficulty": "Easy",
+      "topics": [
+        "Anti-joins",
+        "NULL handling"
+      ],
+      "statement_md": "A gym wants to nudge members who have never checked in. Return `member_id` and `name` of every member with no row in `checkins`, ordered by `member_id`. Guest passes are logged in `checkins` with a NULL `member_id`.",
+      "tables": [
+        {
+          "name": "members",
+          "description_md": "One row per member.",
+          "columns": [
+            {
+              "name": "member_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ines"
+            ],
+            [
+              2,
+              "Jonas"
+            ],
+            [
+              3,
+              "Kira"
+            ],
+            [
+              4,
+              "Liam"
+            ],
+            [
+              5,
+              "Mara"
+            ],
+            [
+              6,
+              "Nico"
+            ]
+          ]
+        },
+        {
+          "name": "checkins",
+          "description_md": "One row per door scan. `member_id` is NULL for guest passes.",
+          "columns": [
+            {
+              "name": "checkin_id",
+              "type": "INT"
+            },
+            {
+              "name": "member_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              1
+            ],
+            [
+              3,
+              3
+            ],
+            [
+              4,
+              null
+            ],
+            [
+              5,
+              5
+            ],
+            [
+              6,
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Think of the question as: members for which no matching check-in exists.",
+        "What does `x NOT IN (1, 3, NULL)` return?"
+      ],
+      "notes_md": "**Pattern family:** anti-join (entities with no activity).\n\n**Shape:** keep a member only when a correlated existence test on `checkins` finds nothing; or LEFT JOIN and keep the unmatched rows.\n\n**Syntax:** `WHERE NOT EXISTS (SELECT 1 FROM t WHERE t.k = outer.k)`; `LEFT JOIN ... WHERE right.pk IS NULL`.\n\n**Trap:** `NOT IN (subquery)` returns nothing at all if the subquery produces even one NULL.",
+      "solutions": [
+        {
+          "label": "NOT EXISTS",
+          "explain_md": "Correlated existence test; NULL member_ids in checkins never match any member, so they are harmless.",
+          "sql": "SELECT m.member_id, m.name\nFROM members m\nWHERE NOT EXISTS (SELECT 1 FROM checkins c WHERE c.member_id = m.member_id)\nORDER BY m.member_id;"
+        },
+        {
+          "label": "LEFT JOIN anti-join",
+          "explain_md": "Unmatched members get NULL on the check-in side.",
+          "sql": "SELECT m.member_id, m.name\nFROM members m\nLEFT JOIN checkins c ON c.member_id = m.member_id\nWHERE c.checkin_id IS NULL\nORDER BY m.member_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The guest-pass NULL poisons NOT IN: every comparison becomes unknown, so the result is empty.",
+          "sql": "SELECT member_id, name\nFROM members\nWHERE member_id NOT IN (SELECT member_id FROM checkins)\nORDER BY member_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "member_id",
+          "name"
+        ],
+        "rows": [
+          [
+            "2",
+            "Jonas"
+          ],
+          [
+            "4",
+            "Liam"
+          ],
+          [
+            "6",
+            "Nico"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P006",
+      "slug": "daily-click-through-rate",
+      "title": "Daily click-through rate",
+      "difficulty": "Medium",
+      "topics": [
+        "Conditional aggregation",
+        "Numeric functions",
+        "NULL handling"
+      ],
+      "statement_md": "For each `event_date` return `impressions`, `clicks` and `ctr_pct`, the click-through rate as a percentage (clicks divided by impressions times 100) rounded to 2 decimals. If a day has no impressions, `ctr_pct` must be NULL rather than an error or 0. Order by `event_date`.",
+      "tables": [
+        {
+          "name": "ad_events",
+          "description_md": "One row per ad event; `event_type` is `'impression'` or `'click'`. Late clicks can land on a day with no impressions.",
+          "columns": [
+            {
+              "name": "event_id",
+              "type": "INT"
+            },
+            {
+              "name": "event_date",
+              "type": "DATE"
+            },
+            {
+              "name": "event_type",
+              "type": "VARCHAR(12)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-05-01",
+              "impression"
+            ],
+            [
+              2,
+              "2026-05-01",
+              "impression"
+            ],
+            [
+              3,
+              "2026-05-01",
+              "impression"
+            ],
+            [
+              4,
+              "2026-05-01",
+              "impression"
+            ],
+            [
+              5,
+              "2026-05-01",
+              "click"
+            ],
+            [
+              6,
+              "2026-05-02",
+              "impression"
+            ],
+            [
+              7,
+              "2026-05-02",
+              "impression"
+            ],
+            [
+              8,
+              "2026-05-02",
+              "impression"
+            ],
+            [
+              9,
+              "2026-05-02",
+              "click"
+            ],
+            [
+              10,
+              "2026-05-02",
+              "click"
+            ],
+            [
+              11,
+              "2026-05-03",
+              "click"
+            ],
+            [
+              12,
+              "2026-05-04",
+              "impression"
+            ],
+            [
+              13,
+              "2026-05-04",
+              "impression"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Two counts from the same group, each with its own condition.",
+        "What should the denominator count: all rows, or only impressions?"
+      ],
+      "notes_md": "**Pattern family:** conditional aggregation / rate with a guarded denominator.\n\n**Shape:** one GROUP BY date; inside it, a numerator and a denominator each built from a CASE on `event_type`; wrap the denominator so zero becomes NULL.\n\n**Syntax:** `SUM(CASE WHEN cond THEN 1 ELSE 0 END)`, `COUNT(CASE WHEN cond THEN 1 END)`, `NULLIF(x, 0)`, `ROUND(x, 2)`.\n\n**Trap:** dividing by `COUNT(*)` puts clicks in the denominator.",
+      "solutions": [
+        {
+          "label": "SUM(CASE)",
+          "explain_md": "Sum 1/0 flags per event type; NULLIF turns a zero denominator into NULL.",
+          "sql": "SELECT event_date,\n       SUM(CASE WHEN event_type = 'impression' THEN 1 ELSE 0 END) AS impressions,\n       SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) AS clicks,\n       ROUND(100 * SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END)\n             / NULLIF(SUM(CASE WHEN event_type = 'impression' THEN 1 ELSE 0 END), 0), 2) AS ctr_pct\nFROM ad_events\nGROUP BY event_date\nORDER BY event_date;"
+        },
+        {
+          "label": "COUNT(CASE ...)",
+          "explain_md": "COUNT ignores the NULL produced when the CASE has no ELSE.",
+          "sql": "SELECT event_date,\n       COUNT(CASE WHEN event_type = 'impression' THEN 1 END) AS impressions,\n       COUNT(CASE WHEN event_type = 'click' THEN 1 END) AS clicks,\n       ROUND(100 * COUNT(CASE WHEN event_type = 'click' THEN 1 END)\n             / NULLIF(COUNT(CASE WHEN event_type = 'impression' THEN 1 END), 0), 2) AS ctr_pct\nFROM ad_events\nGROUP BY event_date\nORDER BY event_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`COUNT(*)` counts clicks as well as impressions, so every rate is too small, and the click-only day shows 100% instead of NULL.",
+          "sql": "SELECT event_date,\n       SUM(event_type = 'impression') AS impressions,\n       SUM(event_type = 'click') AS clicks,\n       ROUND(100 * SUM(event_type = 'click') / COUNT(*), 2) AS ctr_pct\nFROM ad_events\nGROUP BY event_date\nORDER BY event_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "event_date",
+          "impressions",
+          "clicks",
+          "ctr_pct"
+        ],
+        "rows": [
+          [
+            "2026-05-01",
+            "4",
+            "1",
+            "25.00"
+          ],
+          [
+            "2026-05-02",
+            "3",
+            "2",
+            "66.67"
+          ],
+          [
+            "2026-05-03",
+            "0",
+            "1",
+            null
+          ],
+          [
+            "2026-05-04",
+            "2",
+            "0",
+            "0.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P007",
+      "slug": "order-size-buckets",
+      "title": "Order size buckets",
+      "difficulty": "Easy",
+      "topics": [
+        "Conditional aggregation",
+        "NULL handling"
+      ],
+      "statement_md": "Classify each order by `total_amount`: `'small'` below 25.00, `'medium'` from 25.00 up to but not including 100.00, `'large'` for 100.00 and above, and `'unknown'` when the total is NULL. Return `bucket` and `orders` (how many orders fall in it), ordered by `orders` descending, then `bucket`.",
+      "tables": [
+        {
+          "name": "orders",
+          "description_md": "One row per order. `total_amount` is NULL for orders still being priced.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "total_amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              10.0
+            ],
+            [
+              2,
+              24.99
+            ],
+            [
+              3,
+              25.0
+            ],
+            [
+              4,
+              60.0
+            ],
+            [
+              5,
+              99.99
+            ],
+            [
+              6,
+              100.0
+            ],
+            [
+              7,
+              250.0
+            ],
+            [
+              8,
+              null
+            ],
+            [
+              9,
+              25.0
+            ],
+            [
+              10,
+              12.5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Compute the bucket per row first, then count per bucket.",
+        "Which edge values (25.00, 100.00) belong to which bucket?"
+      ],
+      "notes_md": "**Pattern family:** CASE bucketing, then GROUP BY the derived label.\n\n**Shape:** a CASE expression with ordered WHEN branches, usable as the grouping key; give NULL its own branch first.\n\n**Syntax:** `CASE WHEN c1 THEN 'a' WHEN c2 THEN 'b' ELSE 'c' END`, `GROUP BY` the same expression (or a derived table).\n\n**Trap:** `BETWEEN` is inclusive on both ends, and NULL falls into ELSE if you do not catch it.",
+      "solutions": [
+        {
+          "label": "CASE in a derived table",
+          "explain_md": "Label each order once, then group by the label.",
+          "sql": "SELECT bucket, COUNT(*) AS orders\nFROM (\n  SELECT CASE WHEN total_amount IS NULL THEN 'unknown'\n              WHEN total_amount < 25 THEN 'small'\n              WHEN total_amount < 100 THEN 'medium'\n              ELSE 'large' END AS bucket\n  FROM orders\n) t\nGROUP BY bucket\nORDER BY orders DESC, bucket;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`BETWEEN 25 AND 100` includes 100.00, so the exact-100 order is called medium, not large.",
+          "sql": "SELECT bucket, COUNT(*) AS orders\nFROM (\n  SELECT CASE WHEN total_amount IS NULL THEN 'unknown'\n              WHEN total_amount < 25 THEN 'small'\n              WHEN total_amount BETWEEN 25 AND 100 THEN 'medium'\n              ELSE 'large' END AS bucket\n  FROM orders\n) t\nGROUP BY bucket\nORDER BY orders DESC, bucket;"
+        },
+        {
+          "explain_md": "Without a NULL branch the unpriced order lands in ELSE and is called small.",
+          "sql": "SELECT bucket, COUNT(*) AS orders\nFROM (\n  SELECT CASE WHEN total_amount >= 100 THEN 'large'\n              WHEN total_amount >= 25 THEN 'medium'\n              ELSE 'small' END AS bucket\n  FROM orders\n) t\nGROUP BY bucket\nORDER BY orders DESC, bucket;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "bucket",
+          "orders"
+        ],
+        "rows": [
+          [
+            "medium",
+            "4"
+          ],
+          [
+            "small",
+            "3"
+          ],
+          [
+            "large",
+            "2"
+          ],
+          [
+            "unknown",
+            "1"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P008",
+      "slug": "signups-by-email-domain",
+      "title": "Signups by email domain",
+      "difficulty": "Easy",
+      "topics": [
+        "String functions",
+        "Aggregation"
+      ],
+      "statement_md": "Emails were typed by hand: some have capital letters and some have stray spaces at either end. Return `domain` (the part after the `@`, lower-case, with outer spaces removed) and `signups` (users with that domain), ordered by `signups` descending, then `domain`.",
+      "tables": [
+        {
+          "name": "app_users",
+          "description_md": "One row per user; `email` is exactly as typed.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR(60)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "ana@Gmail.com"
+            ],
+            [
+              2,
+              " ben@gmail.com "
+            ],
+            [
+              3,
+              "cara@outlook.com"
+            ],
+            [
+              4,
+              "DAN@OUTLOOK.COM"
+            ],
+            [
+              5,
+              "eve@acme.io"
+            ],
+            [
+              6,
+              "fay@gmail.com"
+            ],
+            [
+              7,
+              "gus@Acme.io "
+            ],
+            [
+              8,
+              "hal@proton.me"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Clean the string first, then cut it.",
+        "Which function returns everything after a delimiter?"
+      ],
+      "notes_md": "**Pattern family:** string normalisation then GROUP BY.\n\n**Shape:** build the cleaned domain as an expression (trim, lower-case, take text after the `@`), group by that same expression.\n\n**Syntax:** `TRIM(s)`, `LOWER(s)`, `SUBSTRING_INDEX(s, '@', -1)`, or `SUBSTRING(s, LOCATE('@', s) + 1)`.\n\n**Trap:** forgetting TRIM leaves trailing spaces inside the domain, so identical domains split into different groups.",
+      "solutions": [
+        {
+          "label": "SUBSTRING_INDEX",
+          "explain_md": "Normalise first, then take what follows the last `@`.",
+          "sql": "SELECT SUBSTRING_INDEX(LOWER(TRIM(email)), '@', -1) AS domain, COUNT(*) AS signups\nFROM app_users\nGROUP BY SUBSTRING_INDEX(LOWER(TRIM(email)), '@', -1)\nORDER BY signups DESC, domain;"
+        },
+        {
+          "label": "LOCATE + SUBSTRING",
+          "explain_md": "Find the `@` position and take the rest.",
+          "sql": "SELECT d.domain, COUNT(*) AS signups\nFROM (\n  SELECT SUBSTRING(LOWER(TRIM(email)), LOCATE('@', LOWER(TRIM(email))) + 1) AS domain\n  FROM app_users\n) d\nGROUP BY d.domain\nORDER BY signups DESC, d.domain;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "No TRIM or LOWER: `gmail.com ` (with trailing space) and `Acme.io ` stay separate groups and the labels keep their capitals.",
+          "sql": "SELECT SUBSTRING_INDEX(email, '@', -1) AS domain, COUNT(*) AS signups\nFROM app_users\nGROUP BY SUBSTRING_INDEX(email, '@', -1)\nORDER BY signups DESC, domain;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "domain",
+          "signups"
+        ],
+        "rows": [
+          [
+            "gmail.com",
+            "3"
+          ],
+          [
+            "acme.io",
+            "2"
+          ],
+          [
+            "outlook.com",
+            "2"
+          ],
+          [
+            "proton.me",
+            "1"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P009",
+      "slug": "duplicate-listings",
+      "title": "Duplicate rental listings",
+      "difficulty": "Medium",
+      "topics": [
+        "Deduplication",
+        "String functions",
+        "Aggregation"
+      ],
+      "statement_md": "Two listings are duplicates when they have the same `host_id`, the same `city` and the same `title` after removing outer spaces and ignoring capitalisation. Return one row per duplicated group: `host_id`, `city`, `title_clean` (lower-case, trimmed), `copies` (how many listings) and `first_listing_id` (smallest id). Only groups with at least two listings; order by `host_id`, `city`, `title_clean`.",
+      "tables": [
+        {
+          "name": "listings",
+          "description_md": "One row per listing as typed by the host.",
+          "columns": [
+            {
+              "name": "listing_id",
+              "type": "INT"
+            },
+            {
+              "name": "host_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(40)"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "Sunny Loft",
+              "Lisbon"
+            ],
+            [
+              2,
+              1,
+              "sunny loft ",
+              "Lisbon"
+            ],
+            [
+              3,
+              1,
+              "Sunny Loft",
+              "Porto"
+            ],
+            [
+              4,
+              2,
+              "Sunny Loft",
+              "Lisbon"
+            ],
+            [
+              5,
+              2,
+              "Garden Studio",
+              "Faro"
+            ],
+            [
+              6,
+              2,
+              "GARDEN STUDIO",
+              "Faro"
+            ],
+            [
+              7,
+              2,
+              "Garden Studio",
+              "Faro"
+            ],
+            [
+              8,
+              3,
+              "Harbor View",
+              "Porto"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Decide the duplicate key first, then group by exactly that key.",
+        "Which groups do you keep after counting?"
+      ],
+      "notes_md": "**Pattern family:** duplicate detection = GROUP BY the normalised key + HAVING COUNT > 1.\n\n**Shape:** one grouping query; the key is the cleaned title plus host and city; MIN(id) names the survivor.\n\n**Syntax:** `GROUP BY a, b, LOWER(TRIM(c))`, `HAVING COUNT(*) > 1`, `MIN(id)`.\n\n**Trap:** grouping on the raw title misses copies that differ only by outer spaces.",
+      "solutions": [
+        {
+          "label": "GROUP BY normalised key",
+          "explain_md": "Group on host, city and the cleaned title, keep groups with 2+ rows.",
+          "sql": "SELECT host_id, city, LOWER(TRIM(title)) AS title_clean, COUNT(*) AS copies, MIN(listing_id) AS first_listing_id\nFROM listings\nGROUP BY host_id, city, LOWER(TRIM(title))\nHAVING COUNT(*) > 1\nORDER BY host_id, city, title_clean;"
+        },
+        {
+          "label": "Normalise in a derived table",
+          "explain_md": "Clean first, then aggregate on plain columns.",
+          "sql": "SELECT host_id, city, title_clean, COUNT(*) AS copies, MIN(listing_id) AS first_listing_id\nFROM (\n  SELECT listing_id, host_id, city, LOWER(TRIM(title)) AS title_clean FROM listings\n) t\nGROUP BY host_id, city, title_clean\nHAVING COUNT(*) > 1\nORDER BY host_id, city, title_clean;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Grouping on the raw title (and showing it raw): the trailing-space copy of the Lisbon loft is missed and the Faro group keeps mixed capitals.",
+          "sql": "SELECT host_id, city, title AS title_clean, COUNT(*) AS copies, MIN(listing_id) AS first_listing_id\nFROM listings\nGROUP BY host_id, city, title\nHAVING COUNT(*) > 1\nORDER BY host_id, city, title_clean;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "host_id",
+          "city",
+          "title_clean",
+          "copies",
+          "first_listing_id"
+        ],
+        "rows": [
+          [
+            "1",
+            "Lisbon",
+            "sunny loft",
+            "2",
+            "1"
+          ],
+          [
+            "2",
+            "Faro",
+            "garden studio",
+            "3",
+            "5"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P010",
+      "slug": "products-rated-above-average",
+      "title": "Products rated above average",
+      "difficulty": "Medium",
+      "topics": [
+        "Numeric functions",
+        "NULL handling",
+        "Subqueries"
+      ],
+      "statement_md": "In a survey, customers may skip the rating (NULL). Return the products whose average rating is strictly higher than the overall average of all given ratings. Output `product_code`, `rated_count` (answers that gave a rating), `avg_rating` (rounded to 2 decimals) and `rated_pct` (rated answers as a percentage of all answers for that product, rounded to 1 decimal). Order by `product_code`.",
+      "tables": [
+        {
+          "name": "survey_responses",
+          "description_md": "One row per survey answer. `rating` is 1-5, or NULL if skipped.",
+          "columns": [
+            {
+              "name": "response_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_code",
+              "type": "VARCHAR(5)"
+            },
+            {
+              "name": "rating",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "A",
+              5
+            ],
+            [
+              2,
+              "A",
+              4
+            ],
+            [
+              3,
+              "A",
+              null
+            ],
+            [
+              4,
+              "A",
+              3
+            ],
+            [
+              5,
+              "B",
+              2
+            ],
+            [
+              6,
+              "B",
+              null
+            ],
+            [
+              7,
+              "B",
+              null
+            ],
+            [
+              8,
+              "C",
+              null
+            ],
+            [
+              9,
+              "D",
+              4
+            ],
+            [
+              10,
+              "D",
+              5
+            ],
+            [
+              11,
+              "E",
+              4
+            ],
+            [
+              12,
+              "E",
+              null
+            ],
+            [
+              13,
+              "E",
+              null
+            ],
+            [
+              14,
+              "E",
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Should a skipped rating pull the average down? What do AVG and COUNT(col) do with NULL?",
+        "The overall average is a single number you can compare against."
+      ],
+      "notes_md": "**Pattern family:** numeric aggregation with NULLs plus an above-average subquery.\n\n**Shape:** group per product with AVG and counts; a HAVING clause compares the product average to a scalar subquery over the whole table.\n\n**Syntax:** `AVG(col)` ignores NULL; `COUNT(col)` vs `COUNT(*)`; `ROUND(100 * a / b, 1)`; `HAVING AVG(x) > (SELECT AVG(x) FROM t)`.\n\n**Trap:** turning NULL into 0 before averaging changes both the product averages and the overall one.",
+      "solutions": [
+        {
+          "label": "HAVING with scalar subquery",
+          "explain_md": "AVG ignores NULL ratings; the overall average comes from a scalar subquery.",
+          "sql": "SELECT product_code, COUNT(rating) AS rated_count, ROUND(AVG(rating), 2) AS avg_rating,\n       ROUND(100 * COUNT(rating) / COUNT(*), 1) AS rated_pct\nFROM survey_responses\nGROUP BY product_code\nHAVING AVG(rating) > (SELECT AVG(rating) FROM survey_responses)\nORDER BY product_code;"
+        },
+        {
+          "label": "Derived table with CROSS JOIN",
+          "explain_md": "Compute product stats and the overall mean, then filter.",
+          "sql": "SELECT p.product_code, p.rated_count, ROUND(p.avg_r, 2) AS avg_rating, ROUND(100 * p.rated_count / p.total, 1) AS rated_pct\nFROM (\n  SELECT product_code, COUNT(rating) AS rated_count, COUNT(*) AS total, AVG(rating) AS avg_r\n  FROM survey_responses GROUP BY product_code\n) p\nCROSS JOIN (SELECT AVG(rating) AS overall FROM survey_responses) o\nWHERE p.avg_r > o.overall\nORDER BY p.product_code;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Treating a skipped rating as 0 drags down each product's average and the overall mean, so the set of products and the averages change.",
+          "sql": "SELECT product_code, COUNT(rating) AS rated_count, ROUND(AVG(COALESCE(rating, 0)), 2) AS avg_rating,\n       ROUND(100 * COUNT(rating) / COUNT(*), 1) AS rated_pct\nFROM survey_responses\nGROUP BY product_code\nHAVING AVG(COALESCE(rating, 0)) > (SELECT AVG(COALESCE(rating, 0)) FROM survey_responses)\nORDER BY product_code;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "product_code",
+          "rated_count",
+          "avg_rating",
+          "rated_pct"
+        ],
+        "rows": [
+          [
+            "A",
+            "3",
+            "4.00",
+            "75.0"
+          ],
+          [
+            "D",
+            "2",
+            "4.50",
+            "100.0"
+          ],
+          [
+            "E",
+            "1",
+            "4.00",
+            "25.0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P011",
+      "slug": "events-per-month-q1",
+      "title": "App events per month, first quarter",
+      "difficulty": "Easy",
+      "topics": [
+        "Dates",
+        "Aggregation"
+      ],
+      "statement_md": "Count app events in the first quarter of 2026, meaning from `2026-01-01 00:00:00` up to but not including `2026-04-01 00:00:00`. Return `month` (text like `2026-02`), `events` and `active_users` (different users), ordered by `month`. Months without events are not listed.",
+      "tables": [
+        {
+          "name": "app_events",
+          "description_md": "One row per event, with a precise timestamp.",
+          "columns": [
+            {
+              "name": "event_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "event_time",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-01-01 00:00:00"
+            ],
+            [
+              2,
+              2,
+              "2026-01-15 12:00:00"
+            ],
+            [
+              3,
+              1,
+              "2026-01-31 23:59:59"
+            ],
+            [
+              4,
+              3,
+              "2026-02-10 08:30:00"
+            ],
+            [
+              5,
+              3,
+              "2026-02-10 09:00:00"
+            ],
+            [
+              6,
+              1,
+              "2026-03-01 00:00:00"
+            ],
+            [
+              7,
+              2,
+              "2026-03-31 18:00:00"
+            ],
+            [
+              8,
+              2,
+              "2026-03-31 23:59:59"
+            ],
+            [
+              9,
+              4,
+              "2026-04-01 00:00:00"
+            ],
+            [
+              10,
+              1,
+              "2025-12-31 23:59:59"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "What time of day does the date '2026-03-31' stand for when compared to a DATETIME?",
+        "Which end of the range should be inclusive, and which exclusive?"
+      ],
+      "notes_md": "**Pattern family:** date range filtering + month bucketing.\n\n**Shape:** filter with a half-open interval (>= start, < next start), then group by a month label.\n\n**Syntax:** `DATE_FORMAT(ts, '%Y-%m')`, `ts >= 'YYYY-MM-DD' AND ts < 'YYYY-MM-DD'`.\n\n**Trap:** `BETWEEN a AND '2026-03-31'` stops at midnight of the 31st and silently drops the rest of that day.",
+      "solutions": [
+        {
+          "label": "Half-open range",
+          "explain_md": "Lower bound inclusive, upper bound exclusive, so no end-of-day guesswork.",
+          "sql": "SELECT DATE_FORMAT(event_time, '%Y-%m') AS month, COUNT(*) AS events, COUNT(DISTINCT user_id) AS active_users\nFROM app_events\nWHERE event_time >= '2026-01-01' AND event_time < '2026-04-01'\nGROUP BY DATE_FORMAT(event_time, '%Y-%m')\nORDER BY month;"
+        },
+        {
+          "label": "YEAR and MONTH parts",
+          "explain_md": "Filter on extracted parts; same rows, simpler to read.",
+          "sql": "SELECT DATE_FORMAT(event_time, '%Y-%m') AS month, COUNT(*) AS events, COUNT(DISTINCT user_id) AS active_users\nFROM app_events\nWHERE YEAR(event_time) = 2026 AND MONTH(event_time) BETWEEN 1 AND 3\nGROUP BY DATE_FORMAT(event_time, '%Y-%m')\nORDER BY month;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`'2026-03-31'` means midnight, so the two events later that day are lost.",
+          "sql": "SELECT DATE_FORMAT(event_time, '%Y-%m') AS month, COUNT(*) AS events, COUNT(DISTINCT user_id) AS active_users\nFROM app_events\nWHERE event_time BETWEEN '2026-01-01' AND '2026-03-31'\nGROUP BY DATE_FORMAT(event_time, '%Y-%m')\nORDER BY month;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "month",
+          "events",
+          "active_users"
+        ],
+        "rows": [
+          [
+            "2026-01",
+            "3",
+            "2"
+          ],
+          [
+            "2026-02",
+            "2",
+            "1"
+          ],
+          [
+            "2026-03",
+            "3",
+            "2"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P012",
+      "slug": "buy-on-signup-day",
+      "title": "Bought on signup day",
+      "difficulty": "Medium",
+      "topics": [
+        "Dates",
+        "Joins",
+        "Aggregation"
+      ],
+      "statement_md": "Find users who made at least one purchase on the same calendar day they signed up (the purchase can be any time that day). Return `user_id` and `same_day_purchases` (how many such purchases), ordered by `user_id`. Each qualifying user appears once.",
+      "tables": [
+        {
+          "name": "signups",
+          "description_md": "One row per user with the exact signup moment.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "signup_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-02-01 09:00:00"
+            ],
+            [
+              2,
+              "2026-02-01 23:30:00"
+            ],
+            [
+              3,
+              "2026-02-02 00:00:00"
+            ],
+            [
+              4,
+              "2026-02-03 10:00:00"
+            ],
+            [
+              5,
+              "2026-02-03 12:00:00"
+            ]
+          ]
+        },
+        {
+          "name": "purchases",
+          "description_md": "One row per purchase.",
+          "columns": [
+            {
+              "name": "purchase_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "purchased_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-02-01 09:45:00"
+            ],
+            [
+              2,
+              1,
+              "2026-02-01 18:00:00"
+            ],
+            [
+              3,
+              2,
+              "2026-02-02 00:10:00"
+            ],
+            [
+              4,
+              3,
+              "2026-02-02 00:00:00"
+            ],
+            [
+              5,
+              4,
+              "2026-02-10 10:00:00"
+            ],
+            [
+              6,
+              5,
+              "2026-02-03 12:30:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Compare calendar days, not full timestamps.",
+        "A user with two same-day purchases would show up twice unless you group."
+      ],
+      "notes_md": "**Pattern family:** date-part join + aggregate to one row per user.\n\n**Shape:** join signups to purchases on user and on equal calendar day, then GROUP BY user to count.\n\n**Syntax:** `DATE(ts)` strips the time; `JOIN ... ON a.id = b.id AND DATE(a.t) = DATE(b.t)`.\n\n**Trap:** equating the two DATETIMEs compares to the second, not the day.",
+      "solutions": [
+        {
+          "label": "Join on user and DATE()",
+          "explain_md": "Equal calendar days; GROUP BY collapses repeat purchases.",
+          "sql": "SELECT s.user_id, COUNT(*) AS same_day_purchases\nFROM signups s\nJOIN purchases p ON p.user_id = s.user_id AND DATE(p.purchased_at) = DATE(s.signup_at)\nGROUP BY s.user_id\nORDER BY s.user_id;"
+        },
+        {
+          "label": "Correlated count",
+          "explain_md": "Count matching purchases per user and keep positives.",
+          "sql": "SELECT s.user_id,\n       (SELECT COUNT(*) FROM purchases p\n         WHERE p.user_id = s.user_id AND DATE(p.purchased_at) = DATE(s.signup_at)) AS same_day_purchases\nFROM signups s\nWHERE EXISTS (SELECT 1 FROM purchases p\n               WHERE p.user_id = s.user_id AND DATE(p.purchased_at) = DATE(s.signup_at))\nORDER BY s.user_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Comparing the full timestamps only matches purchases at the exact signup second.",
+          "sql": "SELECT s.user_id, COUNT(*) AS same_day_purchases\nFROM signups s\nJOIN purchases p ON p.user_id = s.user_id AND p.purchased_at = s.signup_at\nGROUP BY s.user_id\nORDER BY s.user_id;"
+        },
+        {
+          "explain_md": "Without GROUP BY the join returns one row per matching purchase, so user 1 appears twice.",
+          "sql": "SELECT s.user_id, 1 AS same_day_purchases\nFROM signups s\nJOIN purchases p ON p.user_id = s.user_id AND DATE(p.purchased_at) = DATE(s.signup_at)\nORDER BY s.user_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "user_id",
+          "same_day_purchases"
+        ],
+        "rows": [
+          [
+            "1",
+            "2"
+          ],
+          [
+            "3",
+            "1"
+          ],
+          [
+            "5",
+            "1"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P013",
+      "slug": "single-channel-users",
+      "title": "Reached by exactly one channel",
+      "difficulty": "Medium",
+      "topics": [
+        "Set operations",
+        "Anti-joins",
+        "Deduplication"
+      ],
+      "statement_md": "Marketing sent campaigns by push and by email. Return the users who received something through exactly one of the two channels, with `user_id` and `channel` (`'push only'` or `'email only'`). Users may have received many messages on the same channel. Order by `user_id`.",
+      "tables": [
+        {
+          "name": "push_sends",
+          "description_md": "One row per push message sent.",
+          "columns": [
+            {
+              "name": "send_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              1
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              4,
+              3
+            ],
+            [
+              5,
+              5
+            ]
+          ]
+        },
+        {
+          "name": "email_sends",
+          "description_md": "One row per email sent.",
+          "columns": [
+            {
+              "name": "send_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              2
+            ],
+            [
+              2,
+              3
+            ],
+            [
+              3,
+              3
+            ],
+            [
+              4,
+              4
+            ],
+            [
+              5,
+              6
+            ],
+            [
+              6,
+              6
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "First reduce each table to one row per user.",
+        "Think of it as (A minus B) plus (B minus A); MySQL can emulate the minus."
+      ],
+      "notes_md": "**Pattern family:** set difference emulation (EXCEPT) and symmetric difference; UNION vs UNION ALL.\n\n**Shape:** either two anti-joins stacked with UNION ALL, or tag each user per channel, stack the tagged lists, and keep users who appear once.\n\n**Syntax:** `SELECT DISTINCT ...`, `NOT EXISTS (...)`, `UNION ALL` keeps duplicates, `UNION` removes them; `HAVING COUNT(*) = 1`.\n\n**Trap:** if repeat messages are not deduplicated first, a user who got two pushes looks like they appear in two places.",
+      "solutions": [
+        {
+          "label": "Two anti-joins with UNION ALL",
+          "explain_md": "Push-only users plus email-only users; the two sets cannot overlap, so UNION ALL is safe.",
+          "sql": "SELECT user_id, 'push only' AS channel\nFROM (SELECT DISTINCT user_id FROM push_sends) p\nWHERE NOT EXISTS (SELECT 1 FROM email_sends e WHERE e.user_id = p.user_id)\nUNION ALL\nSELECT user_id, 'email only' AS channel\nFROM (SELECT DISTINCT user_id FROM email_sends) e2\nWHERE NOT EXISTS (SELECT 1 FROM push_sends p2 WHERE p2.user_id = e2.user_id)\nORDER BY user_id;"
+        },
+        {
+          "label": "Tag, stack, count",
+          "explain_md": "One row per user and channel, stacked; users seen only once have a single channel.",
+          "sql": "SELECT user_id, MIN(ch) AS channel\nFROM (\n  SELECT DISTINCT user_id, 'push only' AS ch FROM push_sends\n  UNION ALL\n  SELECT DISTINCT user_id, 'email only' AS ch FROM email_sends\n) t\nGROUP BY user_id\nHAVING COUNT(*) = 1\nORDER BY user_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without DISTINCT inside, users with several sends on one channel are counted several times, so HAVING COUNT(*) = 1 removes genuine single-channel users.",
+          "sql": "SELECT user_id, MIN(ch) AS channel\nFROM (\n  SELECT user_id, 'push only' AS ch FROM push_sends\n  UNION ALL\n  SELECT user_id, 'email only' AS ch FROM email_sends\n) t\nGROUP BY user_id\nHAVING COUNT(*) = 1\nORDER BY user_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "user_id",
+          "channel"
+        ],
+        "rows": [
+          [
+            "1",
+            "push only"
+          ],
+          [
+            "4",
+            "email only"
+          ],
+          [
+            "5",
+            "push only"
+          ],
+          [
+            "6",
+            "email only"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P014",
+      "slug": "paid-more-than-their-manager",
+      "title": "Paid more than their manager",
+      "difficulty": "Easy",
+      "topics": [
+        "Self-joins",
+        "NULL handling"
+      ],
+      "statement_md": "Return employees whose salary is strictly higher than their direct manager's salary. Output `employee`, `salary`, `manager` and `manager_salary`, ordered by `employee`. People with no manager, or with an unknown (NULL) salary involved, are not part of the answer.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee. `manager_id` points to another row in the same table; NULL for the top boss.",
+          "columns": [
+            {
+              "name": "emp_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Priya",
+              150000,
+              null
+            ],
+            [
+              2,
+              "Omar",
+              160000,
+              1
+            ],
+            [
+              3,
+              "Lena",
+              90000,
+              1
+            ],
+            [
+              4,
+              "Kofi",
+              95000,
+              2
+            ],
+            [
+              5,
+              "Raj",
+              160000,
+              2
+            ],
+            [
+              6,
+              "Tess",
+              170000,
+              2
+            ],
+            [
+              7,
+              "Uri",
+              null,
+              3
+            ],
+            [
+              8,
+              "Vik",
+              100000,
+              3
+            ],
+            [
+              9,
+              "Wen",
+              80000,
+              7
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The same table plays two roles. Give each role its own alias.",
+        "What happens when two salaries are equal?"
+      ],
+      "notes_md": "**Pattern family:** self-join (employee row matched to its manager row).\n\n**Shape:** join the table to itself on `manager_id = emp_id`, then compare the two salary columns.\n\n**Syntax:** `FROM employees e JOIN employees m ON m.emp_id = e.manager_id`.\n\n**Trap:** `>=` lets equals through; an inner join already removes the top boss, and NULL comparisons never pass.",
+      "solutions": [
+        {
+          "label": "Self-join",
+          "explain_md": "Employee `e`, manager `m`; the comparison is false for NULLs, so unknown salaries drop out.",
+          "sql": "SELECT e.name AS employee, e.salary, m.name AS manager, m.salary AS manager_salary\nFROM employees e\nJOIN employees m ON m.emp_id = e.manager_id\nWHERE e.salary > m.salary\nORDER BY e.name;"
+        },
+        {
+          "label": "Correlated subquery",
+          "explain_md": "Look the manager up with a subquery on the same table.",
+          "sql": "SELECT e.name AS employee, e.salary, m.name AS manager, m.salary AS manager_salary\nFROM employees e, employees m\nWHERE m.emp_id = e.manager_id\n  AND e.salary > (SELECT m2.salary FROM employees m2 WHERE m2.emp_id = e.manager_id)\nORDER BY e.name;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`>=` also returns Raj, who earns exactly what his manager earns.",
+          "sql": "SELECT e.name AS employee, e.salary, m.name AS manager, m.salary AS manager_salary\nFROM employees e\nJOIN employees m ON m.emp_id = e.manager_id\nWHERE e.salary >= m.salary\nORDER BY e.name;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "employee",
+          "salary",
+          "manager",
+          "manager_salary"
+        ],
+        "rows": [
+          [
+            "Omar",
+            "160000",
+            "Priya",
+            "150000"
+          ],
+          [
+            "Tess",
+            "170000",
+            "Omar",
+            "160000"
+          ],
+          [
+            "Vik",
+            "100000",
+            "Lena",
+            "90000"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P015",
+      "slug": "products-bought-together",
+      "title": "Products bought together",
+      "difficulty": "Hard",
+      "topics": [
+        "Self-joins",
+        "Aggregation",
+        "Deduplication"
+      ],
+      "statement_md": "A grocer wants frequent product pairs. A pair is two different products appearing in the same order; report each pair once. Return `product_a`, `product_b` (names; `product_a` is the one with the smaller `product_id`) and `orders_together` (number of different orders containing both), only for pairs that occur in at least 2 orders. Order by `orders_together` descending, then the two product ids ascending. Note a product can appear on several lines of one order.",
+      "tables": [
+        {
+          "name": "products",
+          "description_md": "One row per product.",
+          "columns": [
+            {
+              "name": "product_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_name",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Milk"
+            ],
+            [
+              2,
+              "Bread"
+            ],
+            [
+              3,
+              "Eggs"
+            ],
+            [
+              4,
+              "Jam"
+            ],
+            [
+              5,
+              "Tea"
+            ]
+          ]
+        },
+        {
+          "name": "basket_lines",
+          "description_md": "One row per order line; the same product can repeat within an order.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              3
+            ],
+            [
+              2,
+              1
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              3,
+              3
+            ],
+            [
+              4,
+              1
+            ],
+            [
+              4,
+              2
+            ],
+            [
+              4,
+              4
+            ],
+            [
+              5,
+              4
+            ],
+            [
+              5,
+              5
+            ],
+            [
+              6,
+              1
+            ],
+            [
+              6,
+              3
+            ],
+            [
+              7,
+              2
+            ],
+            [
+              7,
+              2
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "How do you get each unordered pair exactly once from a self-join on order?",
+        "Lines can repeat; what should you count so an order is counted once per pair?"
+      ],
+      "notes_md": "**Pattern family:** self-join on a shared key to build pairs (market-basket).\n\n**Shape:** join the lines table to itself on order, keep one orientation of each pair, count different orders, filter groups, then bring in names.\n\n**Syntax:** `a.product_id < b.product_id` (one orientation), `COUNT(DISTINCT a.order_id)`, `HAVING`.\n\n**Trap:** `<>` returns every pair in both orientations; repeated lines inflate plain COUNT(*).",
+      "solutions": [
+        {
+          "label": "Self-join with COUNT DISTINCT",
+          "explain_md": "Smaller id on the left gives one orientation; DISTINCT order ids absorb repeated lines.",
+          "sql": "SELECT pa.product_name AS product_a, pb.product_name AS product_b, COUNT(DISTINCT a.order_id) AS orders_together\nFROM basket_lines a\nJOIN basket_lines b ON b.order_id = a.order_id AND a.product_id < b.product_id\nJOIN products pa ON pa.product_id = a.product_id\nJOIN products pb ON pb.product_id = b.product_id\nGROUP BY a.product_id, b.product_id, pa.product_name, pb.product_name\nHAVING COUNT(DISTINCT a.order_id) >= 2\nORDER BY orders_together DESC, a.product_id, b.product_id;"
+        },
+        {
+          "label": "Deduplicate lines first",
+          "explain_md": "A distinct (order, product) CTE removes repeats, so a plain COUNT(*) is correct.",
+          "sql": "WITH uniq AS (SELECT DISTINCT order_id, product_id FROM basket_lines)\nSELECT pa.product_name AS product_a, pb.product_name AS product_b, COUNT(*) AS orders_together\nFROM uniq a\nJOIN uniq b ON b.order_id = a.order_id AND a.product_id < b.product_id\nJOIN products pa ON pa.product_id = a.product_id\nJOIN products pb ON pb.product_id = b.product_id\nGROUP BY a.product_id, b.product_id, pa.product_name, pb.product_name\nHAVING COUNT(*) >= 2\nORDER BY orders_together DESC, a.product_id, b.product_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without DISTINCT, order 2 (two Bread lines) is counted twice for Milk and Bread.",
+          "sql": "SELECT pa.product_name AS product_a, pb.product_name AS product_b, COUNT(*) AS orders_together\nFROM basket_lines a\nJOIN basket_lines b ON b.order_id = a.order_id AND a.product_id < b.product_id\nJOIN products pa ON pa.product_id = a.product_id\nJOIN products pb ON pb.product_id = b.product_id\nGROUP BY a.product_id, b.product_id, pa.product_name, pb.product_name\nHAVING COUNT(*) >= 2\nORDER BY orders_together DESC, a.product_id, b.product_id;"
+        },
+        {
+          "explain_md": "`<>` yields each pair twice (Milk-Bread and Bread-Milk), so the pair list is doubled and product_a is no longer the smaller id.",
+          "sql": "SELECT pa.product_name AS product_a, pb.product_name AS product_b, COUNT(DISTINCT a.order_id) AS orders_together\nFROM basket_lines a\nJOIN basket_lines b ON b.order_id = a.order_id AND a.product_id <> b.product_id\nJOIN products pa ON pa.product_id = a.product_id\nJOIN products pb ON pb.product_id = b.product_id\nGROUP BY a.product_id, b.product_id, pa.product_name, pb.product_name\nHAVING COUNT(DISTINCT a.order_id) >= 2\nORDER BY orders_together DESC, a.product_id, b.product_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "product_a",
+          "product_b",
+          "orders_together"
+        ],
+        "rows": [
+          [
+            "Milk",
+            "Bread",
+            "3"
+          ],
+          [
+            "Milk",
+            "Eggs",
+            "2"
+          ],
+          [
+            "Bread",
+            "Eggs",
+            "2"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P016",
+      "slug": "second-highest-salary-per-department",
+      "title": "Second-highest salary per department",
+      "difficulty": "Hard",
+      "topics": [
+        "Ranking",
+        "Window functions",
+        "Subqueries",
+        "NULL handling"
+      ],
+      "statement_md": "For every department return `dept_name` and `second_highest_salary`: the second-highest distinct salary among its employees. If a department has fewer than two distinct salaries (one person, everyone tied, no staff, or only unknown salaries) the value must be NULL, and the department must still be listed. Order by `dept_name`.",
+      "tables": [
+        {
+          "name": "departments",
+          "description_md": "One row per department, including empty ones.",
+          "columns": [
+            {
+              "name": "dept_id",
+              "type": "INT"
+            },
+            {
+              "name": "dept_name",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Engineering"
+            ],
+            [
+              2,
+              "Sales"
+            ],
+            [
+              3,
+              "Support"
+            ],
+            [
+              4,
+              "Legal"
+            ],
+            [
+              5,
+              "Design"
+            ]
+          ]
+        },
+        {
+          "name": "staff",
+          "description_md": "One row per employee. `salary` may be NULL (not yet set).",
+          "columns": [
+            {
+              "name": "emp_id",
+              "type": "INT"
+            },
+            {
+              "name": "dept_id",
+              "type": "INT"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              200
+            ],
+            [
+              2,
+              1,
+              200
+            ],
+            [
+              3,
+              1,
+              150
+            ],
+            [
+              4,
+              1,
+              120
+            ],
+            [
+              5,
+              2,
+              90
+            ],
+            [
+              6,
+              2,
+              70
+            ],
+            [
+              7,
+              2,
+              70
+            ],
+            [
+              8,
+              3,
+              60
+            ],
+            [
+              9,
+              3,
+              null
+            ],
+            [
+              10,
+              5,
+              80
+            ],
+            [
+              11,
+              5,
+              80
+            ],
+            [
+              12,
+              5,
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Ties at the top must not use up the second place.",
+        "Start the output from departments so empty ones survive."
+      ],
+      "notes_md": "**Pattern family:** Nth-highest per group with a NULL when it does not exist.\n\n**Shape:** either rank distinct salaries per department (one row per department and salary) and LEFT JOIN the rank-2 row, or take the maximum salary below the department maximum with a correlated subquery.\n\n**Syntax:** `DENSE_RANK() OVER (PARTITION BY k ORDER BY v DESC)`; `(SELECT MAX(v) FROM t WHERE ... AND v < (SELECT MAX(v) ...))`.\n\n**Trap:** RANK leaves gaps after ties and ROW_NUMBER ignores ties; an inner join drops departments with no answer.",
+      "solutions": [
+        {
+          "label": "DENSE_RANK + LEFT JOIN",
+          "explain_md": "Rank distinct salaries within each department; the filter on rank 2 sits in the ON clause so every department is kept.",
+          "sql": "WITH ranked AS (\n  SELECT DISTINCT dept_id, salary, DENSE_RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS rnk\n  FROM staff\n  WHERE salary IS NOT NULL\n)\nSELECT d.dept_name, r.salary AS second_highest_salary\nFROM departments d\nLEFT JOIN ranked r ON r.dept_id = d.dept_id AND r.rnk = 2\nORDER BY d.dept_name;"
+        },
+        {
+          "label": "Correlated MAX below the MAX",
+          "explain_md": "The largest salary strictly below the department's maximum; MAX over no rows is NULL.",
+          "sql": "SELECT d.dept_name,\n       (SELECT MAX(s.salary) FROM staff s\n         WHERE s.dept_id = d.dept_id\n           AND s.salary < (SELECT MAX(s2.salary) FROM staff s2 WHERE s2.dept_id = d.dept_id)) AS second_highest_salary\nFROM departments d\nORDER BY d.dept_name;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "ROW_NUMBER picks the second row, not the second distinct value: Engineering shows 200 and Design shows 80.",
+          "sql": "WITH ranked AS (\n  SELECT dept_id, salary, ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS rnk\n  FROM staff WHERE salary IS NOT NULL\n)\nSELECT d.dept_name, r.salary AS second_highest_salary\nFROM departments d\nLEFT JOIN ranked r ON r.dept_id = d.dept_id AND r.rnk = 2\nORDER BY d.dept_name;"
+        },
+        {
+          "explain_md": "RANK skips a place after a tie (200, 200, then 150 is rank 3), so Engineering gets NULL.",
+          "sql": "WITH ranked AS (\n  SELECT DISTINCT dept_id, salary, RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS rnk\n  FROM staff WHERE salary IS NOT NULL\n)\nSELECT d.dept_name, r.salary AS second_highest_salary\nFROM departments d\nLEFT JOIN ranked r ON r.dept_id = d.dept_id AND r.rnk = 2\nORDER BY d.dept_name;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "dept_name",
+          "second_highest_salary"
+        ],
+        "rows": [
+          [
+            "Design",
+            null
+          ],
+          [
+            "Engineering",
+            "150"
+          ],
+          [
+            "Legal",
+            null
+          ],
+          [
+            "Sales",
+            "70"
+          ],
+          [
+            "Support",
+            null
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

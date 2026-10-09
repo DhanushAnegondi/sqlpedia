@@ -1,0 +1,796 @@
+{
+  "id": "null-handling",
+  "title": "NULL handling",
+  "group": "Foundations",
+  "order": 7,
+  "summary_md": "Three-valued logic, the NULL-aware functions in MySQL and SQL Server, and the traps interviewers probe: NOT IN, aggregates, ordering, concatenation.",
+  "sections": [
+    {
+      "id": "three-valued-logic",
+      "heading": "Three-valued logic: NULL means unknown",
+      "body_md": "A comparison with NULL is neither true nor false - it is **UNKNOWN**. `WHERE` and `JOIN ... ON` keep a row only when the condition is TRUE, so UNKNOWN rows vanish.\n- `NULL = NULL`, `NULL <> NULL`, `x = NULL`, `x <> NULL` are all UNKNOWN. Never write `= NULL`.\n- Test with `IS NULL` / `IS NOT NULL` - the only comparisons that return TRUE/FALSE for NULL.\n- `TRUE OR UNKNOWN` = TRUE, `FALSE AND UNKNOWN` = FALSE, `NOT UNKNOWN` = UNKNOWN; everything else with UNKNOWN stays UNKNOWN.\n- `salary <> 150000` silently drops rows whose salary is NULL - add `OR salary IS NULL` if you want them.\n- `CASE col WHEN NULL THEN ...` never matches (it compiles to `col = NULL`); use `CASE WHEN col IS NULL`.\n- GROUP BY, DISTINCT, UNION and ORDER BY treat all NULLs as one group / equal - only `=` does not.",
+      "syntax": {
+        "mysql": "expr IS [NOT] NULL",
+        "tsql": "expr IS [NOT] NULL"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "Any column or expression. Returns TRUE/FALSE, never UNKNOWN."
+        }
+      ],
+      "examples": [
+        {
+          "id": "null-eq-null",
+          "title": "NULL = NULL is unknown",
+          "explain_md": "A CASE maps TRUE/FALSE/UNKNOWN to labels. `NULL = NULL` falls through to unknown; `IS NULL` is TRUE.\n`TRUE OR NULL` is TRUE but `TRUE AND NULL` stays unknown.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT CASE WHEN NULL = NULL THEN 'true' WHEN NOT (NULL = NULL) THEN 'false' ELSE 'unknown' END AS null_eq_null,\n       CASE WHEN NULL IS NULL THEN 'true' ELSE 'false' END AS is_null,\n       CASE WHEN (1 = 1 OR NULL = 1) THEN 'true' WHEN NOT (1 = 1 OR NULL = 1) THEN 'false' ELSE 'unknown' END AS true_or_null,\n       CASE WHEN (1 = 1 AND NULL = 1) THEN 'true' WHEN NOT (1 = 1 AND NULL = 1) THEN 'false' ELSE 'unknown' END AS true_and_null;",
+          "tsql": "SELECT CASE WHEN NULL = NULL THEN 'true' WHEN NOT (NULL = NULL) THEN 'false' ELSE 'unknown' END AS null_eq_null,\n       CASE WHEN NULL IS NULL THEN 'true' ELSE 'false' END AS is_null,\n       CASE WHEN (1 = 1 OR NULL = 1) THEN 'true' WHEN NOT (1 = 1 OR NULL = 1) THEN 'false' ELSE 'unknown' END AS true_or_null,\n       CASE WHEN (1 = 1 AND NULL = 1) THEN 'true' WHEN NOT (1 = 1 AND NULL = 1) THEN 'false' ELSE 'unknown' END AS true_and_null;",
+          "dialect_note_md": "SQL Server has no boolean type, so a comparison cannot be selected directly - wrap it in CASE as above. (MySQL can run `SELECT NULL = NULL` and returns NULL.) With `SET ANSI_NULLS OFF` SQL Server would treat `= NULL` like `IS NULL`; that setting is deprecated, assume ON.",
+          "expected": {
+            "columns": [
+              "null_eq_null",
+              "is_null",
+              "true_or_null",
+              "true_and_null"
+            ],
+            "rows": [
+              [
+                "unknown",
+                "true",
+                "true",
+                "unknown"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "is-null-filter",
+          "title": "= NULL finds nothing; IS NULL finds the contractor",
+          "explain_md": "Jon is the only employee with NULL salary. `= NULL` returns 0 rows. `<> 150000` returns 7 rows - Jon is missing - and `OR salary IS NULL` brings him back.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT\n  (SELECT COUNT(*) FROM employees WHERE salary = NULL)            AS eq_null,\n  (SELECT COUNT(*) FROM employees WHERE salary IS NULL)           AS is_null,\n  (SELECT COUNT(*) FROM employees WHERE salary <> 150000)         AS not_150k,\n  (SELECT COUNT(*) FROM employees WHERE salary <> 150000 OR salary IS NULL) AS not_150k_or_null;",
+          "tsql": "SELECT\n  (SELECT COUNT(*) FROM employees WHERE salary = NULL)            AS eq_null,\n  (SELECT COUNT(*) FROM employees WHERE salary IS NULL)           AS is_null,\n  (SELECT COUNT(*) FROM employees WHERE salary <> 150000)         AS not_150k,\n  (SELECT COUNT(*) FROM employees WHERE salary <> 150000 OR salary IS NULL) AS not_150k_or_null;",
+          "expected": {
+            "columns": [
+              "eq_null",
+              "is_null",
+              "not_150k",
+              "not_150k_or_null"
+            ],
+            "rows": [
+              [
+                "0",
+                "1",
+                "7",
+                "8"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`WHERE col NOT IN (...)` and `col <> x` both exclude NULL rows - the most common silent data loss.",
+        "A LEFT JOIN followed by `WHERE right_table.col = 'x'` discards the NULL-extended rows and turns the join into an inner join; put that filter in ON."
+      ]
+    },
+    {
+      "id": "coalesce-ifnull-isnull",
+      "heading": "COALESCE vs IFNULL vs ISNULL",
+      "body_md": "All three replace NULL with a fallback. Prefer **COALESCE** - it is ANSI, works in both engines, and takes any number of arguments.\n- `COALESCE(a, b, c, ...)` returns the first non-NULL argument, left to right; NULL if all are NULL.\n- MySQL `IFNULL(a, b)`: exactly 2 arguments. **Do not** use MySQL `ISNULL(x)` as a fallback - there it is a one-argument test returning 1/0.\n- SQL Server `ISNULL(a, b)`: exactly 2 arguments, but the result takes the **data type of the first argument** - the fallback is silently truncated/converted to it. COALESCE instead uses the highest-precedence type among all arguments.\n- Rule of thumb: COALESCE everywhere; reach for ISNULL/IFNULL only for brevity on two args.\n- Typical uses: display defaults, `COALESCE(SUM(x), 0)`, first available value across columns (`COALESCE(mobile, work, home)`).",
+      "syntax": {
+        "mysql": "COALESCE(expr1, expr2 [, expr3 ...])\nIFNULL(expr, fallback)",
+        "tsql": "COALESCE(expr1, expr2 [, expr3 ...])\nISNULL(expr, fallback)"
+      },
+      "args": [
+        {
+          "name": "expr1, expr2, ...",
+          "meaning": "COALESCE: checked left to right; the first one that is not NULL is returned."
+        },
+        {
+          "name": "IFNULL / ISNULL position 1",
+          "meaning": "The value to test."
+        },
+        {
+          "name": "IFNULL / ISNULL position 2",
+          "meaning": "Returned when position 1 is NULL. In SQL Server it is converted to position 1's type."
+        }
+      ],
+      "examples": [
+        {
+          "id": "coalesce-chain",
+          "title": "First non-NULL wins",
+          "explain_md": "The first non-NULL argument is returned; argument order is priority order.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT COALESCE(NULL, NULL, 'c', 'd') AS first_non_null, COALESCE(NULL, 0) AS zero_fallback, IFNULL(NULL, 'fallback') AS two_arg_result;",
+          "tsql": "SELECT COALESCE(NULL, NULL, 'c', 'd') AS first_non_null, COALESCE(NULL, 0) AS zero_fallback, ISNULL(NULL, 'fallback') AS two_arg_result;",
+          "expected": {
+            "columns": [
+              "first_non_null",
+              "zero_fallback",
+              "two_arg_result"
+            ],
+            "rows": [
+              [
+                "c",
+                "0",
+                "fallback"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "coalesce-dataset",
+          "title": "Fill missing salary",
+          "explain_md": "Jon (NULL salary) becomes 0 / -1. Put COALESCE in the SELECT list; in a WHERE it blocks index use.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, COALESCE(salary, 0) AS salary_or_zero, IFNULL(salary, -1) AS salary_or_minus1 FROM employees WHERE emp_id >= 8 ORDER BY emp_id;",
+          "tsql": "SELECT name, COALESCE(salary, 0) AS salary_or_zero, ISNULL(salary, -1) AS salary_or_minus1 FROM employees WHERE emp_id >= 8 ORDER BY emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary_or_zero",
+              "salary_or_minus1"
+            ],
+            "rows": [
+              [
+                "Hal",
+                "80000",
+                "80000"
+              ],
+              [
+                "Ivy",
+                "90000",
+                "90000"
+              ],
+              [
+                "Jon",
+                "0",
+                "-1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "isnull-truncates",
+          "title": "ISNULL takes the first argument's type",
+          "explain_md": "The first argument is declared as a 3-character string. In SQL Server `ISNULL` forces the fallback into that type, so `'abcdef'` becomes `'abc'`; `COALESCE` keeps `'abcdef'`. MySQL `IFNULL` has no such problem.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT COALESCE(NULL, 'abcdef') AS coalesce_result, IFNULL(NULL, 'abcdef') AS two_arg_result;",
+          "tsql": "SELECT COALESCE(CAST(NULL AS VARCHAR(3)), 'abcdef') AS coalesce_result, ISNULL(CAST(NULL AS VARCHAR(3)), 'abcdef') AS two_arg_result;",
+          "dialect_note_md": "Real SQL Server returns `abcdef` and `abc` (ISNULL truncates to VARCHAR(3)); MySQL returns `abcdef` for both. The same effect bites with INT vs DECIMAL: `ISNULL(int_col, 1.5)` returns an INT.",
+          "expected": {
+            "columns": [
+              "coalesce_result",
+              "two_arg_result"
+            ],
+            "rows": [
+              [
+                "abcdef",
+                "abcdef"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "SQL Server `COALESCE(NULL, NULL)` errors (at least one argument must have a type); cast one to a type.",
+        "`WHERE COALESCE(col, 0) = 0` cannot use an index on `col` in either engine; write `col = 0 OR col IS NULL` instead."
+      ]
+    },
+    {
+      "id": "nullif",
+      "heading": "NULLIF: turn a value into NULL (divide-by-zero guard)",
+      "body_md": "`NULLIF(a, b)` returns NULL when `a = b`, otherwise `a`. It is the inverse of COALESCE.\n- Divide-by-zero guard: `x / NULLIF(y, 0)` yields NULL instead of an error.\n- SQL Server **raises an error** on `/ 0`. MySQL returns NULL for `SELECT 1/0` but **errors on INSERT/UPDATE** in strict mode - guard anyway.\n- Clean sentinels: `NULLIF(TRIM(col), '')` turns empty strings into real NULLs; `NULLIF(col, 'N/A')`.\n- Pair them: `COALESCE(x / NULLIF(y, 0), 0)` for \"ratio, or 0 when undefined\".",
+      "syntax": {
+        "mysql": "NULLIF(expr1, expr2)",
+        "tsql": "NULLIF(expr1, expr2)"
+      },
+      "args": [
+        {
+          "name": "expr1",
+          "meaning": "Returned unchanged unless it equals expr2."
+        },
+        {
+          "name": "expr2",
+          "meaning": "The 'bad' value; when expr1 = expr2 the result is NULL."
+        }
+      ],
+      "examples": [
+        {
+          "id": "nullif-divide",
+          "title": "Safe ratio with NULLIF",
+          "explain_md": "The row with x = 0 would divide by zero; `NULLIF(x, 0)` makes the denominator NULL so the ratio is NULL, and COALESCE turns it into 0 for display.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT x, 100.0 / NULLIF(x, 0) AS ratio, COALESCE(100.0 / NULLIF(x, 0), 0) AS ratio_or_zero\nFROM (SELECT 0 AS x UNION ALL SELECT 4 UNION ALL SELECT 8) AS t\nORDER BY x;",
+          "tsql": "SELECT x, 100.0 / NULLIF(x, 0) AS ratio, COALESCE(100.0 / NULLIF(x, 0), 0) AS ratio_or_zero\nFROM (SELECT 0 AS x UNION ALL SELECT 4 UNION ALL SELECT 8) AS t\nORDER BY x;",
+          "expected": {
+            "columns": [
+              "x",
+              "ratio",
+              "ratio_or_zero"
+            ],
+            "rows": [
+              [
+                "0",
+                null,
+                "0.00000"
+              ],
+              [
+                "4",
+                "25.00000",
+                "25.00000"
+              ],
+              [
+                "8",
+                "12.50000",
+                "12.50000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "nullif-sentinel",
+          "title": "NULLIF on a sentinel value",
+          "explain_md": "`NULLIF(manager_id, 1)` hides everyone managed by Ana (id 1) behind NULL - a quick way to make an aggregate skip a value. `COUNT(NULLIF(...))` counts only the other rows.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT COUNT(*) AS all_rows, COUNT(manager_id) AS has_manager, COUNT(NULLIF(manager_id, 1)) AS manager_not_ana FROM employees;",
+          "tsql": "SELECT COUNT(*) AS all_rows, COUNT(manager_id) AS has_manager, COUNT(NULLIF(manager_id, 1)) AS manager_not_ana FROM employees;",
+          "expected": {
+            "columns": [
+              "all_rows",
+              "has_manager",
+              "manager_not_ana"
+            ],
+            "rows": [
+              [
+                "10",
+                "9",
+                "6"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "nulls-in-aggregates",
+      "heading": "NULLs in aggregates",
+      "body_md": "Aggregates skip NULL inputs - which changes averages and counts.\n- `COUNT(*)` counts rows; `COUNT(col)` counts non-NULL values; `COUNT(DISTINCT col)` counts distinct non-NULL values.\n- `SUM`, `AVG`, `MIN`, `MAX` ignore NULLs. `AVG(col)` = `SUM(col) / COUNT(col)`, **not** `/ COUNT(*)`.\n- To average NULL as zero: `AVG(COALESCE(col, 0))`.\n- An aggregate over zero rows, or only NULLs, returns NULL (except COUNT, which returns 0): use `COALESCE(SUM(col), 0)`.\n- SQL Server `AVG` of an INT column returns an INT (truncated): use `AVG(col * 1.0)`.\n- GROUP BY puts all NULLs in one group.",
+      "examples": [
+        {
+          "id": "avg-ignores-null",
+          "title": "AVG skips Jon's NULL salary",
+          "explain_md": "9 of 10 employees have a salary. `AVG(salary)` divides by 9; `AVG(COALESCE(salary, 0))` divides by 10. `SUM` over an empty set is NULL, hence the COALESCE.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT COUNT(*) AS rows_n, COUNT(salary) AS salary_n,\n       AVG(salary * 1.0) AS avg_ignoring_null,\n       AVG(COALESCE(salary, 0) * 1.0) AS avg_null_as_zero,\n       COALESCE((SELECT SUM(salary) FROM employees WHERE dept = 'Nowhere'), 0) AS sum_of_nothing\nFROM employees;",
+          "tsql": "SELECT COUNT(*) AS rows_n, COUNT(salary) AS salary_n,\n       AVG(salary * 1.0) AS avg_ignoring_null,\n       AVG(COALESCE(salary, 0) * 1.0) AS avg_null_as_zero,\n       COALESCE((SELECT SUM(salary) FROM employees WHERE dept = 'Nowhere'), 0) AS sum_of_nothing\nFROM employees;",
+          "expected": {
+            "columns": [
+              "rows_n",
+              "salary_n",
+              "avg_ignoring_null",
+              "avg_null_as_zero",
+              "sum_of_nothing"
+            ],
+            "rows": [
+              [
+                "10",
+                "9",
+                "125000.00000",
+                "112500.00000",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "group-null",
+          "title": "NULL is its own group",
+          "explain_md": "`city` is NULL for Olga; GROUP BY returns one NULL row (sorted first in both engines) whose `COUNT(city)` is 0 while `COUNT(*)` is 1.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT city, COUNT(*) AS customers, COUNT(city) AS city_values FROM customers GROUP BY city ORDER BY city;",
+          "tsql": "SELECT city, COUNT(*) AS customers, COUNT(city) AS city_values FROM customers GROUP BY city ORDER BY city;",
+          "expected": {
+            "columns": [
+              "city",
+              "customers",
+              "city_values"
+            ],
+            "rows": [
+              [
+                null,
+                "1",
+                "0"
+              ],
+              [
+                "Austin",
+                "3",
+                "3"
+              ],
+              [
+                "Boston",
+                "1",
+                "1"
+              ],
+              [
+                "Denver",
+                "1",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`COUNT(col) = COUNT(*)` is a quick 'column has no NULLs' check.",
+        "`SUM(a) - SUM(b)` is not `SUM(a - b)` when either column has NULLs: rows with a NULL in one column are dropped from the second form only."
+      ]
+    },
+    {
+      "id": "not-in-trap",
+      "heading": "NOT IN with NULL: the classic trap",
+      "body_md": "`x NOT IN (1, 2, NULL)` expands to `x <> 1 AND x <> 2 AND x <> NULL` - the last term is UNKNOWN, so the whole predicate is never TRUE. **One NULL in the subquery empties the result.**\n- Fix 1: `NOT EXISTS (SELECT 1 FROM t WHERE t.k = outer.k)` - NULL-safe, and the usual anti-join.\n- Fix 2: filter the subquery: `NOT IN (SELECT k FROM t WHERE k IS NOT NULL)`.\n- Fix 3: `LEFT JOIN ... WHERE right.k IS NULL` (join on a non-NULL key).\n- `IN` is harmless: a NULL in the list just never matches.\n- Hits \"employees who manage nobody\" and \"customers with no orders\" whenever the child key can be NULL.",
+      "examples": [
+        {
+          "id": "not-in-null",
+          "title": "NOT IN returns zero rows",
+          "explain_md": "`manager_id` contains Ana's NULL, so `emp_id NOT IN (SELECT manager_id ...)` is never TRUE: **no rows**, even though five employees manage nobody.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT emp_id, name FROM employees WHERE emp_id NOT IN (SELECT manager_id FROM employees) ORDER BY emp_id;",
+          "tsql": "SELECT emp_id, name FROM employees WHERE emp_id NOT IN (SELECT manager_id FROM employees) ORDER BY emp_id;",
+          "expected": {
+            "columns": [],
+            "rows": []
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "not-exists-fix",
+          "title": "NOT EXISTS gives the right answer",
+          "explain_md": "Employees who are nobody's manager: Dev, Eli, Gus, Hal, Jon.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT e.emp_id, e.name FROM employees e WHERE NOT EXISTS (SELECT 1 FROM employees m WHERE m.manager_id = e.emp_id) ORDER BY e.emp_id;",
+          "tsql": "SELECT e.emp_id, e.name FROM employees e WHERE NOT EXISTS (SELECT 1 FROM employees m WHERE m.manager_id = e.emp_id) ORDER BY e.emp_id;",
+          "expected": {
+            "columns": [
+              "emp_id",
+              "name"
+            ],
+            "rows": [
+              [
+                "4",
+                "Dev"
+              ],
+              [
+                "5",
+                "Eli"
+              ],
+              [
+                "7",
+                "Gus"
+              ],
+              [
+                "8",
+                "Hal"
+              ],
+              [
+                "10",
+                "Jon"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "not-in-filtered",
+          "title": "NOT IN works if the subquery excludes NULLs",
+          "explain_md": "Same rows as NOT EXISTS once `WHERE manager_id IS NOT NULL` removes the NULL from the list.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT emp_id, name FROM employees WHERE emp_id NOT IN (SELECT manager_id FROM employees WHERE manager_id IS NOT NULL) ORDER BY emp_id;",
+          "tsql": "SELECT emp_id, name FROM employees WHERE emp_id NOT IN (SELECT manager_id FROM employees WHERE manager_id IS NOT NULL) ORDER BY emp_id;",
+          "expected": {
+            "columns": [
+              "emp_id",
+              "name"
+            ],
+            "rows": [
+              [
+                "4",
+                "Dev"
+              ],
+              [
+                "5",
+                "Eli"
+              ],
+              [
+                "7",
+                "Gus"
+              ],
+              [
+                "8",
+                "Hal"
+              ],
+              [
+                "10",
+                "Jon"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "The trap only fires when the **subquery/list can contain NULL**. A NOT NULL column makes NOT IN safe - until the schema changes. Default to NOT EXISTS in interviews.",
+        "`NULL NOT IN (1, 2)` (NULL on the left) is also UNKNOWN: the row is dropped."
+      ]
+    },
+    {
+      "id": "null-ordering",
+      "heading": "NULL ordering and emulating NULLS LAST",
+      "body_md": "Both MySQL and SQL Server treat NULL as the **lowest** value: first in `ASC`, last in `DESC`. Neither supports `NULLS FIRST / NULLS LAST` (PostgreSQL and Oracle do, and sort NULLs high by default).\n- Portable NULLS LAST for ASC: `ORDER BY CASE WHEN col IS NULL THEN 1 ELSE 0 END, col`.\n- MySQL shortcut: `ORDER BY col IS NULL, col` (a boolean sorts 0 < 1). SQL Server cannot sort a boolean - use the CASE form.\n- NULLS FIRST for DESC: `ORDER BY CASE WHEN col IS NULL THEN 0 ELSE 1 END, col DESC`.\n- The same trick works inside window `ORDER BY`.\n- `MAX/MIN` ignore NULLs, so `MIN(col)` is the smallest non-NULL value even though NULL sorts lowest.",
+      "syntax": {
+        "mysql": "ORDER BY col IS NULL, col   -- NULLS LAST (ASC)\nORDER BY CASE WHEN col IS NULL THEN 1 ELSE 0 END, col   -- portable",
+        "tsql": "ORDER BY CASE WHEN col IS NULL THEN 1 ELSE 0 END, col"
+      },
+      "examples": [
+        {
+          "id": "order-default",
+          "title": "Default: NULL sorts first ascending",
+          "explain_md": "Jon (NULL salary) is on top for `ASC`.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary FROM employees WHERE dept IN ('Marketing', 'Sales') ORDER BY salary, emp_id;",
+          "tsql": "SELECT name, salary FROM employees WHERE dept IN ('Marketing', 'Sales') ORDER BY salary, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Jon",
+                null
+              ],
+              [
+                "Gus",
+                "80000"
+              ],
+              [
+                "Hal",
+                "80000"
+              ],
+              [
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Fay",
+                "110000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "order-nulls-last",
+          "title": "NULLS LAST with a CASE sort key",
+          "explain_md": "The first sort key is 0 for real values and 1 for NULL, so Jon drops to the bottom while salaries stay ascending.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary FROM employees WHERE dept IN ('Marketing', 'Sales') ORDER BY CASE WHEN salary IS NULL THEN 1 ELSE 0 END, salary, emp_id;",
+          "tsql": "SELECT name, salary FROM employees WHERE dept IN ('Marketing', 'Sales') ORDER BY CASE WHEN salary IS NULL THEN 1 ELSE 0 END, salary, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Gus",
+                "80000"
+              ],
+              [
+                "Hal",
+                "80000"
+              ],
+              [
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Fay",
+                "110000"
+              ],
+              [
+                "Jon",
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "order-desc-nulls-first",
+          "title": "DESC with NULLs first",
+          "explain_md": "Highest salary first but the NULL pinned on top (default DESC would put it last).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary FROM employees WHERE dept IN ('Marketing', 'Sales') ORDER BY CASE WHEN salary IS NULL THEN 0 ELSE 1 END, salary DESC, emp_id;",
+          "tsql": "SELECT name, salary FROM employees WHERE dept IN ('Marketing', 'Sales') ORDER BY CASE WHEN salary IS NULL THEN 0 ELSE 1 END, salary DESC, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Jon",
+                null
+              ],
+              [
+                "Fay",
+                "110000"
+              ],
+              [
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Gus",
+                "80000"
+              ],
+              [
+                "Hal",
+                "80000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "null-safe-equality",
+      "heading": "NULL-safe equality",
+      "body_md": "Sometimes two NULLs should count as 'the same' (diffing snapshots, SCD change detection, joining on nullable keys).\n- MySQL: `a <=> b` is TRUE if both equal or both NULL, never UNKNOWN. `NOT (a <=> b)` finds changes.\n- SQL Server 2022+: `a IS NOT DISTINCT FROM b` / `a IS DISTINCT FROM b`. Not in older versions, and MySQL does not support it.\n- Portable (any version): `a = b OR (a IS NULL AND b IS NULL)`.\n- `INTERSECT` / `EXCEPT` / `UNION` / `DISTINCT` already treat NULLs as equal in both engines - a neat shortcut for row diffs.",
+      "syntax": {
+        "mysql": "a <=> b",
+        "tsql": "a IS NOT DISTINCT FROM b   -- 2022+"
+      },
+      "args": [
+        {
+          "name": "a",
+          "meaning": "Left operand; may be NULL."
+        },
+        {
+          "name": "b",
+          "meaning": "Right operand; may be NULL. TRUE when a = b or both are NULL."
+        }
+      ],
+      "examples": [
+        {
+          "id": "null-safe-literals",
+          "title": "Literal truth table",
+          "explain_md": "MySQL `<=>` returns 1/0; the SQL Server 2022 operator is wrapped in CASE because a predicate cannot be selected directly.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT NULL <=> NULL AS both_null, 1 <=> NULL AS one_null, 1 <=> 1 AS equal;",
+          "tsql": "SELECT CASE WHEN NULL IS NOT DISTINCT FROM NULL THEN 1 ELSE 0 END AS both_null, CASE WHEN 1 IS NOT DISTINCT FROM NULL THEN 1 ELSE 0 END AS one_null, CASE WHEN 1 IS NOT DISTINCT FROM 1 THEN 1 ELSE 0 END AS equal;",
+          "dialect_note_md": "`IS [NOT] DISTINCT FROM` needs SQL Server 2022 (compatibility level 160). On 2019 and older use `(a = b OR (a IS NULL AND b IS NULL))`.",
+          "expected": {
+            "columns": [
+              "both_null",
+              "one_null",
+              "equal"
+            ],
+            "rows": [
+              [
+                "1",
+                "0",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "snapshot-diff",
+          "title": "Find changed prices between two snapshots",
+          "explain_md": "Items 3 and 4 changed (30 to NULL, NULL to 45); items 1 and 2 are unchanged. Item 2 is NULL in both snapshots: plain `<>` would miss real changes involving NULL, and plain `=` would wrongly flag item 2.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "price_old",
+              "description_md": "Yesterday's prices; items 2 and 4 have no price.",
+              "columns": [
+                {
+                  "name": "item_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "price",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  10
+                ],
+                [
+                  2,
+                  null
+                ],
+                [
+                  3,
+                  30
+                ],
+                [
+                  4,
+                  null
+                ]
+              ]
+            },
+            {
+              "name": "price_new",
+              "description_md": "Today's prices.",
+              "columns": [
+                {
+                  "name": "item_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "price",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  10
+                ],
+                [
+                  2,
+                  null
+                ],
+                [
+                  3,
+                  null
+                ],
+                [
+                  4,
+                  45
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT o.item_id, o.price AS old_price, n.price AS new_price FROM price_old o JOIN price_new n ON n.item_id = o.item_id WHERE NOT (o.price <=> n.price) ORDER BY o.item_id;",
+          "tsql": "SELECT o.item_id, o.price AS old_price, n.price AS new_price FROM price_old o JOIN price_new n ON n.item_id = o.item_id WHERE NOT (o.price = n.price OR (o.price IS NULL AND n.price IS NULL)) ORDER BY o.item_id;",
+          "dialect_note_md": "On SQL Server 2022 the filter can be `WHERE o.price IS DISTINCT FROM n.price`. The portable form above works on every version.",
+          "expected": {
+            "columns": [
+              "item_id",
+              "old_price",
+              "new_price"
+            ],
+            "rows": [
+              [
+                "3",
+                "30",
+                null
+              ],
+              [
+                "4",
+                null,
+                "45"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "concat-nulls",
+      "heading": "CONCAT and NULL",
+      "body_md": "The engines disagree - a favourite gotcha.\n- MySQL `CONCAT(a, b, ...)` returns **NULL if any argument is NULL**. `CONCAT_WS(sep, a, b, ...)` **skips NULL** arguments (and never emits a dangling separator).\n- SQL Server `CONCAT(...)` treats NULL as an **empty string** (2012+). `CONCAT_WS` (2017+) also skips NULLs.\n- SQL Server `a + b` follows the NULL rule: result is NULL if either side is NULL (default `CONCAT_NULL_YIELDS_NULL ON`).\n- MySQL has no `+` for strings (it adds numbers: `'a' + 'b'` = 0) and `||` is logical OR by default.\n- Portable: `CONCAT(a, ' ', COALESCE(b, ''))`.",
+      "syntax": {
+        "mysql": "CONCAT(s1, s2 [, ...])\nCONCAT_WS(separator, s1, s2 [, ...])",
+        "tsql": "CONCAT(s1, s2 [, ...])\nCONCAT_WS(separator, s1, s2 [, ...])  -- 2017+\ns1 + s2"
+      },
+      "args": [
+        {
+          "name": "separator (CONCAT_WS position 1)",
+          "meaning": "Text inserted between non-NULL values. A NULL separator makes the result NULL."
+        },
+        {
+          "name": "s1, s2, ...",
+          "meaning": "Values to join; numbers are converted to text."
+        }
+      ],
+      "examples": [
+        {
+          "id": "concat-literals",
+          "title": "Literal comparison",
+          "explain_md": "MySQL `CONCAT` is NULL as soon as one piece is NULL; `CONCAT_WS` skips it; COALESCE patches it.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT CONCAT('a', NULL, 'b') AS concat_null, CONCAT_WS('-', 'a', NULL, 'b') AS concat_ws_skips, CONCAT('a', COALESCE(NULL, ''), 'b') AS coalesce_fix;",
+          "tsql": "SELECT 'a' + NULL + 'b' AS concat_null, CONCAT_WS('-', 'a', NULL, 'b') AS concat_ws_skips, CONCAT('a', COALESCE(NULL, ''), 'b') AS coalesce_fix;",
+          "dialect_note_md": "The T-SQL above uses `+` to show the NULL result. SQL Server's own `CONCAT('a', NULL, 'b')` returns `ab`, not NULL - the opposite of MySQL.",
+          "expected": {
+            "columns": [
+              "concat_null",
+              "concat_ws_skips",
+              "coalesce_fix"
+            ],
+            "rows": [
+              [
+                null,
+                "a-b",
+                "ab"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "concat-customers",
+          "title": "Name and city",
+          "explain_md": "Olga has no city. The naive join is NULL; `CONCAT_WS` and `COALESCE` give usable text.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, CONCAT(name, ', ', city) AS naive, CONCAT_WS(', ', name, city) AS skipped, CONCAT(name, ' (', COALESCE(city, 'n/a'), ')') AS labelled FROM customers WHERE customer_id IN (1, 3) ORDER BY customer_id;",
+          "tsql": "SELECT name, name + ', ' + city AS naive, CONCAT_WS(', ', name, city) AS skipped, CONCAT(name, ' (', COALESCE(city, 'n/a'), ')') AS labelled FROM customers WHERE customer_id IN (1, 3) ORDER BY customer_id;",
+          "dialect_note_md": "`naive` is NULL for Olga in MySQL via `CONCAT` and in SQL Server via `+`. SQL Server's `CONCAT(name, ', ', city)` would instead return `Olga Petrova, ` (NULL as empty).",
+          "expected": {
+            "columns": [
+              "name",
+              "naive",
+              "skipped",
+              "labelled"
+            ],
+            "rows": [
+              [
+                "Maya Lopez",
+                "Maya Lopez, Austin",
+                "Maya Lopez, Austin",
+                "Maya Lopez (Austin)"
+              ],
+              [
+                "Olga Petrova",
+                null,
+                "Olga Petrova",
+                "Olga Petrova (n/a)"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    }
+  ]
+}

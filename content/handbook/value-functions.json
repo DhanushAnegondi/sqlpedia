@@ -1,0 +1,1183 @@
+{
+  "id": "value-functions",
+  "title": "Value functions: LAG, LEAD, FIRST_VALUE, LAST_VALUE, NTH_VALUE",
+  "group": "Window functions",
+  "order": 9,
+  "summary_md": "Read a value from another row of the window: previous or next row, first or last row of the group, or the nth row, plus the frame trap that breaks LAST_VALUE.",
+  "sections": [
+    {
+      "id": "lag-lead-basics",
+      "heading": "LAG and LEAD: look at a neighbouring row",
+      "body_md": "- `LAG` reads a value from an earlier row, `LEAD` from a later row, in the window's `ORDER BY`. No self-join needed.\n- The first row has no previous row, so `LAG` returns NULL there (and `LEAD` on the last row) unless you supply a `default`.\n- `PARTITION BY` restarts the neighbour lookup per group: the first row of each group gets NULL/default, never a value from the previous group.\n- `ORDER BY` inside `OVER` is required. Add a tiebreaker if two rows can share the sort key.\n- `WHERE` runs before window functions. Filtering rows out first removes them as neighbours; filter after (CTE/subquery) if the boundary row must stay visible.",
+      "syntax": {
+        "mysql": "LAG(expr [, offset [, default]])  OVER ([PARTITION BY p] ORDER BY o)\nLEAD(expr [, offset [, default]]) OVER ([PARTITION BY p] ORDER BY o)",
+        "tsql": "LAG(expr [, offset [, default]])  OVER ([PARTITION BY p] ORDER BY o)\nLEAD(expr [, offset [, default]]) OVER ([PARTITION BY p] ORDER BY o)"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "The column or expression to read from the neighbouring row."
+        },
+        {
+          "name": "offset",
+          "meaning": "How many rows back (LAG) or forward (LEAD). Optional, default 1. Must be a non-negative integer constant."
+        },
+        {
+          "name": "default",
+          "meaning": "Value returned when the neighbour row does not exist. Optional, default NULL. Not applied when the neighbour exists but its value is NULL."
+        },
+        {
+          "name": "PARTITION BY p",
+          "meaning": "Optional. Neighbours are only looked up inside the same group."
+        },
+        {
+          "name": "ORDER BY o",
+          "meaning": "Defines 'previous' and 'next'. Add an id to break ties."
+        }
+      ],
+      "examples": [
+        {
+          "id": "lag-lead-monthly",
+          "title": "Previous and next month revenue",
+          "explain_md": "Each row shows its neighbours. Jan 2023 is the first month overall, so its previous revenue is NULL.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT month_start, revenue,\n       LAG(revenue)  OVER (ORDER BY month_start) AS prev_revenue,\n       LEAD(revenue) OVER (ORDER BY month_start) AS next_revenue\nFROM monthly_revenue\nORDER BY month_start\nLIMIT 5;",
+          "tsql": "SELECT TOP (5) month_start, revenue,\n       LAG(revenue)  OVER (ORDER BY month_start) AS prev_revenue,\n       LEAD(revenue) OVER (ORDER BY month_start) AS next_revenue\nFROM monthly_revenue\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "prev_revenue",
+              "next_revenue"
+            ],
+            "rows": [
+              [
+                "2023-01-01",
+                "10000.00",
+                null,
+                "11000.00"
+              ],
+              [
+                "2023-02-01",
+                "11000.00",
+                "10000.00",
+                "10500.00"
+              ],
+              [
+                "2023-03-01",
+                "10500.00",
+                "11000.00",
+                "12000.00"
+              ],
+              [
+                "2023-04-01",
+                "12000.00",
+                "10500.00",
+                "12500.00"
+              ],
+              [
+                "2023-05-01",
+                "12500.00",
+                "12000.00",
+                "13000.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "lag-default-offset",
+          "title": "Default value and offset 2",
+          "explain_md": "`LAG(revenue, 1, 0)` replaces the missing first neighbour with 0. `LAG(revenue, 2)` looks two rows back, so both Jan and Feb are NULL. A default only fills 'no row', not a stored NULL.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT month_start, revenue,\n       LAG(revenue, 1, 0) OVER (ORDER BY month_start) AS prev_or_zero,\n       LAG(revenue, 2)    OVER (ORDER BY month_start) AS two_months_ago\nFROM monthly_revenue\nORDER BY month_start\nLIMIT 4;",
+          "tsql": "SELECT TOP (4) month_start, revenue,\n       LAG(revenue, 1, 0) OVER (ORDER BY month_start) AS prev_or_zero,\n       LAG(revenue, 2)    OVER (ORDER BY month_start) AS two_months_ago\nFROM monthly_revenue\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "prev_or_zero",
+              "two_months_ago"
+            ],
+            "rows": [
+              [
+                "2023-01-01",
+                "10000.00",
+                "0.00",
+                null
+              ],
+              [
+                "2023-02-01",
+                "11000.00",
+                "10000.00",
+                null
+              ],
+              [
+                "2023-03-01",
+                "10500.00",
+                "11000.00",
+                "10000.00"
+              ],
+              [
+                "2023-04-01",
+                "12000.00",
+                "10500.00",
+                "11000.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "lead-next-event",
+          "title": "Next event per user (LEAD with PARTITION BY)",
+          "explain_md": "The last event of each user has no next row, so the default 'END' appears. User boundaries are respected: user 1's last row does not borrow user 2's first event.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT user_id, event_id, event_type,\n       LEAD(event_type, 1, 'END') OVER (PARTITION BY user_id ORDER BY event_ts, event_id) AS next_event\nFROM events\nORDER BY user_id, event_ts, event_id;",
+          "tsql": "SELECT user_id, event_id, event_type,\n       LEAD(event_type, 1, 'END') OVER (PARTITION BY user_id ORDER BY event_ts, event_id) AS next_event\nFROM events\nORDER BY user_id, event_ts, event_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "event_id",
+              "event_type",
+              "next_event"
+            ],
+            "rows": [
+              [
+                "1",
+                "1",
+                "view",
+                "add_to_cart"
+              ],
+              [
+                "1",
+                "2",
+                "add_to_cart",
+                "view"
+              ],
+              [
+                "1",
+                "3",
+                "view",
+                "purchase"
+              ],
+              [
+                "1",
+                "4",
+                "purchase",
+                "END"
+              ],
+              [
+                "2",
+                "5",
+                "view",
+                "view"
+              ],
+              [
+                "2",
+                "6",
+                "view",
+                "add_to_cart"
+              ],
+              [
+                "2",
+                "7",
+                "add_to_cart",
+                "END"
+              ],
+              [
+                "3",
+                "8",
+                "view",
+                "view"
+              ],
+              [
+                "3",
+                "9",
+                "view",
+                "purchase"
+              ],
+              [
+                "3",
+                "10",
+                "purchase",
+                "view"
+              ],
+              [
+                "3",
+                "11",
+                "view",
+                "END"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "where-before-window",
+          "title": "Trap: WHERE removes the neighbour",
+          "explain_md": "Filtering to 2024 *before* the window means Jan 2024 cannot see Dec 2023, so its `prev_revenue` is NULL even though the data exists. Compute LAG over all rows first, then filter (see the period-comparisons page).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT month_start, revenue,\n       LAG(revenue) OVER (ORDER BY month_start) AS prev_revenue\nFROM monthly_revenue\nWHERE month_start >= '2024-01-01'\nORDER BY month_start\nLIMIT 3;",
+          "tsql": "SELECT TOP (3) month_start, revenue,\n       LAG(revenue) OVER (ORDER BY month_start) AS prev_revenue\nFROM monthly_revenue\nWHERE month_start >= '2024-01-01'\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "prev_revenue"
+            ],
+            "rows": [
+              [
+                "2024-01-01",
+                "12000.00",
+                null
+              ],
+              [
+                "2024-02-01",
+                "12100.00",
+                "12000.00"
+              ],
+              [
+                "2024-03-01",
+                "13650.00",
+                "12100.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`LAG(x, 0)` is legal and returns the current row; offsets must not be negative or a column.",
+        "The default argument must be type-compatible with `expr`.",
+        "A LAG over rows with gaps in time (missing months) still returns the previous *existing* row, not the previous calendar period."
+      ]
+    },
+    {
+      "id": "differences-and-gaps",
+      "heading": "Differences from the previous row and time gaps",
+      "body_md": "- Change since last row: `value - LAG(value) OVER (...)`. The first row is NULL because `LAG` is NULL.\n- Time since last row: compute the previous timestamp with `LAG`, then diff it in the outer expression.\n- MySQL: `DATEDIFF(date1, date2)` is days, `date1 - date2` order. `TIMESTAMPDIFF(unit, earlier, later)` for other units.\n- SQL Server: `DATEDIFF(unit, earlier, later)` always takes the unit first and the earlier date first.\n- Filter on a status *before* LAG when only some rows should count (for example only completed orders); the neighbour is then the previous *matching* row.",
+      "syntax": {
+        "mysql": "-- MySQL\nDATEDIFF(later_date, earlier_date)               -- days\nTIMESTAMPDIFF(MINUTE, earlier_ts, later_ts)",
+        "tsql": "-- SQL Server\nDATEDIFF(DAY, earlier_date, later_date)\nDATEDIFF(MINUTE, earlier_ts, later_ts)"
+      },
+      "args": [
+        {
+          "name": "DATEDIFF (MySQL)",
+          "meaning": "DATEDIFF(a, b) = a - b in days. Later date goes first."
+        },
+        {
+          "name": "DATEDIFF (SQL Server)",
+          "meaning": "DATEDIFF(unit, start, end) = end - start. Unit first, earlier date first."
+        },
+        {
+          "name": "TIMESTAMPDIFF(unit, start, end)",
+          "meaning": "MySQL: whole units from start to end. unit is MINUTE, HOUR, DAY..."
+        }
+      ],
+      "examples": [
+        {
+          "id": "diff-from-previous",
+          "title": "Revenue change versus the previous month",
+          "explain_md": "Subtracting `LAG` gives the absolute change. Jan 2023 is NULL (no previous month). The CTE keeps all months so the window sees them, then the outer query trims.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH m AS (\n  SELECT month_start, revenue,\n         revenue - LAG(revenue) OVER (ORDER BY month_start) AS change_vs_prev\n  FROM monthly_revenue\n)\nSELECT month_start, revenue, change_vs_prev\nFROM m\nWHERE month_start <= '2023-06-01'\nORDER BY month_start;",
+          "tsql": "WITH m AS (\n  SELECT month_start, revenue,\n         revenue - LAG(revenue) OVER (ORDER BY month_start) AS change_vs_prev\n  FROM monthly_revenue\n)\nSELECT month_start, revenue, change_vs_prev\nFROM m\nWHERE month_start <= '2023-06-01'\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "change_vs_prev"
+            ],
+            "rows": [
+              [
+                "2023-01-01",
+                "10000.00",
+                null
+              ],
+              [
+                "2023-02-01",
+                "11000.00",
+                "1000.00"
+              ],
+              [
+                "2023-03-01",
+                "10500.00",
+                "-500.00"
+              ],
+              [
+                "2023-04-01",
+                "12000.00",
+                "1500.00"
+              ],
+              [
+                "2023-05-01",
+                "12500.00",
+                "500.00"
+              ],
+              [
+                "2023-06-01",
+                "13000.00",
+                "500.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "days-since-previous-order",
+          "title": "Days since the customer's previous completed order",
+          "explain_md": "PARTITION BY customer restarts per customer; the first order of each customer is NULL. Customer 2's two orders on 2024-02-03 give 0 days. Cancelled and refunded orders are filtered out first, so they are not neighbours.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, order_id, order_date,\n       DATEDIFF(order_date, LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date, order_id)) AS days_since_prev\nFROM orders\nWHERE status = 'completed' AND customer_id IN (1, 2)\nORDER BY customer_id, order_date, order_id;",
+          "tsql": "SELECT customer_id, order_id, order_date,\n       DATEDIFF(DAY, LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date, order_id), order_date) AS days_since_prev\nFROM orders\nWHERE status = 'completed' AND customer_id IN (1, 2)\nORDER BY customer_id, order_date, order_id;",
+          "dialect_note_md": "Argument order flips: MySQL `DATEDIFF(later, earlier)` has no unit; SQL Server `DATEDIFF(DAY, earlier, later)`. Writing the SQL Server order in MySQL would return a negative number.",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "order_id",
+              "order_date",
+              "days_since_prev"
+            ],
+            "rows": [
+              [
+                "1",
+                "101",
+                "2024-01-06",
+                null
+              ],
+              [
+                "1",
+                "108",
+                "2024-03-09",
+                "63"
+              ],
+              [
+                "1",
+                "112",
+                "2024-05-05",
+                "57"
+              ],
+              [
+                "2",
+                "102",
+                "2024-01-21",
+                null
+              ],
+              [
+                "2",
+                "104",
+                "2024-02-03",
+                "13"
+              ],
+              [
+                "2",
+                "105",
+                "2024-02-03",
+                "0"
+              ],
+              [
+                "2",
+                "114",
+                "2024-06-30",
+                "148"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "minutes-between-events",
+          "title": "Minutes since the user's previous event",
+          "explain_md": "User 1 shows the 45-minute gap (09:10 to 09:55), the usual start of a new session. User 2's duplicate-timestamp events give 0. Each user's first event is NULL.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT user_id, event_id, event_ts,\n       TIMESTAMPDIFF(MINUTE, LAG(event_ts) OVER (PARTITION BY user_id ORDER BY event_ts, event_id), event_ts) AS minutes_since_prev\nFROM events\nORDER BY user_id, event_ts, event_id;",
+          "tsql": "SELECT user_id, event_id, event_ts,\n       DATEDIFF(MINUTE, LAG(event_ts) OVER (PARTITION BY user_id ORDER BY event_ts, event_id), event_ts) AS minutes_since_prev\nFROM events\nORDER BY user_id, event_ts, event_id;",
+          "dialect_note_md": "SQL Server `DATEDIFF(MINUTE, a, b)` counts minute-boundary crossings, not elapsed whole minutes: 09:59:59 to 10:00:01 is 1. MySQL `TIMESTAMPDIFF` truncates elapsed time. Identical on this data (all timestamps on whole minutes).",
+          "expected": {
+            "columns": [
+              "user_id",
+              "event_id",
+              "event_ts",
+              "minutes_since_prev"
+            ],
+            "rows": [
+              [
+                "1",
+                "1",
+                "2024-05-01 09:00:00",
+                null
+              ],
+              [
+                "1",
+                "2",
+                "2024-05-01 09:10:00",
+                "10"
+              ],
+              [
+                "1",
+                "3",
+                "2024-05-01 09:55:00",
+                "45"
+              ],
+              [
+                "1",
+                "4",
+                "2024-05-01 10:05:00",
+                "10"
+              ],
+              [
+                "2",
+                "5",
+                "2024-05-01 12:00:00",
+                null
+              ],
+              [
+                "2",
+                "6",
+                "2024-05-01 12:00:00",
+                "0"
+              ],
+              [
+                "2",
+                "7",
+                "2024-05-02 08:30:00",
+                "1230"
+              ],
+              [
+                "3",
+                "8",
+                "2024-05-01 18:00:00",
+                null
+              ],
+              [
+                "3",
+                "9",
+                "2024-05-02 18:30:00",
+                "1470"
+              ],
+              [
+                "3",
+                "10",
+                "2024-05-03 19:00:00",
+                "1470"
+              ],
+              [
+                "3",
+                "11",
+                "2024-05-05 07:45:00",
+                "2205"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Swapping the argument order of `DATEDIFF` between dialects flips the sign or errors.",
+        "A time difference on the first row of a partition is NULL, not 0; wrap in `COALESCE` only if a default is truly meaningful."
+      ]
+    },
+    {
+      "id": "first-last-value",
+      "heading": "FIRST_VALUE and LAST_VALUE (and the frame trap)",
+      "body_md": "- `FIRST_VALUE(expr)` returns `expr` from the first row of the window frame; `LAST_VALUE(expr)` from the last row.\n- Default frame once there is an `ORDER BY`: `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. The frame **ends at the current row**, so `LAST_VALUE` just returns the current row's own value (or a tied peer's).\n- Fix 1: `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` so the frame covers the whole partition.\n- Fix 2 (no frame needed): `FIRST_VALUE` with the `ORDER BY` reversed. Last = first of the opposite order.\n- `FIRST_VALUE` is safe with the default frame because the frame always starts at the partition start.\n- `IGNORE NULLS` (skip NULLs when picking the value) is not available in MySQL, nor in SQL Server before 2022.",
+      "syntax": {
+        "mysql": "FIRST_VALUE(expr) OVER (PARTITION BY p ORDER BY o [frame])\nLAST_VALUE(expr)  OVER (PARTITION BY p ORDER BY o ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)",
+        "tsql": "FIRST_VALUE(expr) OVER (PARTITION BY p ORDER BY o [frame])\nLAST_VALUE(expr)  OVER (PARTITION BY p ORDER BY o ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "Column or expression to return from the first/last frame row."
+        },
+        {
+          "name": "PARTITION BY p",
+          "meaning": "Optional. First/last is taken per group."
+        },
+        {
+          "name": "ORDER BY o",
+          "meaning": "Decides which row is 'first' and which is 'last'."
+        },
+        {
+          "name": "ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING",
+          "meaning": "The frame that spans the whole partition. Mandatory for LAST_VALUE to see the true last row."
+        }
+      ],
+      "examples": [
+        {
+          "id": "first-last-frame-trap",
+          "title": "FIRST_VALUE, broken LAST_VALUE, fixed LAST_VALUE",
+          "explain_md": "Per department, ordered by hire date. `last_default` simply echoes each row's own name (the frame ends at the current row). `last_fixed` uses the full frame and returns the newest hire for every row.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept, name, hire_date,\n       FIRST_VALUE(name) OVER (PARTITION BY dept ORDER BY hire_date) AS first_hired,\n       LAST_VALUE(name)  OVER (PARTITION BY dept ORDER BY hire_date) AS last_default,\n       LAST_VALUE(name)  OVER (PARTITION BY dept ORDER BY hire_date\n                               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_fixed\nFROM employees\nORDER BY dept, hire_date;",
+          "tsql": "SELECT dept, name, hire_date,\n       FIRST_VALUE(name) OVER (PARTITION BY dept ORDER BY hire_date) AS first_hired,\n       LAST_VALUE(name)  OVER (PARTITION BY dept ORDER BY hire_date) AS last_default,\n       LAST_VALUE(name)  OVER (PARTITION BY dept ORDER BY hire_date\n                               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_fixed\nFROM employees\nORDER BY dept, hire_date;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "hire_date",
+              "first_hired",
+              "last_default",
+              "last_fixed"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "2018-07-15",
+                "Ben",
+                "Ben",
+                "Eli"
+              ],
+              [
+                "Engineering",
+                "Cara",
+                "2019-01-10",
+                "Ben",
+                "Cara",
+                "Eli"
+              ],
+              [
+                "Engineering",
+                "Dev",
+                "2021-05-03",
+                "Ben",
+                "Dev",
+                "Eli"
+              ],
+              [
+                "Engineering",
+                "Eli",
+                "2023-09-18",
+                "Ben",
+                "Eli",
+                "Eli"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "2015-03-01",
+                "Ana",
+                "Ana",
+                "Ana"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "2020-06-30",
+                "Ivy",
+                "Ivy",
+                "Jon"
+              ],
+              [
+                "Marketing",
+                "Jon",
+                "2024-04-01",
+                "Ivy",
+                "Jon",
+                "Jon"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "2017-11-20",
+                "Fay",
+                "Fay",
+                "Hal"
+              ],
+              [
+                "Sales",
+                "Gus",
+                "2022-02-14",
+                "Fay",
+                "Gus",
+                "Hal"
+              ],
+              [
+                "Sales",
+                "Hal",
+                "2024-01-08",
+                "Fay",
+                "Hal",
+                "Hal"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "gap-to-top-salary",
+          "title": "Gap to the department's top salary",
+          "explain_md": "`FIRST_VALUE(salary)` over a descending order is the department maximum; subtract to get the gap. Jon's NULL salary yields a NULL gap, and Marketing's top is Ivy because NULL sorts last under DESC.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept, name, salary,\n       FIRST_VALUE(salary) OVER (PARTITION BY dept ORDER BY salary DESC) AS dept_top,\n       FIRST_VALUE(salary) OVER (PARTITION BY dept ORDER BY salary DESC) - salary AS gap_to_top\nFROM employees\nORDER BY dept, salary DESC, emp_id;",
+          "tsql": "SELECT dept, name, salary,\n       FIRST_VALUE(salary) OVER (PARTITION BY dept ORDER BY salary DESC) AS dept_top,\n       FIRST_VALUE(salary) OVER (PARTITION BY dept ORDER BY salary DESC) - salary AS gap_to_top\nFROM employees\nORDER BY dept, salary DESC, emp_id;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary",
+              "dept_top",
+              "gap_to_top"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "150000",
+                "150000",
+                "0"
+              ],
+              [
+                "Engineering",
+                "Cara",
+                "150000",
+                "150000",
+                "0"
+              ],
+              [
+                "Engineering",
+                "Dev",
+                "120000",
+                "150000",
+                "30000"
+              ],
+              [
+                "Engineering",
+                "Eli",
+                "95000",
+                "150000",
+                "55000"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000",
+                "250000",
+                "0"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000",
+                "90000",
+                "0"
+              ],
+              [
+                "Marketing",
+                "Jon",
+                null,
+                "90000",
+                null
+              ],
+              [
+                "Sales",
+                "Fay",
+                "110000",
+                "110000",
+                "0"
+              ],
+              [
+                "Sales",
+                "Gus",
+                "80000",
+                "110000",
+                "30000"
+              ],
+              [
+                "Sales",
+                "Hal",
+                "80000",
+                "110000",
+                "30000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "latest-event-per-user",
+          "title": "Latest event per user without LAST_VALUE",
+          "explain_md": "Reverse the sort and take FIRST_VALUE: no frame clause needed. DISTINCT collapses the one row per event down to one row per user.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT DISTINCT user_id,\n       FIRST_VALUE(event_type) OVER (PARTITION BY user_id ORDER BY event_ts DESC, event_id DESC) AS latest_event\nFROM events\nORDER BY user_id;",
+          "tsql": "SELECT DISTINCT user_id,\n       FIRST_VALUE(event_type) OVER (PARTITION BY user_id ORDER BY event_ts DESC, event_id DESC) AS latest_event\nFROM events\nORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "latest_event"
+            ],
+            "rows": [
+              [
+                "1",
+                "purchase"
+              ],
+              [
+                "2",
+                "add_to_cart"
+              ],
+              [
+                "3",
+                "view"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`LAST_VALUE` with only `ORDER BY` is the single most common window-function bug: it silently returns the current row.",
+        "With default `RANGE` framing, rows tied on the ORDER BY key are peers and all count as 'current'; `ROWS` treats them one at a time.",
+        "These functions return one row per input row. Use `DISTINCT` or `ROW_NUMBER() = 1` to get one row per group."
+      ]
+    },
+    {
+      "id": "nth-value",
+      "heading": "NTH_VALUE",
+      "body_md": "- `NTH_VALUE(expr, n)` returns `expr` from the n-th row of the frame (1-based). NULL if the frame has fewer than n rows.\n- Same frame trap as `LAST_VALUE`: the default frame stops at the current row, so early rows see NULL for n beyond their position. Use the full `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame to read the n-th row of the whole partition.\n- **SQL Server has no `NTH_VALUE`.** Emulate with `ROW_NUMBER()` and `MAX(CASE WHEN rn = n THEN expr END)`, which works in MySQL too.\n- MySQL's `NTH_VALUE` also has `FROM FIRST/LAST` and `RESPECT/IGNORE NULLS` syntax, but only `FROM FIRST` and `RESPECT NULLS` are implemented.",
+      "syntax": {
+        "mysql": "NTH_VALUE(expr, n) OVER (PARTITION BY p ORDER BY o ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)",
+        "tsql": "-- not available; emulate:\nMAX(CASE WHEN rn = n THEN expr END)  -- rn from ROW_NUMBER() OVER (PARTITION BY p ORDER BY o)"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "Column or expression to return."
+        },
+        {
+          "name": "n",
+          "meaning": "Which row of the frame, counting from 1. Must be a positive integer constant."
+        },
+        {
+          "name": "frame",
+          "meaning": "Without the full frame, rows before the n-th see NULL."
+        }
+      ],
+      "examples": [
+        {
+          "id": "nth-value-frames",
+          "title": "2nd hire per department, default frame vs full frame",
+          "explain_md": "`second_default` is NULL until the window has seen two rows, so each department's first row shows NULL. `second_full` gives the true second hire on every row. Departments with one person (Exec) are always NULL.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept, name, hire_date,\n       NTH_VALUE(name, 2) OVER (PARTITION BY dept ORDER BY hire_date) AS second_default,\n       NTH_VALUE(name, 2) OVER (PARTITION BY dept ORDER BY hire_date\n                                ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS second_full\nFROM employees\nORDER BY dept, hire_date;",
+          "tsql": null,
+          "dialect_note_md": "SQL Server has no `NTH_VALUE`. See the next example for the portable emulation.",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "hire_date",
+              "second_default",
+              "second_full"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "2018-07-15",
+                null,
+                "Cara"
+              ],
+              [
+                "Engineering",
+                "Cara",
+                "2019-01-10",
+                "Cara",
+                "Cara"
+              ],
+              [
+                "Engineering",
+                "Dev",
+                "2021-05-03",
+                "Cara",
+                "Cara"
+              ],
+              [
+                "Engineering",
+                "Eli",
+                "2023-09-18",
+                "Cara",
+                "Cara"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "2015-03-01",
+                null,
+                null
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "2020-06-30",
+                null,
+                "Jon"
+              ],
+              [
+                "Marketing",
+                "Jon",
+                "2024-04-01",
+                "Jon",
+                "Jon"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "2017-11-20",
+                null,
+                "Gus"
+              ],
+              [
+                "Sales",
+                "Gus",
+                "2022-02-14",
+                "Gus",
+                "Gus"
+              ],
+              [
+                "Sales",
+                "Hal",
+                "2024-01-08",
+                "Gus",
+                "Gus"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "nth-value-emulated",
+          "title": "2nd hire per department, portable emulation",
+          "explain_md": "`ROW_NUMBER` numbers the hires; `MAX(CASE WHEN rn = 2 ...)` picks the second per department. Departments without a second hire get NULL. Works unchanged in SQL Server.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept,\n       MAX(CASE WHEN rn = 2 THEN name END) AS second_hired\nFROM (\n  SELECT dept, name,\n         ROW_NUMBER() OVER (PARTITION BY dept ORDER BY hire_date) AS rn\n  FROM employees\n) t\nGROUP BY dept\nORDER BY dept;",
+          "tsql": "SELECT dept,\n       MAX(CASE WHEN rn = 2 THEN name END) AS second_hired\nFROM (\n  SELECT dept, name,\n         ROW_NUMBER() OVER (PARTITION BY dept ORDER BY hire_date) AS rn\n  FROM employees\n) t\nGROUP BY dept\nORDER BY dept;",
+          "expected": {
+            "columns": [
+              "dept",
+              "second_hired"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Cara"
+              ],
+              [
+                "Exec",
+                null
+              ],
+              [
+                "Marketing",
+                "Jon"
+              ],
+              [
+                "Sales",
+                "Gus"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "If the frame has fewer than `n` rows, NTH_VALUE returns NULL, not an error.",
+        "`NTH_VALUE(expr, 1)` equals `FIRST_VALUE(expr)`."
+      ]
+    },
+    {
+      "id": "status-changes",
+      "heading": "Detecting changes: value <> LAG(value)",
+      "body_md": "- Compare each row to the previous one in the same group: `value <> LAG(value) OVER (PARTITION BY g ORDER BY t)`.\n- On the first row `LAG` is NULL, so `<>` is UNKNOWN. Treat that row explicitly: `prev IS NULL OR value <> prev` (the first row is a change from 'nothing').\n- NULL-safe alternative in MySQL only: `NOT (value <=> prev)`. SQL Server has no `<=>`; stay with the explicit `IS NULL` test.\n- A 0/1 change flag, then a running `SUM` of the flag, labels each run of identical values with an island number. This is the start of gaps-and-islands.\n- Window functions cannot be used in `WHERE`: compute the flag in a CTE, filter outside.",
+      "syntax": {
+        "mysql": "CASE WHEN prev IS NULL OR value <> prev THEN 1 ELSE 0 END AS changed\n-- prev = LAG(value) OVER (PARTITION BY g ORDER BY t)",
+        "tsql": "CASE WHEN prev IS NULL OR value <> prev THEN 1 ELSE 0 END AS changed"
+      },
+      "args": [
+        {
+          "name": "prev",
+          "meaning": "LAG(value) in the same PARTITION BY / ORDER BY."
+        },
+        {
+          "name": "prev IS NULL",
+          "meaning": "True only on the first row of each partition (or when the previous value really is NULL)."
+        },
+        {
+          "name": "value <> prev",
+          "meaning": "True when the value differs from the previous row."
+        },
+        {
+          "name": "THEN 1 ELSE 0",
+          "meaning": "A numeric flag, so it can be summed for run numbers."
+        }
+      ],
+      "examples": [
+        {
+          "id": "event-type-change-flag",
+          "title": "Flag each change of event type per user",
+          "explain_md": "User 1 changes type on every event. User 2's second `view` repeats the first, so its flag is 0; user 3's second `view` also repeats.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH x AS (\n  SELECT user_id, event_id, event_ts, event_type,\n         LAG(event_type) OVER (PARTITION BY user_id ORDER BY event_ts, event_id) AS prev_type\n  FROM events\n)\nSELECT user_id, event_id, event_type, prev_type,\n       CASE WHEN prev_type IS NULL OR event_type <> prev_type THEN 1 ELSE 0 END AS changed\nFROM x\nORDER BY user_id, event_ts, event_id;",
+          "tsql": "WITH x AS (\n  SELECT user_id, event_id, event_ts, event_type,\n         LAG(event_type) OVER (PARTITION BY user_id ORDER BY event_ts, event_id) AS prev_type\n  FROM events\n)\nSELECT user_id, event_id, event_type, prev_type,\n       CASE WHEN prev_type IS NULL OR event_type <> prev_type THEN 1 ELSE 0 END AS changed\nFROM x\nORDER BY user_id, event_ts, event_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "event_id",
+              "event_type",
+              "prev_type",
+              "changed"
+            ],
+            "rows": [
+              [
+                "1",
+                "1",
+                "view",
+                null,
+                "1"
+              ],
+              [
+                "1",
+                "2",
+                "add_to_cart",
+                "view",
+                "1"
+              ],
+              [
+                "1",
+                "3",
+                "view",
+                "add_to_cart",
+                "1"
+              ],
+              [
+                "1",
+                "4",
+                "purchase",
+                "view",
+                "1"
+              ],
+              [
+                "2",
+                "5",
+                "view",
+                null,
+                "1"
+              ],
+              [
+                "2",
+                "6",
+                "view",
+                "view",
+                "0"
+              ],
+              [
+                "2",
+                "7",
+                "add_to_cart",
+                "view",
+                "1"
+              ],
+              [
+                "3",
+                "8",
+                "view",
+                null,
+                "1"
+              ],
+              [
+                "3",
+                "9",
+                "view",
+                "view",
+                "0"
+              ],
+              [
+                "3",
+                "10",
+                "purchase",
+                "view",
+                "1"
+              ],
+              [
+                "3",
+                "11",
+                "view",
+                "purchase",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "only-change-rows",
+          "title": "Keep only the rows where the type changed",
+          "explain_md": "Filter on the flag in an outer query. Repeated events are dropped, leaving the sequence of distinct steps.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH x AS (\n  SELECT user_id, event_id, event_ts, event_type,\n         LAG(event_type) OVER (PARTITION BY user_id ORDER BY event_ts, event_id) AS prev_type\n  FROM events\n)\nSELECT user_id, event_id, event_type\nFROM x\nWHERE prev_type IS NULL OR event_type <> prev_type\nORDER BY user_id, event_ts, event_id;",
+          "tsql": "WITH x AS (\n  SELECT user_id, event_id, event_ts, event_type,\n         LAG(event_type) OVER (PARTITION BY user_id ORDER BY event_ts, event_id) AS prev_type\n  FROM events\n)\nSELECT user_id, event_id, event_type\nFROM x\nWHERE prev_type IS NULL OR event_type <> prev_type\nORDER BY user_id, event_ts, event_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "event_id",
+              "event_type"
+            ],
+            "rows": [
+              [
+                "1",
+                "1",
+                "view"
+              ],
+              [
+                "1",
+                "2",
+                "add_to_cart"
+              ],
+              [
+                "1",
+                "3",
+                "view"
+              ],
+              [
+                "1",
+                "4",
+                "purchase"
+              ],
+              [
+                "2",
+                "5",
+                "view"
+              ],
+              [
+                "2",
+                "7",
+                "add_to_cart"
+              ],
+              [
+                "3",
+                "8",
+                "view"
+              ],
+              [
+                "3",
+                "10",
+                "purchase"
+              ],
+              [
+                "3",
+                "11",
+                "view"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "runs-of-same-type",
+          "title": "Number the runs of consecutive identical events",
+          "explain_md": "Running `SUM` of the change flag gives a run id that only increases at a change. User 2's two `view` events share run 1; user 3's later `view` after a purchase is run 3.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH x AS (\n  SELECT user_id, event_id, event_ts, event_type,\n         CASE WHEN LAG(event_type) OVER (PARTITION BY user_id ORDER BY event_ts, event_id) IS NULL\n                OR LAG(event_type) OVER (PARTITION BY user_id ORDER BY event_ts, event_id) <> event_type\n              THEN 1 ELSE 0 END AS changed\n  FROM events\n)\nSELECT user_id, event_id, event_type,\n       SUM(changed) OVER (PARTITION BY user_id ORDER BY event_ts, event_id\n                          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS run_id\nFROM x\nORDER BY user_id, event_ts, event_id;",
+          "tsql": "WITH x AS (\n  SELECT user_id, event_id, event_ts, event_type,\n         CASE WHEN LAG(event_type) OVER (PARTITION BY user_id ORDER BY event_ts, event_id) IS NULL\n                OR LAG(event_type) OVER (PARTITION BY user_id ORDER BY event_ts, event_id) <> event_type\n              THEN 1 ELSE 0 END AS changed\n  FROM events\n)\nSELECT user_id, event_id, event_type,\n       SUM(changed) OVER (PARTITION BY user_id ORDER BY event_ts, event_id\n                          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS run_id\nFROM x\nORDER BY user_id, event_ts, event_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "event_id",
+              "event_type",
+              "run_id"
+            ],
+            "rows": [
+              [
+                "1",
+                "1",
+                "view",
+                "1"
+              ],
+              [
+                "1",
+                "2",
+                "add_to_cart",
+                "2"
+              ],
+              [
+                "1",
+                "3",
+                "view",
+                "3"
+              ],
+              [
+                "1",
+                "4",
+                "purchase",
+                "4"
+              ],
+              [
+                "2",
+                "5",
+                "view",
+                "1"
+              ],
+              [
+                "2",
+                "6",
+                "view",
+                "1"
+              ],
+              [
+                "2",
+                "7",
+                "add_to_cart",
+                "2"
+              ],
+              [
+                "3",
+                "8",
+                "view",
+                "1"
+              ],
+              [
+                "3",
+                "9",
+                "view",
+                "1"
+              ],
+              [
+                "3",
+                "10",
+                "purchase",
+                "2"
+              ],
+              [
+                "3",
+                "11",
+                "view",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Writing `WHERE value <> LAG(value) OVER (...)` is invalid: windows cannot appear in `WHERE`.",
+        "Forgetting the `prev IS NULL` branch drops the first row of every group from the 'changes' result.",
+        "The same-second events of user 2 need an extra sort key (`event_id`); otherwise the order of the two `view` rows is undefined."
+      ]
+    }
+  ]
+}

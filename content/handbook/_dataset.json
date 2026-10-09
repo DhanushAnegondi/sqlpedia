@@ -1,0 +1,132 @@
+{
+  "description_md": "Shared tables for Handbook examples. Small on purpose, with the usual traps planted: NULLs, ties, duplicates in disguise, gaps in dates, two events at the same time.",
+  "tables": [
+    {
+      "name": "employees",
+      "description_md": "One row per employee. `manager_id` is NULL for the CEO; `salary` is NULL for a contractor; Ben and Cara tie on salary.",
+      "columns": [
+        { "name": "emp_id", "type": "INT" },
+        { "name": "name", "type": "VARCHAR(30)" },
+        { "name": "dept", "type": "VARCHAR(20)" },
+        { "name": "salary", "type": "INT" },
+        { "name": "hire_date", "type": "DATE" },
+        { "name": "manager_id", "type": "INT" }
+      ],
+      "rows": [
+        [1, "Ana", "Exec", 250000, "2015-03-01", null],
+        [2, "Ben", "Engineering", 150000, "2018-07-15", 1],
+        [3, "Cara", "Engineering", 150000, "2019-01-10", 2],
+        [4, "Dev", "Engineering", 120000, "2021-05-03", 2],
+        [5, "Eli", "Engineering", 95000, "2023-09-18", 3],
+        [6, "Fay", "Sales", 110000, "2017-11-20", 1],
+        [7, "Gus", "Sales", 80000, "2022-02-14", 6],
+        [8, "Hal", "Sales", 80000, "2024-01-08", 6],
+        [9, "Ivy", "Marketing", 90000, "2020-06-30", 1],
+        [10, "Jon", "Marketing", null, "2024-04-01", 9]
+      ]
+    },
+    {
+      "name": "customers",
+      "description_md": "One row per customer account. `city` may be NULL. Two accounts share an email that differs only in case and a trailing space.",
+      "columns": [
+        { "name": "customer_id", "type": "INT" },
+        { "name": "name", "type": "VARCHAR(30)" },
+        { "name": "email", "type": "VARCHAR(50)" },
+        { "name": "city", "type": "VARCHAR(20)" },
+        { "name": "signup_date", "type": "DATE" }
+      ],
+      "rows": [
+        [1, "Maya Lopez", "maya@shop.com", "Austin", "2024-01-05"],
+        [2, "Noah Kim", "noah.kim@mail.org", "Boston", "2024-01-20"],
+        [3, "Olga Petrova", "olga@shop.com", null, "2024-02-11"],
+        [4, "Pablo Diaz", "PABLO@mail.org", "Austin", "2024-03-02"],
+        [5, "Quinn Lee", "quinn@corp.net", "Denver", "2024-03-15"],
+        [6, "pablo diaz", "pablo@mail.org ", "Austin", "2024-04-01"]
+      ]
+    },
+    {
+      "name": "orders",
+      "description_md": "One row per order, Jan-Jun 2024. `status` is 'completed', 'cancelled' or 'refunded'. Customer 2 ordered twice on 2024-02-03; customer 6 never ordered.",
+      "columns": [
+        { "name": "order_id", "type": "INT" },
+        { "name": "customer_id", "type": "INT" },
+        { "name": "order_date", "type": "DATE" },
+        { "name": "amount", "type": "DECIMAL(10,2)" },
+        { "name": "status", "type": "VARCHAR(10)" }
+      ],
+      "rows": [
+        [101, 1, "2024-01-06", 120.00, "completed"],
+        [102, 2, "2024-01-21", 45.50, "completed"],
+        [103, 1, "2024-02-02", 80.00, "cancelled"],
+        [104, 2, "2024-02-03", 60.00, "completed"],
+        [105, 2, "2024-02-03", 15.00, "completed"],
+        [106, 3, "2024-02-14", 200.00, "completed"],
+        [107, 4, "2024-03-03", 75.25, "refunded"],
+        [108, 1, "2024-03-09", 120.00, "completed"],
+        [109, 5, "2024-03-16", 300.00, "completed"],
+        [110, 3, "2024-04-01", 50.00, "completed"],
+        [111, 5, "2024-04-20", 90.00, "cancelled"],
+        [112, 1, "2024-05-05", 65.00, "completed"],
+        [113, 4, "2024-06-11", 110.00, "completed"],
+        [114, 2, "2024-06-30", 30.00, "completed"]
+      ]
+    },
+    {
+      "name": "daily_sales",
+      "description_md": "Revenue per region per day for 2024-03-01..03-10. The West region has no row on 03-04 and 03-07 (no sales) - a calendar gap.",
+      "columns": [
+        { "name": "sale_date", "type": "DATE" },
+        { "name": "region", "type": "VARCHAR(10)" },
+        { "name": "revenue", "type": "DECIMAL(10,2)" }
+      ],
+      "rows": [
+        ["2024-03-01", "East", 100.00], ["2024-03-02", "East", 120.00], ["2024-03-03", "East", 90.00],
+        ["2024-03-04", "East", 150.00], ["2024-03-05", "East", 110.00], ["2024-03-06", "East", 130.00],
+        ["2024-03-07", "East", 80.00], ["2024-03-08", "East", 160.00], ["2024-03-09", "East", 140.00],
+        ["2024-03-10", "East", 100.00],
+        ["2024-03-01", "West", 50.00], ["2024-03-02", "West", 70.00], ["2024-03-03", "West", 60.00],
+        ["2024-03-05", "West", 90.00], ["2024-03-06", "West", 40.00], ["2024-03-08", "West", 75.00],
+        ["2024-03-09", "West", 65.00], ["2024-03-10", "West", 85.00]
+      ]
+    },
+    {
+      "name": "monthly_revenue",
+      "description_md": "Company revenue per month, Jan 2023 - Dec 2024 (first day of each month). Used for MoM and YoY.",
+      "columns": [
+        { "name": "month_start", "type": "DATE" },
+        { "name": "revenue", "type": "DECIMAL(12,2)" }
+      ],
+      "rows": [
+        ["2023-01-01", 10000.00], ["2023-02-01", 11000.00], ["2023-03-01", 10500.00], ["2023-04-01", 12000.00],
+        ["2023-05-01", 12500.00], ["2023-06-01", 13000.00], ["2023-07-01", 12000.00], ["2023-08-01", 14000.00],
+        ["2023-09-01", 15000.00], ["2023-10-01", 14500.00], ["2023-11-01", 16000.00], ["2023-12-01", 18000.00],
+        ["2024-01-01", 12000.00], ["2024-02-01", 12100.00], ["2024-03-01", 13650.00], ["2024-04-01", 13200.00],
+        ["2024-05-01", 15000.00], ["2024-06-01", 15600.00], ["2024-07-01", 14400.00], ["2024-08-01", 16800.00],
+        ["2024-09-01", 16500.00], ["2024-10-01", 17400.00], ["2024-11-01", 19200.00], ["2024-12-01", 21600.00]
+      ]
+    },
+    {
+      "name": "events",
+      "description_md": "App events per user. User 1 has a 45-minute gap (new session); user 2 has two events at the same second; user 3 is active on 3 consecutive days.",
+      "columns": [
+        { "name": "event_id", "type": "INT" },
+        { "name": "user_id", "type": "INT" },
+        { "name": "event_ts", "type": "DATETIME" },
+        { "name": "event_type", "type": "VARCHAR(15)" }
+      ],
+      "rows": [
+        [1, 1, "2024-05-01 09:00:00", "view"],
+        [2, 1, "2024-05-01 09:10:00", "add_to_cart"],
+        [3, 1, "2024-05-01 09:55:00", "view"],
+        [4, 1, "2024-05-01 10:05:00", "purchase"],
+        [5, 2, "2024-05-01 12:00:00", "view"],
+        [6, 2, "2024-05-01 12:00:00", "view"],
+        [7, 2, "2024-05-02 08:30:00", "add_to_cart"],
+        [8, 3, "2024-05-01 18:00:00", "view"],
+        [9, 3, "2024-05-02 18:30:00", "view"],
+        [10, 3, "2024-05-03 19:00:00", "purchase"],
+        [11, 3, "2024-05-05 07:45:00", "view"]
+      ]
+    }
+  ]
+}

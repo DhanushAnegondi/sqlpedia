@@ -1,0 +1,2884 @@
+{
+  "id": "retention-funnels",
+  "title": "Retention, cohorts and funnels",
+  "group": "Patterns",
+  "order": 5,
+  "summary_md": "Retention (day-1, monthly cohort curves), ordered funnels with step conversion, and first-purchase / repeat-within-N-days. The recurring work is defining the cohort, the window and the denominator precisely.",
+  "sections": [
+    {
+      "id": "day1-retention",
+      "heading": "Day-1 retention",
+      "body_md": "**Cue:** \"day-1 retention\", \"came back the next day\", \"D1/D7 retention\", \"returning users\".\n\n**Shape:**\n- Cohort day per user = `MIN(activity_date)` (or the signup date, if the question says so).\n- Retained flag = exists an activity on `cohort_day + N` (exact day N).\n- Rate = retained / cohort size. Define the cohort size explicitly.\n\n**Why `EXISTS` (or `COUNT(DISTINCT)`):** users with several events on the return day must count once.",
+      "examples": [
+        {
+          "id": "first-activity",
+          "title": "Step 1: each user's first activity date",
+          "explain_md": "`MIN(activity_date)` per user is the cohort day. User 6 has no activity so is absent (anti-join to `users` if you need them).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "activity",
+              "description_md": "One row per activity event (a user can have several on one day). User 2's first activity is the day after signup.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "activity_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-20"
+                ],
+                [
+                  1,
+                  "2024-02-15"
+                ],
+                [
+                  1,
+                  "2024-03-12"
+                ],
+                [
+                  2,
+                  "2024-01-26"
+                ],
+                [
+                  2,
+                  "2024-01-27"
+                ],
+                [
+                  2,
+                  "2024-02-26"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  3,
+                  "2024-02-06"
+                ],
+                [
+                  3,
+                  "2024-03-08"
+                ],
+                [
+                  3,
+                  "2024-04-02"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  4,
+                  "2024-02-25"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-05"
+                ],
+                [
+                  5,
+                  "2024-04-10"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH firsts AS (\n  SELECT user_id, MIN(activity_date) AS first_day\n  FROM activity\n  GROUP BY user_id\n)\nSELECT user_id, first_day FROM firsts ORDER BY user_id;",
+          "tsql": "WITH firsts AS (\n  SELECT user_id, MIN(activity_date) AS first_day\n  FROM activity\n  GROUP BY user_id\n)\nSELECT user_id, first_day FROM firsts ORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "first_day"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-01-10"
+              ],
+              [
+                "2",
+                "2024-01-26"
+              ],
+              [
+                "3",
+                "2024-02-05"
+              ],
+              [
+                "4",
+                "2024-02-20"
+              ],
+              [
+                "5",
+                "2024-03-03"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "returned-next-day",
+          "title": "Step 2: did they come back exactly the next day?",
+          "explain_md": "`EXISTS` asks 'is there an activity row on first_day + 1?'. It cannot double count users who have two rows that day (user 1 has two on 01-11). User 4 never returned the next day.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "activity",
+              "description_md": "One row per activity event (a user can have several on one day). User 2's first activity is the day after signup.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "activity_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-20"
+                ],
+                [
+                  1,
+                  "2024-02-15"
+                ],
+                [
+                  1,
+                  "2024-03-12"
+                ],
+                [
+                  2,
+                  "2024-01-26"
+                ],
+                [
+                  2,
+                  "2024-01-27"
+                ],
+                [
+                  2,
+                  "2024-02-26"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  3,
+                  "2024-02-06"
+                ],
+                [
+                  3,
+                  "2024-03-08"
+                ],
+                [
+                  3,
+                  "2024-04-02"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  4,
+                  "2024-02-25"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-05"
+                ],
+                [
+                  5,
+                  "2024-04-10"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH firsts AS (\n  SELECT user_id, MIN(activity_date) AS first_day\n  FROM activity\n  GROUP BY user_id\n), flagged AS (\n  SELECT f.user_id, f.first_day,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a\n                           WHERE a.user_id = f.user_id\n                             AND a.activity_date = DATE_ADD(f.first_day, INTERVAL 1 DAY))\n              THEN 1 ELSE 0 END AS returned_d1\n  FROM firsts f\n)\nSELECT user_id, first_day, returned_d1 FROM flagged ORDER BY user_id;",
+          "tsql": "WITH firsts AS (\n  SELECT user_id, MIN(activity_date) AS first_day\n  FROM activity\n  GROUP BY user_id\n), flagged AS (\n  SELECT f.user_id, f.first_day,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a\n                           WHERE a.user_id = f.user_id\n                             AND a.activity_date = DATEADD(day, 1, f.first_day))\n              THEN 1 ELSE 0 END AS returned_d1\n  FROM firsts f\n)\nSELECT user_id, first_day, returned_d1 FROM flagged ORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "first_day",
+              "returned_d1"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-01-10",
+                "1"
+              ],
+              [
+                "2",
+                "2024-01-26",
+                "1"
+              ],
+              [
+                "3",
+                "2024-02-05",
+                "1"
+              ],
+              [
+                "4",
+                "2024-02-20",
+                "0"
+              ],
+              [
+                "5",
+                "2024-03-03",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "day1-rate",
+          "title": "Step 3: the rate, and which denominator",
+          "explain_md": "4 of 5 active users returned (80.0%) but only 4 of 6 signups (66.7%). 'Day-1 retention' normally divides by the cohort (users who started on that day), so decide whether never-active signups are in the cohort and say so.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "users",
+              "description_md": "One row per user. User 6 signed up but was never active.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "signup_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  2,
+                  "2024-01-25"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  6,
+                  "2024-03-15"
+                ]
+              ]
+            },
+            {
+              "name": "activity",
+              "description_md": "One row per activity event (a user can have several on one day). User 2's first activity is the day after signup.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "activity_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-20"
+                ],
+                [
+                  1,
+                  "2024-02-15"
+                ],
+                [
+                  1,
+                  "2024-03-12"
+                ],
+                [
+                  2,
+                  "2024-01-26"
+                ],
+                [
+                  2,
+                  "2024-01-27"
+                ],
+                [
+                  2,
+                  "2024-02-26"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  3,
+                  "2024-02-06"
+                ],
+                [
+                  3,
+                  "2024-03-08"
+                ],
+                [
+                  3,
+                  "2024-04-02"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  4,
+                  "2024-02-25"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-05"
+                ],
+                [
+                  5,
+                  "2024-04-10"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH firsts AS (\n  SELECT user_id, MIN(activity_date) AS first_day\n  FROM activity\n  GROUP BY user_id\n), flagged AS (\n  SELECT f.user_id, f.first_day,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a\n                           WHERE a.user_id = f.user_id\n                             AND a.activity_date = DATE_ADD(f.first_day, INTERVAL 1 DAY))\n              THEN 1 ELSE 0 END AS returned_d1\n  FROM firsts f\n)\nSELECT (SELECT COUNT(*) FROM users) AS signups,\n       COUNT(*) AS active_users,\n       SUM(returned_d1) AS retained_d1,\n       ROUND(100.0 * SUM(returned_d1) / COUNT(*), 1) AS pct_of_active,\n       ROUND(100.0 * SUM(returned_d1) / (SELECT COUNT(*) FROM users), 1) AS pct_of_signups\nFROM flagged;",
+          "tsql": "WITH firsts AS (\n  SELECT user_id, MIN(activity_date) AS first_day\n  FROM activity\n  GROUP BY user_id\n), flagged AS (\n  SELECT f.user_id, f.first_day,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a\n                           WHERE a.user_id = f.user_id\n                             AND a.activity_date = DATEADD(day, 1, f.first_day))\n              THEN 1 ELSE 0 END AS returned_d1\n  FROM firsts f\n)\nSELECT (SELECT COUNT(*) FROM users) AS signups,\n       COUNT(*) AS active_users,\n       SUM(returned_d1) AS retained_d1,\n       ROUND(100.0 * SUM(returned_d1) / COUNT(*), 1) AS pct_of_active,\n       ROUND(100.0 * SUM(returned_d1) / (SELECT COUNT(*) FROM users), 1) AS pct_of_signups\nFROM flagged;",
+          "expected": {
+            "columns": [
+              "signups",
+              "active_users",
+              "retained_d1",
+              "pct_of_active",
+              "pct_of_signups"
+            ],
+            "rows": [
+              [
+                "6",
+                "5",
+                "4",
+                "80.0",
+                "66.7"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Cohort = users who first appeared that day. Using all users as the denominator for a single day is wrong.",
+        "First activity vs signup date can differ (user 2): the question's wording decides.",
+        "Boundary: day 1 means the next calendar day, not 24 hours later. With timestamps, cast to DATE first.",
+        "The last cohort days have not had time to return; exclude cohorts younger than N days."
+      ]
+    },
+    {
+      "id": "cohort-retention",
+      "heading": "Cohorts by signup month and retention by month offset",
+      "body_md": "**Cue:** \"monthly cohorts\", \"retention curve\", \"% of each signup month still active N months later\".\n\n**Shape:**\n- Cohort = month of signup. Cohort size = `COUNT(*)` of users per month from the users table.\n- Join activity; month offset = whole calendar months between the signup month and the activity month.\n- `DISTINCT user_id, cohort, offset`, then `COUNT(DISTINCT user_id)` per cohort and offset.\n- Divide by cohort size. Pivot with `SUM(CASE WHEN offset = k ...)` if a matrix is wanted.",
+      "syntax": {
+        "mysql": "(YEAR(act) - YEAR(signup)) * 12 + MONTH(act) - MONTH(signup)\nDATE_FORMAT(signup, '%Y-%m')",
+        "tsql": "DATEDIFF(month, signup, act)\nFORMAT(signup, 'yyyy-MM')"
+      },
+      "args": [
+        {
+          "name": "act, signup",
+          "meaning": "The activity date and the signup date."
+        },
+        {
+          "name": "DATE_FORMAT(d, '%Y-%m')",
+          "meaning": "MySQL: format a date as year-month text. Second arg is the format string."
+        },
+        {
+          "name": "FORMAT(d, 'yyyy-MM')",
+          "meaning": "SQL Server: .NET format string; first arg the value, second the pattern."
+        }
+      ],
+      "examples": [
+        {
+          "id": "user-month-offsets",
+          "title": "Step 1: one row per user per active month offset",
+          "explain_md": "`DISTINCT` collapses many events in the same month. Offset 0 = the signup month. User 6 has no activity so no row.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "users",
+              "description_md": "One row per user. User 6 signed up but was never active.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "signup_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  2,
+                  "2024-01-25"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  6,
+                  "2024-03-15"
+                ]
+              ]
+            },
+            {
+              "name": "activity",
+              "description_md": "One row per activity event (a user can have several on one day). User 2's first activity is the day after signup.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "activity_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-20"
+                ],
+                [
+                  1,
+                  "2024-02-15"
+                ],
+                [
+                  1,
+                  "2024-03-12"
+                ],
+                [
+                  2,
+                  "2024-01-26"
+                ],
+                [
+                  2,
+                  "2024-01-27"
+                ],
+                [
+                  2,
+                  "2024-02-26"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  3,
+                  "2024-02-06"
+                ],
+                [
+                  3,
+                  "2024-03-08"
+                ],
+                [
+                  3,
+                  "2024-04-02"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  4,
+                  "2024-02-25"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-05"
+                ],
+                [
+                  5,
+                  "2024-04-10"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH offsets AS (\n  SELECT DISTINCT u.user_id,\n         DATE_FORMAT(u.signup_date, '%Y-%m') AS signup_month,\n         (YEAR(a.activity_date) - YEAR(u.signup_date)) * 12\n           + MONTH(a.activity_date) - MONTH(u.signup_date) AS months_since\n  FROM users u\n  JOIN activity a ON a.user_id = u.user_id\n)\nSELECT user_id, signup_month, months_since FROM offsets ORDER BY user_id, months_since;",
+          "tsql": "WITH offsets AS (\n  SELECT DISTINCT u.user_id,\n         FORMAT(u.signup_date, 'yyyy-MM') AS signup_month,\n         DATEDIFF(month, u.signup_date, a.activity_date) AS months_since\n  FROM users u\n  JOIN activity a ON a.user_id = u.user_id\n)\nSELECT user_id, signup_month, months_since FROM offsets ORDER BY user_id, months_since;",
+          "dialect_note_md": "SQL Server `DATEDIFF(month, a, b)` counts month boundaries crossed, which is exactly the calendar-month offset wanted here. MySQL `TIMESTAMPDIFF(MONTH, ...)` counts complete months (2024-01-31 to 2024-02-29 = 0), so the portable MySQL form is `(YEAR diff) * 12 + MONTH diff`.",
+          "expected": {
+            "columns": [
+              "user_id",
+              "signup_month",
+              "months_since"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-01",
+                "0"
+              ],
+              [
+                "1",
+                "2024-01",
+                "1"
+              ],
+              [
+                "1",
+                "2024-01",
+                "2"
+              ],
+              [
+                "2",
+                "2024-01",
+                "0"
+              ],
+              [
+                "2",
+                "2024-01",
+                "1"
+              ],
+              [
+                "3",
+                "2024-02",
+                "0"
+              ],
+              [
+                "3",
+                "2024-02",
+                "1"
+              ],
+              [
+                "3",
+                "2024-02",
+                "2"
+              ],
+              [
+                "4",
+                "2024-02",
+                "0"
+              ],
+              [
+                "5",
+                "2024-03",
+                "0"
+              ],
+              [
+                "5",
+                "2024-03",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cohort-active-counts",
+          "title": "Step 2: active users per cohort and month offset",
+          "explain_md": "The Jan cohort has 2 users at offset 0, 2 at offset 1 and 1 at offset 2.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "users",
+              "description_md": "One row per user. User 6 signed up but was never active.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "signup_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  2,
+                  "2024-01-25"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  6,
+                  "2024-03-15"
+                ]
+              ]
+            },
+            {
+              "name": "activity",
+              "description_md": "One row per activity event (a user can have several on one day). User 2's first activity is the day after signup.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "activity_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-20"
+                ],
+                [
+                  1,
+                  "2024-02-15"
+                ],
+                [
+                  1,
+                  "2024-03-12"
+                ],
+                [
+                  2,
+                  "2024-01-26"
+                ],
+                [
+                  2,
+                  "2024-01-27"
+                ],
+                [
+                  2,
+                  "2024-02-26"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  3,
+                  "2024-02-06"
+                ],
+                [
+                  3,
+                  "2024-03-08"
+                ],
+                [
+                  3,
+                  "2024-04-02"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  4,
+                  "2024-02-25"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-05"
+                ],
+                [
+                  5,
+                  "2024-04-10"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH offsets AS (\n  SELECT DISTINCT u.user_id,\n         DATE_FORMAT(u.signup_date, '%Y-%m') AS signup_month,\n         (YEAR(a.activity_date) - YEAR(u.signup_date)) * 12\n           + MONTH(a.activity_date) - MONTH(u.signup_date) AS months_since\n  FROM users u\n  JOIN activity a ON a.user_id = u.user_id\n), counts AS (\n  SELECT signup_month, months_since, COUNT(DISTINCT user_id) AS active_users\n  FROM offsets\n  GROUP BY signup_month, months_since\n)\nSELECT signup_month, months_since, active_users FROM counts ORDER BY signup_month, months_since;",
+          "tsql": "WITH offsets AS (\n  SELECT DISTINCT u.user_id,\n         FORMAT(u.signup_date, 'yyyy-MM') AS signup_month,\n         DATEDIFF(month, u.signup_date, a.activity_date) AS months_since\n  FROM users u\n  JOIN activity a ON a.user_id = u.user_id\n), counts AS (\n  SELECT signup_month, months_since, COUNT(DISTINCT user_id) AS active_users\n  FROM offsets\n  GROUP BY signup_month, months_since\n)\nSELECT signup_month, months_since, active_users FROM counts ORDER BY signup_month, months_since;",
+          "dialect_note_md": "SQL Server `DATEDIFF(month, a, b)` counts month boundaries crossed, which is exactly the calendar-month offset wanted here. MySQL `TIMESTAMPDIFF(MONTH, ...)` counts complete months (2024-01-31 to 2024-02-29 = 0), so the portable MySQL form is `(YEAR diff) * 12 + MONTH diff`.",
+          "expected": {
+            "columns": [
+              "signup_month",
+              "months_since",
+              "active_users"
+            ],
+            "rows": [
+              [
+                "2024-01",
+                "0",
+                "2"
+              ],
+              [
+                "2024-01",
+                "1",
+                "2"
+              ],
+              [
+                "2024-01",
+                "2",
+                "1"
+              ],
+              [
+                "2024-02",
+                "0",
+                "2"
+              ],
+              [
+                "2024-02",
+                "1",
+                "1"
+              ],
+              [
+                "2024-02",
+                "2",
+                "1"
+              ],
+              [
+                "2024-03",
+                "0",
+                "1"
+              ],
+              [
+                "2024-03",
+                "1",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cohort-retention-pct",
+          "title": "Step 3: divide by the cohort size from `users`",
+          "explain_md": "Cohort size comes from `users`, not from the activity table, so never-active signups stay in the denominator. March: user 6 never showed up, so month-0 retention is 50.0%, not 100%.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "users",
+              "description_md": "One row per user. User 6 signed up but was never active.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "signup_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  2,
+                  "2024-01-25"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  6,
+                  "2024-03-15"
+                ]
+              ]
+            },
+            {
+              "name": "activity",
+              "description_md": "One row per activity event (a user can have several on one day). User 2's first activity is the day after signup.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "activity_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-20"
+                ],
+                [
+                  1,
+                  "2024-02-15"
+                ],
+                [
+                  1,
+                  "2024-03-12"
+                ],
+                [
+                  2,
+                  "2024-01-26"
+                ],
+                [
+                  2,
+                  "2024-01-27"
+                ],
+                [
+                  2,
+                  "2024-02-26"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  3,
+                  "2024-02-06"
+                ],
+                [
+                  3,
+                  "2024-03-08"
+                ],
+                [
+                  3,
+                  "2024-04-02"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  4,
+                  "2024-02-25"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-05"
+                ],
+                [
+                  5,
+                  "2024-04-10"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH offsets AS (\n  SELECT DISTINCT u.user_id,\n         DATE_FORMAT(u.signup_date, '%Y-%m') AS signup_month,\n         (YEAR(a.activity_date) - YEAR(u.signup_date)) * 12\n           + MONTH(a.activity_date) - MONTH(u.signup_date) AS months_since\n  FROM users u\n  JOIN activity a ON a.user_id = u.user_id\n), counts AS (\n  SELECT signup_month, months_since, COUNT(DISTINCT user_id) AS active_users\n  FROM offsets\n  GROUP BY signup_month, months_since\n)\nSELECT c.signup_month, n.months_since, n.active_users, c.cohort_size,\n       ROUND(100.0 * n.active_users / c.cohort_size, 1) AS retention_pct\nFROM counts n\nJOIN (SELECT DATE_FORMAT(signup_date, '%Y-%m') AS signup_month, COUNT(*) AS cohort_size\n      FROM users GROUP BY DATE_FORMAT(signup_date, '%Y-%m')) c\n  ON c.signup_month = n.signup_month\nORDER BY c.signup_month, n.months_since;",
+          "tsql": "WITH offsets AS (\n  SELECT DISTINCT u.user_id,\n         FORMAT(u.signup_date, 'yyyy-MM') AS signup_month,\n         DATEDIFF(month, u.signup_date, a.activity_date) AS months_since\n  FROM users u\n  JOIN activity a ON a.user_id = u.user_id\n), counts AS (\n  SELECT signup_month, months_since, COUNT(DISTINCT user_id) AS active_users\n  FROM offsets\n  GROUP BY signup_month, months_since\n)\nSELECT c.signup_month, n.months_since, n.active_users, c.cohort_size,\n       ROUND(100.0 * n.active_users / c.cohort_size, 1) AS retention_pct\nFROM counts n\nJOIN (SELECT FORMAT(signup_date, 'yyyy-MM') AS signup_month, COUNT(*) AS cohort_size\n      FROM users GROUP BY FORMAT(signup_date, 'yyyy-MM')) c\n  ON c.signup_month = n.signup_month\nORDER BY c.signup_month, n.months_since;",
+          "dialect_note_md": "SQL Server `DATEDIFF(month, a, b)` counts month boundaries crossed, which is exactly the calendar-month offset wanted here. MySQL `TIMESTAMPDIFF(MONTH, ...)` counts complete months (2024-01-31 to 2024-02-29 = 0), so the portable MySQL form is `(YEAR diff) * 12 + MONTH diff`.",
+          "expected": {
+            "columns": [
+              "signup_month",
+              "months_since",
+              "active_users",
+              "cohort_size",
+              "retention_pct"
+            ],
+            "rows": [
+              [
+                "2024-01",
+                "0",
+                "2",
+                "2",
+                "100.0"
+              ],
+              [
+                "2024-01",
+                "1",
+                "2",
+                "2",
+                "100.0"
+              ],
+              [
+                "2024-01",
+                "2",
+                "1",
+                "2",
+                "50.0"
+              ],
+              [
+                "2024-02",
+                "0",
+                "2",
+                "2",
+                "100.0"
+              ],
+              [
+                "2024-02",
+                "1",
+                "1",
+                "2",
+                "50.0"
+              ],
+              [
+                "2024-02",
+                "2",
+                "1",
+                "2",
+                "50.0"
+              ],
+              [
+                "2024-03",
+                "0",
+                "1",
+                "2",
+                "50.0"
+              ],
+              [
+                "2024-03",
+                "1",
+                "1",
+                "2",
+                "50.0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cohort-matrix",
+          "title": "Pivot into the classic triangle",
+          "explain_md": "Conditional aggregation turns the long table into one row per cohort with m0, m1, m2 columns. Missing cells (cohorts too young for m2) show 0 here; show NULL if 'not yet observable' must differ from 'nobody came back'.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "users",
+              "description_md": "One row per user. User 6 signed up but was never active.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "signup_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  2,
+                  "2024-01-25"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  6,
+                  "2024-03-15"
+                ]
+              ]
+            },
+            {
+              "name": "activity",
+              "description_md": "One row per activity event (a user can have several on one day). User 2's first activity is the day after signup.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "activity_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-20"
+                ],
+                [
+                  1,
+                  "2024-02-15"
+                ],
+                [
+                  1,
+                  "2024-03-12"
+                ],
+                [
+                  2,
+                  "2024-01-26"
+                ],
+                [
+                  2,
+                  "2024-01-27"
+                ],
+                [
+                  2,
+                  "2024-02-26"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  3,
+                  "2024-02-06"
+                ],
+                [
+                  3,
+                  "2024-03-08"
+                ],
+                [
+                  3,
+                  "2024-04-02"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  4,
+                  "2024-02-25"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-05"
+                ],
+                [
+                  5,
+                  "2024-04-10"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH offsets AS (\n  SELECT DISTINCT u.user_id,\n         DATE_FORMAT(u.signup_date, '%Y-%m') AS signup_month,\n         (YEAR(a.activity_date) - YEAR(u.signup_date)) * 12\n           + MONTH(a.activity_date) - MONTH(u.signup_date) AS months_since\n  FROM users u\n  JOIN activity a ON a.user_id = u.user_id\n)\nSELECT signup_month,\n       SUM(CASE WHEN months_since = 0 THEN 1 ELSE 0 END) AS m0,\n       SUM(CASE WHEN months_since = 1 THEN 1 ELSE 0 END) AS m1,\n       SUM(CASE WHEN months_since = 2 THEN 1 ELSE 0 END) AS m2\nFROM offsets\nGROUP BY signup_month\nORDER BY signup_month;",
+          "tsql": "WITH offsets AS (\n  SELECT DISTINCT u.user_id,\n         FORMAT(u.signup_date, 'yyyy-MM') AS signup_month,\n         DATEDIFF(month, u.signup_date, a.activity_date) AS months_since\n  FROM users u\n  JOIN activity a ON a.user_id = u.user_id\n)\nSELECT signup_month,\n       SUM(CASE WHEN months_since = 0 THEN 1 ELSE 0 END) AS m0,\n       SUM(CASE WHEN months_since = 1 THEN 1 ELSE 0 END) AS m1,\n       SUM(CASE WHEN months_since = 2 THEN 1 ELSE 0 END) AS m2\nFROM offsets\nGROUP BY signup_month\nORDER BY signup_month;",
+          "dialect_note_md": "SQL Server `DATEDIFF(month, a, b)` counts month boundaries crossed, which is exactly the calendar-month offset wanted here. MySQL `TIMESTAMPDIFF(MONTH, ...)` counts complete months (2024-01-31 to 2024-02-29 = 0), so the portable MySQL form is `(YEAR diff) * 12 + MONTH diff`.",
+          "expected": {
+            "columns": [
+              "signup_month",
+              "m0",
+              "m1",
+              "m2"
+            ],
+            "rows": [
+              [
+                "2024-01",
+                "2",
+                "2",
+                "1"
+              ],
+              [
+                "2024-02",
+                "2",
+                "1",
+                "1"
+              ],
+              [
+                "2024-03",
+                "1",
+                "1",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Cohort size from the activity table drops never-active users and inflates retention.",
+        "Month offsets must be calendar-month based; dividing day differences by 30 drifts.",
+        "Do not count a month beyond today as 'zero retention'; it is not observed yet."
+      ]
+    },
+    {
+      "id": "ordered-funnel",
+      "heading": "Ordered funnel: view -> add_to_cart -> purchase",
+      "body_md": "**Cue:** \"funnel\", \"users who did A then B then C\", \"conversion between steps\", \"drop-off\".\n\n**Shape (simple):**\n- One row per user with `MIN(ts)` per step (conditional aggregation).\n- A step counts only if its timestamp is later than the previous step's: `first_cart > first_view`.\n- Step counts = `SUM` of flags; rates = step / previous step, and step / first step.\n\n**Shape (strict):** chain CTEs, each step = `MIN(ts)` of events after the previous step's timestamp.",
+      "examples": [
+        {
+          "id": "first-ts-per-step",
+          "title": "Step 1: first timestamp of each step, one row per user",
+          "explain_md": "Conditional `MIN` per step. A NULL means the user never did that step. This is the table every ordered-funnel query starts from.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "shop_events",
+              "description_md": "Clickstream. User 1 follows the funnel in order. User 2 skips add_to_cart. User 3's first add_to_cart is before their first view. User 5's add_to_cart and purchase share one timestamp. User 7 purchases with no view. User 8 adds to cart, then views, then adds to cart again and buys.",
+              "columns": [
+                {
+                  "name": "event_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "event_type",
+                  "type": "VARCHAR(15)"
+                },
+                {
+                  "name": "event_ts",
+                  "type": "DATETIME"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "view",
+                  "2024-05-01 09:00:00"
+                ],
+                [
+                  2,
+                  1,
+                  "add_to_cart",
+                  "2024-05-01 09:05:00"
+                ],
+                [
+                  3,
+                  1,
+                  "purchase",
+                  "2024-05-01 09:20:00"
+                ],
+                [
+                  4,
+                  2,
+                  "view",
+                  "2024-05-01 10:00:00"
+                ],
+                [
+                  5,
+                  2,
+                  "purchase",
+                  "2024-05-01 10:10:00"
+                ],
+                [
+                  6,
+                  3,
+                  "add_to_cart",
+                  "2024-05-01 11:00:00"
+                ],
+                [
+                  7,
+                  3,
+                  "view",
+                  "2024-05-01 11:05:00"
+                ],
+                [
+                  8,
+                  3,
+                  "purchase",
+                  "2024-05-01 11:10:00"
+                ],
+                [
+                  9,
+                  4,
+                  "view",
+                  "2024-05-01 12:00:00"
+                ],
+                [
+                  10,
+                  4,
+                  "view",
+                  "2024-05-01 12:30:00"
+                ],
+                [
+                  11,
+                  4,
+                  "add_to_cart",
+                  "2024-05-01 12:40:00"
+                ],
+                [
+                  12,
+                  5,
+                  "view",
+                  "2024-05-01 13:00:00"
+                ],
+                [
+                  13,
+                  5,
+                  "add_to_cart",
+                  "2024-05-01 13:05:00"
+                ],
+                [
+                  14,
+                  5,
+                  "purchase",
+                  "2024-05-01 13:05:00"
+                ],
+                [
+                  15,
+                  6,
+                  "view",
+                  "2024-05-01 14:00:00"
+                ],
+                [
+                  16,
+                  7,
+                  "purchase",
+                  "2024-05-01 15:00:00"
+                ],
+                [
+                  17,
+                  8,
+                  "add_to_cart",
+                  "2024-05-01 16:00:00"
+                ],
+                [
+                  18,
+                  8,
+                  "view",
+                  "2024-05-01 16:05:00"
+                ],
+                [
+                  19,
+                  8,
+                  "add_to_cart",
+                  "2024-05-01 16:10:00"
+                ],
+                [
+                  20,
+                  8,
+                  "purchase",
+                  "2024-05-01 16:20:00"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH steps AS (\n  SELECT user_id,\n         MIN(CASE WHEN event_type = 'view' THEN event_ts END) AS first_view,\n         MIN(CASE WHEN event_type = 'add_to_cart' THEN event_ts END) AS first_cart,\n         MIN(CASE WHEN event_type = 'purchase' THEN event_ts END) AS first_purchase\n  FROM shop_events\n  GROUP BY user_id\n)\nSELECT user_id, first_view, first_cart, first_purchase FROM steps ORDER BY user_id;",
+          "tsql": "WITH steps AS (\n  SELECT user_id,\n         MIN(CASE WHEN event_type = 'view' THEN event_ts END) AS first_view,\n         MIN(CASE WHEN event_type = 'add_to_cart' THEN event_ts END) AS first_cart,\n         MIN(CASE WHEN event_type = 'purchase' THEN event_ts END) AS first_purchase\n  FROM shop_events\n  GROUP BY user_id\n)\nSELECT user_id, first_view, first_cart, first_purchase FROM steps ORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "first_view",
+              "first_cart",
+              "first_purchase"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-05-01 09:00:00",
+                "2024-05-01 09:05:00",
+                "2024-05-01 09:20:00"
+              ],
+              [
+                "2",
+                "2024-05-01 10:00:00",
+                null,
+                "2024-05-01 10:10:00"
+              ],
+              [
+                "3",
+                "2024-05-01 11:05:00",
+                "2024-05-01 11:00:00",
+                "2024-05-01 11:10:00"
+              ],
+              [
+                "4",
+                "2024-05-01 12:00:00",
+                "2024-05-01 12:40:00",
+                null
+              ],
+              [
+                "5",
+                "2024-05-01 13:00:00",
+                "2024-05-01 13:05:00",
+                "2024-05-01 13:05:00"
+              ],
+              [
+                "6",
+                "2024-05-01 14:00:00",
+                null,
+                null
+              ],
+              [
+                "7",
+                null,
+                null,
+                "2024-05-01 15:00:00"
+              ],
+              [
+                "8",
+                "2024-05-01 16:05:00",
+                "2024-05-01 16:00:00",
+                "2024-05-01 16:20:00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "ordered-flags",
+          "title": "Step 2: compare the timestamps to enforce order",
+          "explain_md": "A user passes a step only if it happened strictly after the previous one. NULL comparisons evaluate to NULL, so the CASE falls to 0 for users who skipped a step (user 2) or never viewed (user 7). User 5's cart and purchase share a timestamp so `>` rejects the purchase; use `>=` if same-instant counts. User 3 and user 8 fail because their first cart precedes their first view.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "shop_events",
+              "description_md": "Clickstream. User 1 follows the funnel in order. User 2 skips add_to_cart. User 3's first add_to_cart is before their first view. User 5's add_to_cart and purchase share one timestamp. User 7 purchases with no view. User 8 adds to cart, then views, then adds to cart again and buys.",
+              "columns": [
+                {
+                  "name": "event_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "event_type",
+                  "type": "VARCHAR(15)"
+                },
+                {
+                  "name": "event_ts",
+                  "type": "DATETIME"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "view",
+                  "2024-05-01 09:00:00"
+                ],
+                [
+                  2,
+                  1,
+                  "add_to_cart",
+                  "2024-05-01 09:05:00"
+                ],
+                [
+                  3,
+                  1,
+                  "purchase",
+                  "2024-05-01 09:20:00"
+                ],
+                [
+                  4,
+                  2,
+                  "view",
+                  "2024-05-01 10:00:00"
+                ],
+                [
+                  5,
+                  2,
+                  "purchase",
+                  "2024-05-01 10:10:00"
+                ],
+                [
+                  6,
+                  3,
+                  "add_to_cart",
+                  "2024-05-01 11:00:00"
+                ],
+                [
+                  7,
+                  3,
+                  "view",
+                  "2024-05-01 11:05:00"
+                ],
+                [
+                  8,
+                  3,
+                  "purchase",
+                  "2024-05-01 11:10:00"
+                ],
+                [
+                  9,
+                  4,
+                  "view",
+                  "2024-05-01 12:00:00"
+                ],
+                [
+                  10,
+                  4,
+                  "view",
+                  "2024-05-01 12:30:00"
+                ],
+                [
+                  11,
+                  4,
+                  "add_to_cart",
+                  "2024-05-01 12:40:00"
+                ],
+                [
+                  12,
+                  5,
+                  "view",
+                  "2024-05-01 13:00:00"
+                ],
+                [
+                  13,
+                  5,
+                  "add_to_cart",
+                  "2024-05-01 13:05:00"
+                ],
+                [
+                  14,
+                  5,
+                  "purchase",
+                  "2024-05-01 13:05:00"
+                ],
+                [
+                  15,
+                  6,
+                  "view",
+                  "2024-05-01 14:00:00"
+                ],
+                [
+                  16,
+                  7,
+                  "purchase",
+                  "2024-05-01 15:00:00"
+                ],
+                [
+                  17,
+                  8,
+                  "add_to_cart",
+                  "2024-05-01 16:00:00"
+                ],
+                [
+                  18,
+                  8,
+                  "view",
+                  "2024-05-01 16:05:00"
+                ],
+                [
+                  19,
+                  8,
+                  "add_to_cart",
+                  "2024-05-01 16:10:00"
+                ],
+                [
+                  20,
+                  8,
+                  "purchase",
+                  "2024-05-01 16:20:00"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH steps AS (\n  SELECT user_id,\n         MIN(CASE WHEN event_type = 'view' THEN event_ts END) AS first_view,\n         MIN(CASE WHEN event_type = 'add_to_cart' THEN event_ts END) AS first_cart,\n         MIN(CASE WHEN event_type = 'purchase' THEN event_ts END) AS first_purchase\n  FROM shop_events\n  GROUP BY user_id\n), flagged AS (\n  SELECT user_id,\n         CASE WHEN first_view IS NOT NULL THEN 1 ELSE 0 END AS did_view,\n         CASE WHEN first_cart > first_view THEN 1 ELSE 0 END AS did_cart,\n         CASE WHEN first_purchase > first_cart AND first_cart > first_view THEN 1 ELSE 0 END AS did_purchase\n  FROM steps\n)\nSELECT user_id, did_view, did_cart, did_purchase FROM flagged ORDER BY user_id;",
+          "tsql": "WITH steps AS (\n  SELECT user_id,\n         MIN(CASE WHEN event_type = 'view' THEN event_ts END) AS first_view,\n         MIN(CASE WHEN event_type = 'add_to_cart' THEN event_ts END) AS first_cart,\n         MIN(CASE WHEN event_type = 'purchase' THEN event_ts END) AS first_purchase\n  FROM shop_events\n  GROUP BY user_id\n), flagged AS (\n  SELECT user_id,\n         CASE WHEN first_view IS NOT NULL THEN 1 ELSE 0 END AS did_view,\n         CASE WHEN first_cart > first_view THEN 1 ELSE 0 END AS did_cart,\n         CASE WHEN first_purchase > first_cart AND first_cart > first_view THEN 1 ELSE 0 END AS did_purchase\n  FROM steps\n)\nSELECT user_id, did_view, did_cart, did_purchase FROM flagged ORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "did_view",
+              "did_cart",
+              "did_purchase"
+            ],
+            "rows": [
+              [
+                "1",
+                "1",
+                "1",
+                "1"
+              ],
+              [
+                "2",
+                "1",
+                "0",
+                "0"
+              ],
+              [
+                "3",
+                "1",
+                "0",
+                "0"
+              ],
+              [
+                "4",
+                "1",
+                "1",
+                "0"
+              ],
+              [
+                "5",
+                "1",
+                "1",
+                "0"
+              ],
+              [
+                "6",
+                "1",
+                "0",
+                "0"
+              ],
+              [
+                "7",
+                "0",
+                "0",
+                "0"
+              ],
+              [
+                "8",
+                "1",
+                "0",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "funnel-conversion",
+          "title": "Step 3: counts and conversion rates",
+          "explain_md": "Step-to-step rate divides by the previous step; overall rate divides by the top of the funnel. User 7 (purchase, no view) is correctly excluded from every count; a naive `COUNT(DISTINCT user_id) WHERE event_type = 'purchase'` would report 6 purchasers. `NULLIF` protects against a zero denominator.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "shop_events",
+              "description_md": "Clickstream. User 1 follows the funnel in order. User 2 skips add_to_cart. User 3's first add_to_cart is before their first view. User 5's add_to_cart and purchase share one timestamp. User 7 purchases with no view. User 8 adds to cart, then views, then adds to cart again and buys.",
+              "columns": [
+                {
+                  "name": "event_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "event_type",
+                  "type": "VARCHAR(15)"
+                },
+                {
+                  "name": "event_ts",
+                  "type": "DATETIME"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "view",
+                  "2024-05-01 09:00:00"
+                ],
+                [
+                  2,
+                  1,
+                  "add_to_cart",
+                  "2024-05-01 09:05:00"
+                ],
+                [
+                  3,
+                  1,
+                  "purchase",
+                  "2024-05-01 09:20:00"
+                ],
+                [
+                  4,
+                  2,
+                  "view",
+                  "2024-05-01 10:00:00"
+                ],
+                [
+                  5,
+                  2,
+                  "purchase",
+                  "2024-05-01 10:10:00"
+                ],
+                [
+                  6,
+                  3,
+                  "add_to_cart",
+                  "2024-05-01 11:00:00"
+                ],
+                [
+                  7,
+                  3,
+                  "view",
+                  "2024-05-01 11:05:00"
+                ],
+                [
+                  8,
+                  3,
+                  "purchase",
+                  "2024-05-01 11:10:00"
+                ],
+                [
+                  9,
+                  4,
+                  "view",
+                  "2024-05-01 12:00:00"
+                ],
+                [
+                  10,
+                  4,
+                  "view",
+                  "2024-05-01 12:30:00"
+                ],
+                [
+                  11,
+                  4,
+                  "add_to_cart",
+                  "2024-05-01 12:40:00"
+                ],
+                [
+                  12,
+                  5,
+                  "view",
+                  "2024-05-01 13:00:00"
+                ],
+                [
+                  13,
+                  5,
+                  "add_to_cart",
+                  "2024-05-01 13:05:00"
+                ],
+                [
+                  14,
+                  5,
+                  "purchase",
+                  "2024-05-01 13:05:00"
+                ],
+                [
+                  15,
+                  6,
+                  "view",
+                  "2024-05-01 14:00:00"
+                ],
+                [
+                  16,
+                  7,
+                  "purchase",
+                  "2024-05-01 15:00:00"
+                ],
+                [
+                  17,
+                  8,
+                  "add_to_cart",
+                  "2024-05-01 16:00:00"
+                ],
+                [
+                  18,
+                  8,
+                  "view",
+                  "2024-05-01 16:05:00"
+                ],
+                [
+                  19,
+                  8,
+                  "add_to_cart",
+                  "2024-05-01 16:10:00"
+                ],
+                [
+                  20,
+                  8,
+                  "purchase",
+                  "2024-05-01 16:20:00"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH steps AS (\n  SELECT user_id,\n         MIN(CASE WHEN event_type = 'view' THEN event_ts END) AS first_view,\n         MIN(CASE WHEN event_type = 'add_to_cart' THEN event_ts END) AS first_cart,\n         MIN(CASE WHEN event_type = 'purchase' THEN event_ts END) AS first_purchase\n  FROM shop_events\n  GROUP BY user_id\n), flagged AS (\n  SELECT user_id,\n         CASE WHEN first_view IS NOT NULL THEN 1 ELSE 0 END AS did_view,\n         CASE WHEN first_cart > first_view THEN 1 ELSE 0 END AS did_cart,\n         CASE WHEN first_purchase > first_cart AND first_cart > first_view THEN 1 ELSE 0 END AS did_purchase\n  FROM steps\n)\nSELECT SUM(did_view) AS viewers, SUM(did_cart) AS carted, SUM(did_purchase) AS purchased,\n       ROUND(100.0 * SUM(did_cart) / NULLIF(SUM(did_view), 0), 1) AS view_to_cart_pct,\n       ROUND(100.0 * SUM(did_purchase) / NULLIF(SUM(did_cart), 0), 1) AS cart_to_purchase_pct,\n       ROUND(100.0 * SUM(did_purchase) / NULLIF(SUM(did_view), 0), 1) AS overall_pct\nFROM flagged;",
+          "tsql": "WITH steps AS (\n  SELECT user_id,\n         MIN(CASE WHEN event_type = 'view' THEN event_ts END) AS first_view,\n         MIN(CASE WHEN event_type = 'add_to_cart' THEN event_ts END) AS first_cart,\n         MIN(CASE WHEN event_type = 'purchase' THEN event_ts END) AS first_purchase\n  FROM shop_events\n  GROUP BY user_id\n), flagged AS (\n  SELECT user_id,\n         CASE WHEN first_view IS NOT NULL THEN 1 ELSE 0 END AS did_view,\n         CASE WHEN first_cart > first_view THEN 1 ELSE 0 END AS did_cart,\n         CASE WHEN first_purchase > first_cart AND first_cart > first_view THEN 1 ELSE 0 END AS did_purchase\n  FROM steps\n)\nSELECT SUM(did_view) AS viewers, SUM(did_cart) AS carted, SUM(did_purchase) AS purchased,\n       ROUND(100.0 * SUM(did_cart) / NULLIF(SUM(did_view), 0), 1) AS view_to_cart_pct,\n       ROUND(100.0 * SUM(did_purchase) / NULLIF(SUM(did_cart), 0), 1) AS cart_to_purchase_pct,\n       ROUND(100.0 * SUM(did_purchase) / NULLIF(SUM(did_view), 0), 1) AS overall_pct\nFROM flagged;",
+          "expected": {
+            "columns": [
+              "viewers",
+              "carted",
+              "purchased",
+              "view_to_cart_pct",
+              "cart_to_purchase_pct",
+              "overall_pct"
+            ],
+            "rows": [
+              [
+                "7",
+                "3",
+                "1",
+                "42.9",
+                "33.3",
+                "14.3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "strict-chain",
+          "title": "Stricter: each step is the first one after the previous step",
+          "explain_md": "Taking the global `MIN` per step can reject users like 8 who did the steps in order after an early stray event. Chaining (step 2 = first cart after the view, step 3 = first purchase after that cart) gives carted 4 and purchased 2, against 3 and 1 from the simple version. Use it when the question says 'in that order' and stray earlier events are plausible.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "shop_events",
+              "description_md": "Clickstream. User 1 follows the funnel in order. User 2 skips add_to_cart. User 3's first add_to_cart is before their first view. User 5's add_to_cart and purchase share one timestamp. User 7 purchases with no view. User 8 adds to cart, then views, then adds to cart again and buys.",
+              "columns": [
+                {
+                  "name": "event_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "event_type",
+                  "type": "VARCHAR(15)"
+                },
+                {
+                  "name": "event_ts",
+                  "type": "DATETIME"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "view",
+                  "2024-05-01 09:00:00"
+                ],
+                [
+                  2,
+                  1,
+                  "add_to_cart",
+                  "2024-05-01 09:05:00"
+                ],
+                [
+                  3,
+                  1,
+                  "purchase",
+                  "2024-05-01 09:20:00"
+                ],
+                [
+                  4,
+                  2,
+                  "view",
+                  "2024-05-01 10:00:00"
+                ],
+                [
+                  5,
+                  2,
+                  "purchase",
+                  "2024-05-01 10:10:00"
+                ],
+                [
+                  6,
+                  3,
+                  "add_to_cart",
+                  "2024-05-01 11:00:00"
+                ],
+                [
+                  7,
+                  3,
+                  "view",
+                  "2024-05-01 11:05:00"
+                ],
+                [
+                  8,
+                  3,
+                  "purchase",
+                  "2024-05-01 11:10:00"
+                ],
+                [
+                  9,
+                  4,
+                  "view",
+                  "2024-05-01 12:00:00"
+                ],
+                [
+                  10,
+                  4,
+                  "view",
+                  "2024-05-01 12:30:00"
+                ],
+                [
+                  11,
+                  4,
+                  "add_to_cart",
+                  "2024-05-01 12:40:00"
+                ],
+                [
+                  12,
+                  5,
+                  "view",
+                  "2024-05-01 13:00:00"
+                ],
+                [
+                  13,
+                  5,
+                  "add_to_cart",
+                  "2024-05-01 13:05:00"
+                ],
+                [
+                  14,
+                  5,
+                  "purchase",
+                  "2024-05-01 13:05:00"
+                ],
+                [
+                  15,
+                  6,
+                  "view",
+                  "2024-05-01 14:00:00"
+                ],
+                [
+                  16,
+                  7,
+                  "purchase",
+                  "2024-05-01 15:00:00"
+                ],
+                [
+                  17,
+                  8,
+                  "add_to_cart",
+                  "2024-05-01 16:00:00"
+                ],
+                [
+                  18,
+                  8,
+                  "view",
+                  "2024-05-01 16:05:00"
+                ],
+                [
+                  19,
+                  8,
+                  "add_to_cart",
+                  "2024-05-01 16:10:00"
+                ],
+                [
+                  20,
+                  8,
+                  "purchase",
+                  "2024-05-01 16:20:00"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH s1 AS (\n  SELECT user_id, MIN(event_ts) AS ts FROM shop_events\n  WHERE event_type = 'view' GROUP BY user_id\n), s2 AS (\n  SELECT s1.user_id, MIN(e.event_ts) AS ts\n  FROM s1 JOIN shop_events e\n    ON e.user_id = s1.user_id AND e.event_type = 'add_to_cart' AND e.event_ts > s1.ts\n  GROUP BY s1.user_id\n), s3 AS (\n  SELECT s2.user_id, MIN(e.event_ts) AS ts\n  FROM s2 JOIN shop_events e\n    ON e.user_id = s2.user_id AND e.event_type = 'purchase' AND e.event_ts > s2.ts\n  GROUP BY s2.user_id\n)\nSELECT (SELECT COUNT(*) FROM s1) AS viewers,\n       (SELECT COUNT(*) FROM s2) AS carted,\n       (SELECT COUNT(*) FROM s3) AS purchased;",
+          "tsql": "WITH s1 AS (\n  SELECT user_id, MIN(event_ts) AS ts FROM shop_events\n  WHERE event_type = 'view' GROUP BY user_id\n), s2 AS (\n  SELECT s1.user_id, MIN(e.event_ts) AS ts\n  FROM s1 JOIN shop_events e\n    ON e.user_id = s1.user_id AND e.event_type = 'add_to_cart' AND e.event_ts > s1.ts\n  GROUP BY s1.user_id\n), s3 AS (\n  SELECT s2.user_id, MIN(e.event_ts) AS ts\n  FROM s2 JOIN shop_events e\n    ON e.user_id = s2.user_id AND e.event_type = 'purchase' AND e.event_ts > s2.ts\n  GROUP BY s2.user_id\n)\nSELECT (SELECT COUNT(*) FROM s1) AS viewers,\n       (SELECT COUNT(*) FROM s2) AS carted,\n       (SELECT COUNT(*) FROM s3) AS purchased;",
+          "expected": {
+            "columns": [
+              "viewers",
+              "carted",
+              "purchased"
+            ],
+            "rows": [
+              [
+                "7",
+                "4",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Count users, not events: one user with ten views is one viewer.",
+        "Denominator for a step rate is the previous step (or the top of the funnel for overall conversion), never all users.",
+        "Same-timestamp steps: decide `>` vs `>=` and say it.",
+        "Users who skip a step (view -> purchase) are not in the cart-to-purchase step unless the question says 'any later purchase'.",
+        "Funnels with a time limit ('within 1 hour'): add `AND ts <= prev_ts + interval` to each step condition."
+      ]
+    },
+    {
+      "id": "first-and-repeat",
+      "heading": "First purchase and repeat within 30 days",
+      "body_md": "**Cue:** \"new customers who bought again within 30 days\", \"repeat rate\", \"time to second purchase\".\n\n**Shape:**\n- `ROW_NUMBER() OVER (PARTITION BY user ORDER BY ts, order_id)`.\n- Pair `rn = 1` with `rn = 2` (LEFT JOIN).\n- Repeat = second exists and `days_between <= 30`.\n- Restrict to cohorts old enough for the window to have closed (right-censoring).",
+      "examples": [
+        {
+          "id": "first-purchase",
+          "title": "First purchase per user",
+          "explain_md": "`ROW_NUMBER` with `order_id` as tie-breaker picks exactly one first order even when a user orders twice on the same day (user 5).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "purchases",
+              "description_md": "Orders. User 2's second order is 31 days after the first; user 3's is exactly 30 days after; user 5 placed two orders on the same day.",
+              "columns": [
+                {
+                  "name": "order_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "order_date",
+                  "type": "DATE"
+                },
+                {
+                  "name": "amount",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "2024-01-05",
+                  40.0
+                ],
+                [
+                  2,
+                  1,
+                  "2024-01-20",
+                  25.0
+                ],
+                [
+                  3,
+                  1,
+                  "2024-03-10",
+                  60.0
+                ],
+                [
+                  4,
+                  2,
+                  "2024-02-01",
+                  30.0
+                ],
+                [
+                  5,
+                  2,
+                  "2024-03-03",
+                  20.0
+                ],
+                [
+                  6,
+                  3,
+                  "2024-01-15",
+                  55.0
+                ],
+                [
+                  7,
+                  3,
+                  "2024-02-14",
+                  35.0
+                ],
+                [
+                  8,
+                  4,
+                  "2024-03-01",
+                  80.0
+                ],
+                [
+                  9,
+                  5,
+                  "2024-04-01",
+                  15.0
+                ],
+                [
+                  10,
+                  5,
+                  "2024-04-01",
+                  45.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH numbered AS (\n  SELECT user_id, order_id, order_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY order_date, order_id) AS rn\n  FROM purchases\n)\nSELECT user_id, order_id AS first_order_id, order_date AS first_date\nFROM numbered\nWHERE rn = 1\nORDER BY user_id;",
+          "tsql": "WITH numbered AS (\n  SELECT user_id, order_id, order_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY order_date, order_id) AS rn\n  FROM purchases\n)\nSELECT user_id, order_id AS first_order_id, order_date AS first_date\nFROM numbered\nWHERE rn = 1\nORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "first_order_id",
+              "first_date"
+            ],
+            "rows": [
+              [
+                "1",
+                "1",
+                "2024-01-05"
+              ],
+              [
+                "2",
+                "4",
+                "2024-02-01"
+              ],
+              [
+                "3",
+                "6",
+                "2024-01-15"
+              ],
+              [
+                "4",
+                "8",
+                "2024-03-01"
+              ],
+              [
+                "5",
+                "9",
+                "2024-04-01"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "first-and-second",
+          "title": "First and second order dates side by side",
+          "explain_md": "Self-join `rn = 1` to `rn = 2`. LEFT JOIN keeps users with only one order (user 4: NULL second date).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "purchases",
+              "description_md": "Orders. User 2's second order is 31 days after the first; user 3's is exactly 30 days after; user 5 placed two orders on the same day.",
+              "columns": [
+                {
+                  "name": "order_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "order_date",
+                  "type": "DATE"
+                },
+                {
+                  "name": "amount",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "2024-01-05",
+                  40.0
+                ],
+                [
+                  2,
+                  1,
+                  "2024-01-20",
+                  25.0
+                ],
+                [
+                  3,
+                  1,
+                  "2024-03-10",
+                  60.0
+                ],
+                [
+                  4,
+                  2,
+                  "2024-02-01",
+                  30.0
+                ],
+                [
+                  5,
+                  2,
+                  "2024-03-03",
+                  20.0
+                ],
+                [
+                  6,
+                  3,
+                  "2024-01-15",
+                  55.0
+                ],
+                [
+                  7,
+                  3,
+                  "2024-02-14",
+                  35.0
+                ],
+                [
+                  8,
+                  4,
+                  "2024-03-01",
+                  80.0
+                ],
+                [
+                  9,
+                  5,
+                  "2024-04-01",
+                  15.0
+                ],
+                [
+                  10,
+                  5,
+                  "2024-04-01",
+                  45.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH numbered AS (\n  SELECT user_id, order_id, order_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY order_date, order_id) AS rn\n  FROM purchases\n), pairs AS (\n  SELECT f.user_id, f.order_date AS first_date, s.order_date AS second_date\n  FROM numbered f\n  LEFT JOIN numbered s ON s.user_id = f.user_id AND s.rn = 2\n  WHERE f.rn = 1\n)\nSELECT user_id, first_date, second_date, DATEDIFF(second_date, first_date) AS days_between\nFROM pairs\nORDER BY user_id;",
+          "tsql": "WITH numbered AS (\n  SELECT user_id, order_id, order_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY order_date, order_id) AS rn\n  FROM purchases\n), pairs AS (\n  SELECT f.user_id, f.order_date AS first_date, s.order_date AS second_date\n  FROM numbered f\n  LEFT JOIN numbered s ON s.user_id = f.user_id AND s.rn = 2\n  WHERE f.rn = 1\n)\nSELECT user_id, first_date, second_date, DATEDIFF(day, first_date, second_date) AS days_between\nFROM pairs\nORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "first_date",
+              "second_date",
+              "days_between"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-01-05",
+                "2024-01-20",
+                "15"
+              ],
+              [
+                "2",
+                "2024-02-01",
+                "2024-03-03",
+                "31"
+              ],
+              [
+                "3",
+                "2024-01-15",
+                "2024-02-14",
+                "30"
+              ],
+              [
+                "4",
+                "2024-03-01",
+                null,
+                null
+              ],
+              [
+                "5",
+                "2024-04-01",
+                "2024-04-01",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "repeat-within-30",
+          "title": "Repeat within 30 days: the boundary cases",
+          "explain_md": "Day 30 counts (user 3: exactly 30 days) and day 31 does not (user 2). User 5's same-day second order counts as a repeat (0 days); if same-day orders should be treated as one basket, collapse them first.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "purchases",
+              "description_md": "Orders. User 2's second order is 31 days after the first; user 3's is exactly 30 days after; user 5 placed two orders on the same day.",
+              "columns": [
+                {
+                  "name": "order_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "order_date",
+                  "type": "DATE"
+                },
+                {
+                  "name": "amount",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "2024-01-05",
+                  40.0
+                ],
+                [
+                  2,
+                  1,
+                  "2024-01-20",
+                  25.0
+                ],
+                [
+                  3,
+                  1,
+                  "2024-03-10",
+                  60.0
+                ],
+                [
+                  4,
+                  2,
+                  "2024-02-01",
+                  30.0
+                ],
+                [
+                  5,
+                  2,
+                  "2024-03-03",
+                  20.0
+                ],
+                [
+                  6,
+                  3,
+                  "2024-01-15",
+                  55.0
+                ],
+                [
+                  7,
+                  3,
+                  "2024-02-14",
+                  35.0
+                ],
+                [
+                  8,
+                  4,
+                  "2024-03-01",
+                  80.0
+                ],
+                [
+                  9,
+                  5,
+                  "2024-04-01",
+                  15.0
+                ],
+                [
+                  10,
+                  5,
+                  "2024-04-01",
+                  45.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH numbered AS (\n  SELECT user_id, order_id, order_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY order_date, order_id) AS rn\n  FROM purchases\n), pairs AS (\n  SELECT f.user_id, f.order_date AS first_date, s.order_date AS second_date\n  FROM numbered f\n  LEFT JOIN numbered s ON s.user_id = f.user_id AND s.rn = 2\n  WHERE f.rn = 1\n)\nSELECT user_id, first_date, second_date,\n       CASE WHEN DATEDIFF(second_date, first_date) <= 30 THEN 1 ELSE 0 END AS repeat_30\nFROM pairs\nORDER BY user_id;",
+          "tsql": "WITH numbered AS (\n  SELECT user_id, order_id, order_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY order_date, order_id) AS rn\n  FROM purchases\n), pairs AS (\n  SELECT f.user_id, f.order_date AS first_date, s.order_date AS second_date\n  FROM numbered f\n  LEFT JOIN numbered s ON s.user_id = f.user_id AND s.rn = 2\n  WHERE f.rn = 1\n)\nSELECT user_id, first_date, second_date,\n       CASE WHEN DATEDIFF(day, first_date, second_date) <= 30 THEN 1 ELSE 0 END AS repeat_30\nFROM pairs\nORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "first_date",
+              "second_date",
+              "repeat_30"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-01-05",
+                "2024-01-20",
+                "1"
+              ],
+              [
+                "2",
+                "2024-02-01",
+                "2024-03-03",
+                "0"
+              ],
+              [
+                "3",
+                "2024-01-15",
+                "2024-02-14",
+                "1"
+              ],
+              [
+                "4",
+                "2024-03-01",
+                null,
+                "0"
+              ],
+              [
+                "5",
+                "2024-04-01",
+                "2024-04-01",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "repeat-rate",
+          "title": "Repeat rate with a matured window",
+          "explain_md": "Only count first-time buyers whose 30-day window has fully elapsed by the as-of date (2024-04-15): first order on or before 2024-03-16. User 5 (first order 04-01) is excluded, not counted as a non-repeater. Result: 2 of 4.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "purchases",
+              "description_md": "Orders. User 2's second order is 31 days after the first; user 3's is exactly 30 days after; user 5 placed two orders on the same day.",
+              "columns": [
+                {
+                  "name": "order_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "order_date",
+                  "type": "DATE"
+                },
+                {
+                  "name": "amount",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "2024-01-05",
+                  40.0
+                ],
+                [
+                  2,
+                  1,
+                  "2024-01-20",
+                  25.0
+                ],
+                [
+                  3,
+                  1,
+                  "2024-03-10",
+                  60.0
+                ],
+                [
+                  4,
+                  2,
+                  "2024-02-01",
+                  30.0
+                ],
+                [
+                  5,
+                  2,
+                  "2024-03-03",
+                  20.0
+                ],
+                [
+                  6,
+                  3,
+                  "2024-01-15",
+                  55.0
+                ],
+                [
+                  7,
+                  3,
+                  "2024-02-14",
+                  35.0
+                ],
+                [
+                  8,
+                  4,
+                  "2024-03-01",
+                  80.0
+                ],
+                [
+                  9,
+                  5,
+                  "2024-04-01",
+                  15.0
+                ],
+                [
+                  10,
+                  5,
+                  "2024-04-01",
+                  45.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH numbered AS (\n  SELECT user_id, order_id, order_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY order_date, order_id) AS rn\n  FROM purchases\n), pairs AS (\n  SELECT f.user_id, f.order_date AS first_date, s.order_date AS second_date\n  FROM numbered f\n  LEFT JOIN numbered s ON s.user_id = f.user_id AND s.rn = 2\n  WHERE f.rn = 1\n)\nSELECT COUNT(*) AS eligible_buyers,\n       SUM(CASE WHEN DATEDIFF(second_date, first_date) <= 30 THEN 1 ELSE 0 END) AS repeaters,\n       ROUND(100.0 * SUM(CASE WHEN DATEDIFF(second_date, first_date) <= 30 THEN 1 ELSE 0 END) / COUNT(*), 1) AS repeat_pct\nFROM pairs\nWHERE first_date <= DATE_SUB(CAST('2024-04-15' AS DATE), INTERVAL 30 DAY);",
+          "tsql": "WITH numbered AS (\n  SELECT user_id, order_id, order_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY order_date, order_id) AS rn\n  FROM purchases\n), pairs AS (\n  SELECT f.user_id, f.order_date AS first_date, s.order_date AS second_date\n  FROM numbered f\n  LEFT JOIN numbered s ON s.user_id = f.user_id AND s.rn = 2\n  WHERE f.rn = 1\n)\nSELECT COUNT(*) AS eligible_buyers,\n       SUM(CASE WHEN DATEDIFF(day, first_date, second_date) <= 30 THEN 1 ELSE 0 END) AS repeaters,\n       ROUND(100.0 * SUM(CASE WHEN DATEDIFF(day, first_date, second_date) <= 30 THEN 1 ELSE 0 END) / COUNT(*), 1) AS repeat_pct\nFROM pairs\nWHERE first_date <= DATEADD(day, -30, CAST('2024-04-15' AS DATE));",
+          "expected": {
+            "columns": [
+              "eligible_buyers",
+              "repeaters",
+              "repeat_pct"
+            ],
+            "rows": [
+              [
+                "4",
+                "2",
+                "50.0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Timestamps instead of dates: 30 days = `second_ts <= first_ts + INTERVAL 30 DAY`; compare timestamps, not `DATEDIFF`.",
+        "Is 'within 30 days' inclusive of day 30? Say so. Same-day second order counts?",
+        "Right-censoring: recent first-time buyers have not had 30 days yet. Including them lowers the rate.",
+        "Cancelled or refunded orders: filter by status before numbering, or the 'first purchase' may be a cancelled one."
+      ]
+    },
+    {
+      "id": "exact-vs-rolling",
+      "heading": "Exact-day vs rolling retention",
+      "body_md": "**Cue:** \"D7 retention\" is ambiguous. Pick one and say it:\n- **Exact day N (classic):** active on `cohort_day + N` exactly.\n- **Rolling / within N:** active on any day in `cohort_day + 1 .. + N`.\n- **Unbounded:** active on or after `cohort_day + N` (the 'return at least once after N days' definition).\n\nEach is the same `EXISTS` with a different date predicate. Exact is the smallest, unbounded the largest.",
+      "examples": [
+        {
+          "id": "exact-vs-rolling-rows",
+          "title": "Exact day 2 vs 'came back within 7 days', per user",
+          "explain_md": "User 5 returned on day 2 (exact) and day 1. Users 1, 2, 3 and 4 never hit day 2 exactly but all returned within the week (user 4 on day 5). Exact-day metrics are stricter and smaller than rolling ones.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "activity",
+              "description_md": "One row per activity event (a user can have several on one day). User 2's first activity is the day after signup.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "activity_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-20"
+                ],
+                [
+                  1,
+                  "2024-02-15"
+                ],
+                [
+                  1,
+                  "2024-03-12"
+                ],
+                [
+                  2,
+                  "2024-01-26"
+                ],
+                [
+                  2,
+                  "2024-01-27"
+                ],
+                [
+                  2,
+                  "2024-02-26"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  3,
+                  "2024-02-06"
+                ],
+                [
+                  3,
+                  "2024-03-08"
+                ],
+                [
+                  3,
+                  "2024-04-02"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  4,
+                  "2024-02-25"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-05"
+                ],
+                [
+                  5,
+                  "2024-04-10"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH firsts AS (\n  SELECT user_id, MIN(activity_date) AS first_day\n  FROM activity\n  GROUP BY user_id\n), flagged AS (\n  SELECT f.user_id, f.first_day,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date = DATE_ADD(f.first_day, INTERVAL 1 DAY)) THEN 1 ELSE 0 END AS d1,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date = DATE_ADD(f.first_day, INTERVAL 2 DAY)) THEN 1 ELSE 0 END AS exact_d2,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date BETWEEN DATE_ADD(f.first_day, INTERVAL 1 DAY)\n                                                   AND DATE_ADD(f.first_day, INTERVAL 7 DAY)) THEN 1 ELSE 0 END AS rolling_7\n  FROM firsts f\n)\nSELECT user_id, first_day, d1, exact_d2, rolling_7 FROM flagged ORDER BY user_id;",
+          "tsql": "WITH firsts AS (\n  SELECT user_id, MIN(activity_date) AS first_day\n  FROM activity\n  GROUP BY user_id\n), flagged AS (\n  SELECT f.user_id, f.first_day,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date = DATEADD(day, 1, f.first_day)) THEN 1 ELSE 0 END AS d1,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date = DATEADD(day, 2, f.first_day)) THEN 1 ELSE 0 END AS exact_d2,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date BETWEEN DATEADD(day, 1, f.first_day)\n                                                   AND DATEADD(day, 7, f.first_day)) THEN 1 ELSE 0 END AS rolling_7\n  FROM firsts f\n)\nSELECT user_id, first_day, d1, exact_d2, rolling_7 FROM flagged ORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "first_day",
+              "d1",
+              "exact_d2",
+              "rolling_7"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-01-10",
+                "1",
+                "0",
+                "1"
+              ],
+              [
+                "2",
+                "2024-01-26",
+                "1",
+                "0",
+                "1"
+              ],
+              [
+                "3",
+                "2024-02-05",
+                "1",
+                "0",
+                "1"
+              ],
+              [
+                "4",
+                "2024-02-20",
+                "0",
+                "0",
+                "1"
+              ],
+              [
+                "5",
+                "2024-03-03",
+                "1",
+                "1",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "exact-vs-rolling-rates",
+          "title": "The three rates side by side",
+          "explain_md": "Same cohort of 5 users: D1 = 4/5, exact D2 = 1/5, rolling 7-day = 5/5. Never compare numbers computed with different definitions.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "activity",
+              "description_md": "One row per activity event (a user can have several on one day). User 2's first activity is the day after signup.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "activity_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-01-10"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-11"
+                ],
+                [
+                  1,
+                  "2024-01-20"
+                ],
+                [
+                  1,
+                  "2024-02-15"
+                ],
+                [
+                  1,
+                  "2024-03-12"
+                ],
+                [
+                  2,
+                  "2024-01-26"
+                ],
+                [
+                  2,
+                  "2024-01-27"
+                ],
+                [
+                  2,
+                  "2024-02-26"
+                ],
+                [
+                  3,
+                  "2024-02-05"
+                ],
+                [
+                  3,
+                  "2024-02-06"
+                ],
+                [
+                  3,
+                  "2024-03-08"
+                ],
+                [
+                  3,
+                  "2024-04-02"
+                ],
+                [
+                  4,
+                  "2024-02-20"
+                ],
+                [
+                  4,
+                  "2024-02-25"
+                ],
+                [
+                  5,
+                  "2024-03-03"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-04"
+                ],
+                [
+                  5,
+                  "2024-03-05"
+                ],
+                [
+                  5,
+                  "2024-04-10"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH firsts AS (\n  SELECT user_id, MIN(activity_date) AS first_day\n  FROM activity\n  GROUP BY user_id\n), flagged AS (\n  SELECT f.user_id, f.first_day,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date = DATE_ADD(f.first_day, INTERVAL 1 DAY)) THEN 1 ELSE 0 END AS d1,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date = DATE_ADD(f.first_day, INTERVAL 2 DAY)) THEN 1 ELSE 0 END AS exact_d2,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date BETWEEN DATE_ADD(f.first_day, INTERVAL 1 DAY)\n                                                   AND DATE_ADD(f.first_day, INTERVAL 7 DAY)) THEN 1 ELSE 0 END AS rolling_7\n  FROM firsts f\n)\nSELECT COUNT(*) AS cohort,\n       ROUND(100.0 * SUM(d1) / COUNT(*), 1) AS d1_pct,\n       ROUND(100.0 * SUM(exact_d2) / COUNT(*), 1) AS exact_d2_pct,\n       ROUND(100.0 * SUM(rolling_7) / COUNT(*), 1) AS rolling_7_pct\nFROM flagged;",
+          "tsql": "WITH firsts AS (\n  SELECT user_id, MIN(activity_date) AS first_day\n  FROM activity\n  GROUP BY user_id\n), flagged AS (\n  SELECT f.user_id, f.first_day,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date = DATEADD(day, 1, f.first_day)) THEN 1 ELSE 0 END AS d1,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date = DATEADD(day, 2, f.first_day)) THEN 1 ELSE 0 END AS exact_d2,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a WHERE a.user_id = f.user_id\n                           AND a.activity_date BETWEEN DATEADD(day, 1, f.first_day)\n                                                   AND DATEADD(day, 7, f.first_day)) THEN 1 ELSE 0 END AS rolling_7\n  FROM firsts f\n)\nSELECT COUNT(*) AS cohort,\n       ROUND(100.0 * SUM(d1) / COUNT(*), 1) AS d1_pct,\n       ROUND(100.0 * SUM(exact_d2) / COUNT(*), 1) AS exact_d2_pct,\n       ROUND(100.0 * SUM(rolling_7) / COUNT(*), 1) AS rolling_7_pct\nFROM flagged;",
+          "expected": {
+            "columns": [
+              "cohort",
+              "d1_pct",
+              "exact_d2_pct",
+              "rolling_7_pct"
+            ],
+            "rows": [
+              [
+                "5",
+                "80.0",
+                "20.0",
+                "100.0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "State the definition in the answer; interviewers grade the clarification as much as the SQL."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,540 @@
+{
+  "id": "set-operations",
+  "title": "Set operations",
+  "group": "Foundations",
+  "order": 5,
+  "summary_md": "Stack and compare result sets: UNION vs UNION ALL, INTERSECT and EXCEPT (and their EXISTS emulations), column and type rules, and where ORDER BY goes.",
+  "sections": [
+    {
+      "id": "union",
+      "heading": "UNION vs UNION ALL",
+      "body_md": "- Set operators stack the results of two queries **vertically** (joins combine horizontally).\n- `UNION ALL` keeps every row, duplicates included. Fast: no sort/dedupe.\n- `UNION` removes duplicate rows from the combined result (like DISTINCT over the whole row; NULLs count as equal). Slower.\n- Default to `UNION ALL` when the branches cannot overlap or when you want duplicates; use `UNION` only when you truly need dedupe.\n- Add a literal column (`'completed' AS source`) to remember which branch a row came from.",
+      "syntax": {
+        "mysql": "query1 UNION [ALL] query2 [ORDER BY ...]",
+        "tsql": "query1 UNION [ALL] query2 [ORDER BY ...]"
+      },
+      "args": [
+        {
+          "name": "query1",
+          "meaning": "First SELECT; its column names become the result's column names."
+        },
+        {
+          "name": "UNION ALL",
+          "meaning": "Append all rows of query2, duplicates kept."
+        },
+        {
+          "name": "UNION",
+          "meaning": "Append and remove duplicate rows."
+        },
+        {
+          "name": "ORDER BY",
+          "meaning": "Written once, after the last branch; sorts the combined result."
+        }
+      ],
+      "examples": [
+        {
+          "id": "union-dedupe",
+          "title": "UNION removes duplicates",
+          "explain_md": "Customer ids that have a completed or a cancelled order. Customers 1 and 5 are in both branches but appear once.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id FROM orders WHERE status = 'completed'\nUNION\nSELECT customer_id FROM orders WHERE status = 'cancelled'\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id FROM orders WHERE status = 'completed'\nUNION\nSELECT customer_id FROM orders WHERE status = 'cancelled'\nORDER BY customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id"
+            ],
+            "rows": [
+              [
+                "1"
+              ],
+              [
+                "2"
+              ],
+              [
+                "3"
+              ],
+              [
+                "4"
+              ],
+              [
+                "5"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "union-all",
+          "title": "UNION ALL keeps every row",
+          "explain_md": "Same branches: one row per qualifying order, so customers repeat.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id FROM orders WHERE status = 'completed'\nUNION ALL\nSELECT customer_id FROM orders WHERE status = 'cancelled'\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id FROM orders WHERE status = 'completed'\nUNION ALL\nSELECT customer_id FROM orders WHERE status = 'cancelled'\nORDER BY customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id"
+            ],
+            "rows": [
+              [
+                "1"
+              ],
+              [
+                "1"
+              ],
+              [
+                "1"
+              ],
+              [
+                "1"
+              ],
+              [
+                "2"
+              ],
+              [
+                "2"
+              ],
+              [
+                "2"
+              ],
+              [
+                "2"
+              ],
+              [
+                "3"
+              ],
+              [
+                "3"
+              ],
+              [
+                "4"
+              ],
+              [
+                "5"
+              ],
+              [
+                "5"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "union-label",
+          "title": "Tag the source of each row",
+          "explain_md": "Two unrelated tables stacked with a literal `kind` column. Column names come from the first SELECT.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, 'customer' AS kind FROM customers WHERE city = 'Austin'\nUNION ALL\nSELECT name, 'employee' FROM employees WHERE dept = 'Sales'\nORDER BY kind, name;",
+          "tsql": "SELECT name, 'customer' AS kind FROM customers WHERE city = 'Austin'\nUNION ALL\nSELECT name, 'employee' FROM employees WHERE dept = 'Sales'\nORDER BY kind, name;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "kind"
+            ],
+            "rows": [
+              [
+                "Maya Lopez",
+                "customer"
+              ],
+              [
+                "Pablo Diaz",
+                "customer"
+              ],
+              [
+                "pablo diaz",
+                "customer"
+              ],
+              [
+                "Fay",
+                "employee"
+              ],
+              [
+                "Gus",
+                "employee"
+              ],
+              [
+                "Hal",
+                "employee"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`UNION` where `UNION ALL` was meant silently collapses legitimate duplicate rows (two identical orders become one)."
+      ]
+    },
+    {
+      "id": "intersect-except",
+      "heading": "INTERSECT and EXCEPT",
+      "body_md": "- `A INTERSECT B` = distinct rows present in **both**.\n- `A EXCEPT B` = distinct rows in A that are **not** in B. Order matters (`B EXCEPT A` differs). SQL Server and standard SQL call it EXCEPT; Oracle calls it MINUS.\n- Both dedupe their output. SQL Server has no `INTERSECT ALL` / `EXCEPT ALL`.\n- **MySQL 8.0.31+** supports INTERSECT and EXCEPT (including ALL). Older 8.0 and 5.7 do not - use the EXISTS emulation below.\n- Precedence: INTERSECT binds tighter than UNION and EXCEPT. Parenthesize mixed chains.\n- Comparison is on whole rows and treats **NULL = NULL** (unlike `=` in joins).",
+      "examples": [
+        {
+          "id": "intersect",
+          "title": "In both sets",
+          "explain_md": "Customers who have both a completed and a cancelled order: 1 and 5.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id FROM orders WHERE status = 'completed'\nINTERSECT\nSELECT customer_id FROM orders WHERE status = 'cancelled'\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id FROM orders WHERE status = 'completed'\nINTERSECT\nSELECT customer_id FROM orders WHERE status = 'cancelled'\nORDER BY customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id"
+            ],
+            "rows": [
+              [
+                "1"
+              ],
+              [
+                "5"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "except",
+          "title": "In the first set only",
+          "explain_md": "Completed buyers who never cancelled: 2, 3, 4. Swapping the two queries would return nobody (every canceller also completed).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id FROM orders WHERE status = 'completed'\nEXCEPT\nSELECT customer_id FROM orders WHERE status = 'cancelled'\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id FROM orders WHERE status = 'completed'\nEXCEPT\nSELECT customer_id FROM orders WHERE status = 'cancelled'\nORDER BY customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id"
+            ],
+            "rows": [
+              [
+                "2"
+              ],
+              [
+                "3"
+              ],
+              [
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "set-null-equal",
+          "title": "NULLs match in set operations",
+          "explain_md": "Olga's NULL city intersects with itself and returns a row. An equality join on city would return nothing for that row.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT city FROM customers WHERE customer_id = 3\nINTERSECT\nSELECT city FROM customers WHERE name = 'Olga Petrova';",
+          "tsql": "SELECT city FROM customers WHERE customer_id = 3\nINTERSECT\nSELECT city FROM customers WHERE name = 'Olga Petrova';",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "city"
+            ],
+            "rows": [
+              [
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Check your MySQL version: on 8.0.30 or older, INTERSECT/EXCEPT are syntax errors.",
+        "EXCEPT is not symmetric; INTERSECT and UNION are."
+      ]
+    },
+    {
+      "id": "emulate",
+      "heading": "Emulating INTERSECT / EXCEPT with EXISTS",
+      "body_md": "- Works on every MySQL version and on SQL Server.\n- INTERSECT -> `WHERE EXISTS (matching row in B)`; EXCEPT -> `WHERE NOT EXISTS (...)`.\n- Add `DISTINCT` to match set semantics (EXISTS keeps duplicate left rows).\n- For nullable columns use a null-safe match: MySQL `a <=> b`; otherwise `(a = b OR (a IS NULL AND b IS NULL))`.\n- IN / NOT IN also work for one non-null column, but beware the NOT IN + NULL trap.",
+      "examples": [
+        {
+          "id": "emulate-intersect",
+          "title": "INTERSECT via EXISTS",
+          "explain_md": "Same two customers (1, 5) as the real INTERSECT.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT DISTINCT o.customer_id\nFROM orders AS o\nWHERE o.status = 'completed'\n  AND EXISTS (SELECT 1 FROM orders AS c\n              WHERE c.customer_id = o.customer_id AND c.status = 'cancelled')\nORDER BY o.customer_id;",
+          "tsql": "SELECT DISTINCT o.customer_id\nFROM orders AS o\nWHERE o.status = 'completed'\n  AND EXISTS (SELECT 1 FROM orders AS c\n              WHERE c.customer_id = o.customer_id AND c.status = 'cancelled')\nORDER BY o.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id"
+            ],
+            "rows": [
+              [
+                "1"
+              ],
+              [
+                "5"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "emulate-except",
+          "title": "EXCEPT via NOT EXISTS",
+          "explain_md": "Same three customers (2, 3, 4) as the real EXCEPT.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT DISTINCT o.customer_id\nFROM orders AS o\nWHERE o.status = 'completed'\n  AND NOT EXISTS (SELECT 1 FROM orders AS c\n                  WHERE c.customer_id = o.customer_id AND c.status = 'cancelled')\nORDER BY o.customer_id;",
+          "tsql": "SELECT DISTINCT o.customer_id\nFROM orders AS o\nWHERE o.status = 'completed'\n  AND NOT EXISTS (SELECT 1 FROM orders AS c\n                  WHERE c.customer_id = o.customer_id AND c.status = 'cancelled')\nORDER BY o.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id"
+            ],
+            "rows": [
+              [
+                "2"
+              ],
+              [
+                "3"
+              ],
+              [
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "emulate-no-distinct",
+          "title": "Forgetting DISTINCT keeps duplicates",
+          "explain_md": "Customer 1 has three completed orders, so without DISTINCT the 'EXCEPT' emulation repeats rows that a real EXCEPT would collapse.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT o.customer_id\nFROM orders AS o\nWHERE o.status = 'completed'\n  AND NOT EXISTS (SELECT 1 FROM orders AS c\n                  WHERE c.customer_id = o.customer_id AND c.status = 'cancelled')\nORDER BY o.customer_id, o.order_id;",
+          "tsql": "SELECT o.customer_id\nFROM orders AS o\nWHERE o.status = 'completed'\n  AND NOT EXISTS (SELECT 1 FROM orders AS c\n                  WHERE c.customer_id = o.customer_id AND c.status = 'cancelled')\nORDER BY o.customer_id, o.order_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id"
+            ],
+            "rows": [
+              [
+                "2"
+              ],
+              [
+                "2"
+              ],
+              [
+                "2"
+              ],
+              [
+                "2"
+              ],
+              [
+                "3"
+              ],
+              [
+                "3"
+              ],
+              [
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "rules",
+      "heading": "Column rules and ORDER BY placement",
+      "body_md": "- Every branch must return the **same number of columns**, with **compatible types in the same positions**. Matching is by position, not name.\n- Result column names come from the **first** query.\n- Pad missing columns with `NULL` (and cast if needed): `SELECT name, salary, NULL AS city`.\n- A single `ORDER BY` goes **once at the very end** and sorts the combined result; it can use first-branch column names or positions.\n- To sort or limit a single branch, wrap it:\n  - MySQL: parentheses, `(SELECT ... ORDER BY x LIMIT 1) UNION ALL (...)`.\n  - SQL Server: derived table, `SELECT * FROM (SELECT TOP 1 ... ORDER BY x) AS a UNION ALL ...`; bare ORDER BY/TOP inside a branch is not allowed.\n- Mismatched types: MySQL converts silently; SQL Server applies data type precedence and may error converting a string to int. Cast explicitly.",
+      "examples": [
+        {
+          "id": "rules-null-pad",
+          "title": "Different shapes, padded with NULL",
+          "explain_md": "Employees have no city and customers have no salary, so each side supplies a NULL placeholder in the same position.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary, NULL AS city\nFROM employees\nWHERE dept = 'Marketing'\nUNION ALL\nSELECT name, NULL, city\nFROM customers\nWHERE city = 'Denver'\nORDER BY name;",
+          "tsql": "SELECT name, salary, CAST(NULL AS VARCHAR(20)) AS city\nFROM employees\nWHERE dept = 'Marketing'\nUNION ALL\nSELECT name, NULL, city\nFROM customers\nWHERE city = 'Denver'\nORDER BY name;",
+          "dialect_note_md": "SQL Server infers the type of a bare NULL from the first branch; casting it (as shown) avoids surprises. MySQL does not need it.",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "city"
+            ],
+            "rows": [
+              [
+                "Ivy",
+                "90000",
+                null
+              ],
+              [
+                "Jon",
+                null,
+                null
+              ],
+              [
+                "Quinn Lee",
+                null,
+                "Denver"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "rules-branch-limit",
+          "title": "Top and bottom earner in one result",
+          "explain_md": "Each branch needs its own ORDER BY + row limit, so each is wrapped; the outer query sorts the final two rows.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary\nFROM (\n  (SELECT name, salary FROM employees WHERE salary IS NOT NULL\n   ORDER BY salary DESC, emp_id LIMIT 1)\n  UNION ALL\n  (SELECT name, salary FROM employees WHERE salary IS NOT NULL\n   ORDER BY salary ASC, emp_id LIMIT 1)\n) AS ends\nORDER BY salary DESC;",
+          "tsql": "SELECT name, salary\nFROM (\n  SELECT name, salary FROM (\n    SELECT TOP 1 name, salary FROM employees WHERE salary IS NOT NULL\n    ORDER BY salary DESC, emp_id) AS hi\n  UNION ALL\n  SELECT name, salary FROM (\n    SELECT TOP 1 name, salary FROM employees WHERE salary IS NOT NULL\n    ORDER BY salary ASC, emp_id) AS lo\n) AS ends\nORDER BY salary DESC;",
+          "dialect_note_md": "MySQL allows parenthesized branches with their own ORDER BY/LIMIT. SQL Server needs each TOP + ORDER BY inside a derived table.",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000"
+              ],
+              [
+                "Gus",
+                "80000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "rules-order-by-name",
+          "title": "ORDER BY uses first-branch names",
+          "explain_md": "The final ORDER BY refers to `who`, the alias given in the first SELECT.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name AS who, 'employee' AS kind FROM employees WHERE dept = 'Marketing'\nUNION ALL\nSELECT name, 'customer' FROM customers WHERE city = 'Denver'\nORDER BY who;",
+          "tsql": "SELECT name AS who, 'employee' AS kind FROM employees WHERE dept = 'Marketing'\nUNION ALL\nSELECT name, 'customer' FROM customers WHERE city = 'Denver'\nORDER BY who;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "who",
+              "kind"
+            ],
+            "rows": [
+              [
+                "Ivy",
+                "employee"
+              ],
+              [
+                "Jon",
+                "employee"
+              ],
+              [
+                "Quinn Lee",
+                "customer"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "patterns",
+      "heading": "Common UNION ALL patterns",
+      "body_md": "- **Totals row**: stack a detail query and a one-row total, with a sort key so the total lands last.\n- **Unpivot**: one SELECT per column, stacked, to turn columns into rows.\n- **Merge sources**: monthly tables or two systems with the same shape; add a `source` label.\n- Keep the branches' column order identical; wrap in a derived table when you need a final sort key that is not displayed.",
+      "examples": [
+        {
+          "id": "totals-row",
+          "title": "Department payroll plus a grand total",
+          "explain_md": "A hidden `sort_key` column forces the TOTAL row to the end regardless of alphabetical order.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept, payroll\nFROM (\n  SELECT dept, SUM(salary) AS payroll, 0 AS sort_key\n  FROM employees\n  GROUP BY dept\n  UNION ALL\n  SELECT 'TOTAL', SUM(salary), 1\n  FROM employees\n) AS t\nORDER BY sort_key, dept;",
+          "tsql": "SELECT dept, payroll\nFROM (\n  SELECT dept, SUM(salary) AS payroll, 0 AS sort_key\n  FROM employees\n  GROUP BY dept\n  UNION ALL\n  SELECT 'TOTAL', SUM(salary), 1\n  FROM employees\n) AS t\nORDER BY sort_key, dept;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "dept",
+              "payroll"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "515000"
+              ],
+              [
+                "Exec",
+                "250000"
+              ],
+              [
+                "Marketing",
+                "90000"
+              ],
+              [
+                "Sales",
+                "270000"
+              ],
+              [
+                "TOTAL",
+                "1125000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "unpivot",
+          "title": "Turn columns into rows",
+          "explain_md": "One SELECT per measure produces a long-format table.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT emp_id, 'salary' AS metric, salary AS value FROM employees WHERE emp_id IN (1, 2)\nUNION ALL\nSELECT emp_id, 'manager_id', manager_id FROM employees WHERE emp_id IN (1, 2)\nORDER BY emp_id, metric;",
+          "tsql": "SELECT emp_id, 'salary' AS metric, salary AS value FROM employees WHERE emp_id IN (1, 2)\nUNION ALL\nSELECT emp_id, 'manager_id', manager_id FROM employees WHERE emp_id IN (1, 2)\nORDER BY emp_id, metric;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "emp_id",
+              "metric",
+              "value"
+            ],
+            "rows": [
+              [
+                "1",
+                "manager_id",
+                null
+              ],
+              [
+                "1",
+                "salary",
+                "250000"
+              ],
+              [
+                "2",
+                "manager_id",
+                "1"
+              ],
+              [
+                "2",
+                "salary",
+                "150000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    }
+  ]
+}

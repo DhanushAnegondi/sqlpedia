@@ -1,0 +1,1266 @@
+{
+  "id": "date-time-functions",
+  "title": "Date and time functions",
+  "group": "Functions",
+  "order": 3,
+  "summary_md": "Current date, parts, formatting, arithmetic, differences, month/week boundaries, weekday numbering, parsing and half-open ranges, with MySQL and SQL Server compared argument by argument.",
+  "sections": [
+    {
+      "id": "current-date-time",
+      "heading": "Current date and time",
+      "body_md": "- MySQL: `CURDATE()` (date), `NOW()` / `CURRENT_TIMESTAMP` (datetime), `CURTIME()`, `UTC_TIMESTAMP()`. `NOW()` is fixed for the whole statement; `SYSDATE()` is evaluated per call.\n- SQL Server: `GETDATE()` / `CURRENT_TIMESTAMP` (datetime), `SYSDATETIME()` (higher precision), `GETUTCDATE()`, and **no CURDATE**: today's date is `CAST(GETDATE() AS DATE)`.\n- Both return the **server's** clock and time zone. Anything built from them is non-deterministic - tests and examples should use fixed literals.\n- 'Today' as a range, not a function on the column: `ts >= today AND ts < today + 1 day` (see the half-open ranges section).",
+      "syntax": {
+        "mysql": "CURDATE()   -- date\nNOW()       -- datetime\nUTC_TIMESTAMP()",
+        "tsql": "CAST(GETDATE() AS DATE)   -- date\nGETDATE()   /   SYSDATETIME()\nGETUTCDATE()"
+      },
+      "examples": [
+        {
+          "id": "now-count",
+          "title": "Rows before now",
+          "explain_md": "All 11 events are in the past, so the count is 11 whenever you run it. `NOW()` includes the time of day.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT COUNT(*) AS past_events FROM events WHERE event_ts < NOW();",
+          "tsql": "SELECT COUNT(*) AS past_events FROM events WHERE event_ts < GETDATE();",
+          "expected": {
+            "columns": [
+              "past_events"
+            ],
+            "rows": [
+              [
+                "11"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "today-range",
+          "title": "Events today (half-open range)",
+          "explain_md": "Nothing in the sample data happened today, so 0. The pattern is the point: start of today inclusive, start of tomorrow exclusive.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT COUNT(*) AS events_today FROM events WHERE event_ts >= CURDATE() AND event_ts < CURDATE() + INTERVAL 1 DAY;",
+          "tsql": "SELECT COUNT(*) AS events_today FROM events WHERE event_ts >= CAST(GETDATE() AS DATE) AND event_ts < DATEADD(DAY, 1, CAST(GETDATE() AS DATE));",
+          "expected": {
+            "columns": [
+              "events_today"
+            ],
+            "rows": [
+              [
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "extract-parts",
+      "heading": "Extracting parts: YEAR, MONTH, EXTRACT, DATEPART, DATENAME",
+      "body_md": "- `YEAR(d)`, `MONTH(d)`, `DAY(d)` exist in both engines and return integers.\n- MySQL also has `QUARTER`, `HOUR`, `MINUTE`, `SECOND`, `DAYOFYEAR`, `MONTHNAME`, `DAYNAME`, `WEEK` and the standard `EXTRACT(unit FROM d)`.\n- SQL Server has no EXTRACT/QUARTER: `DATEPART(part, d)` returns a number, `DATENAME(part, d)` returns text (`'March'`, `'Friday'`).\n- `DATEPART` parts: `year, quarter, month, dayofyear, day, week, weekday, hour, minute, second`.\n- Grouping by month: group by **both** `YEAR(d)` and `MONTH(d)`; grouping by `MONTH(d)` alone merges January 2023 with January 2024.",
+      "syntax": {
+        "mysql": "YEAR(date) / MONTH(date) / DAY(date)\nEXTRACT(unit FROM date)\nDAYNAME(date) / MONTHNAME(date)",
+        "tsql": "YEAR(date) / MONTH(date) / DAY(date)\nDATEPART(datepart, date)   -- number\nDATENAME(datepart, date)   -- text"
+      },
+      "args": [
+        {
+          "name": "unit / datepart (position 1)",
+          "meaning": "Which component: YEAR, QUARTER, MONTH, DAY, HOUR, MINUTE, SECOND ... (SQL Server also WEEKDAY, DAYOFYEAR, ISO_WEEK)."
+        },
+        {
+          "name": "date (position 2)",
+          "meaning": "The date, datetime or ISO-format string."
+        }
+      ],
+      "examples": [
+        {
+          "id": "parts-literal",
+          "title": "Parts of 2024-03-15",
+          "explain_md": "2024-03-15 is a Friday, the 75th day of the (leap) year, in quarter 1.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT YEAR(CAST('2024-03-15' AS DATE)) AS yr, MONTH(CAST('2024-03-15' AS DATE)) AS mo, DAY(CAST('2024-03-15' AS DATE)) AS dy, QUARTER(CAST('2024-03-15' AS DATE)) AS qtr, EXTRACT(MONTH FROM CAST('2024-03-15' AS DATE)) AS extract_mo, DAYOFYEAR(CAST('2024-03-15' AS DATE)) AS doy, MONTHNAME(CAST('2024-03-15' AS DATE)) AS month_name, DAYNAME(CAST('2024-03-15' AS DATE)) AS day_name;",
+          "tsql": "SELECT YEAR(CAST('2024-03-15' AS DATE)) AS yr, MONTH(CAST('2024-03-15' AS DATE)) AS mo, DAY(CAST('2024-03-15' AS DATE)) AS dy, DATEPART(QUARTER, CAST('2024-03-15' AS DATE)) AS qtr, DATEPART(MONTH, CAST('2024-03-15' AS DATE)) AS extract_mo, DATEPART(DAYOFYEAR, CAST('2024-03-15' AS DATE)) AS doy, DATENAME(MONTH, CAST('2024-03-15' AS DATE)) AS month_name, DATENAME(WEEKDAY, CAST('2024-03-15' AS DATE)) AS day_name;",
+          "expected": {
+            "columns": [
+              "yr",
+              "mo",
+              "dy",
+              "qtr",
+              "extract_mo",
+              "doy",
+              "month_name",
+              "day_name"
+            ],
+            "rows": [
+              [
+                "2024",
+                "3",
+                "15",
+                "1",
+                "3",
+                "75",
+                "March",
+                "Friday"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "parts-hour",
+          "title": "Hour of day",
+          "explain_md": "Time parts work on DATETIME values. User 1's four events fall in hours 9 and 10.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT event_id, HOUR(event_ts) AS hr, MINUTE(event_ts) AS mi FROM events WHERE user_id = 1 ORDER BY event_id;",
+          "tsql": "SELECT event_id, DATEPART(HOUR, event_ts) AS hr, DATEPART(MINUTE, event_ts) AS mi FROM events WHERE user_id = 1 ORDER BY event_id;",
+          "expected": {
+            "columns": [
+              "event_id",
+              "hr",
+              "mi"
+            ],
+            "rows": [
+              [
+                "1",
+                "9",
+                "0"
+              ],
+              [
+                "2",
+                "9",
+                "10"
+              ],
+              [
+                "3",
+                "9",
+                "55"
+              ],
+              [
+                "4",
+                "10",
+                "5"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "group-month",
+          "title": "Completed revenue per month",
+          "explain_md": "Group by year and month, then order by the same two columns.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT YEAR(order_date) AS yr, MONTH(order_date) AS mo, COUNT(*) AS orders_n, SUM(amount) AS revenue FROM orders WHERE status = 'completed' GROUP BY YEAR(order_date), MONTH(order_date) ORDER BY yr, mo;",
+          "tsql": "SELECT YEAR(order_date) AS yr, MONTH(order_date) AS mo, COUNT(*) AS orders_n, SUM(amount) AS revenue FROM orders WHERE status = 'completed' GROUP BY YEAR(order_date), MONTH(order_date) ORDER BY yr, mo;",
+          "expected": {
+            "columns": [
+              "yr",
+              "mo",
+              "orders_n",
+              "revenue"
+            ],
+            "rows": [
+              [
+                "2024",
+                "1",
+                "2",
+                "165.50"
+              ],
+              [
+                "2024",
+                "2",
+                "3",
+                "275.00"
+              ],
+              [
+                "2024",
+                "3",
+                "2",
+                "420.00"
+              ],
+              [
+                "2024",
+                "4",
+                "1",
+                "50.00"
+              ],
+              [
+                "2024",
+                "5",
+                "1",
+                "65.00"
+              ],
+              [
+                "2024",
+                "6",
+                "2",
+                "140.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "formatting",
+      "heading": "Formatting dates as text",
+      "body_md": "- MySQL `DATE_FORMAT(date, format)` uses `%` specifiers. Year-month bucket: `DATE_FORMAT(d, '%Y-%m')`.\n- SQL Server `FORMAT(date, 'yyyy-MM')` uses .NET patterns (slow and culture-aware; fine for reports, avoid on millions of rows). Fast alternative: `CONVERT(VARCHAR(10), d, 23)` for `yyyy-mm-dd`, or `LEFT(CONVERT(VARCHAR(10), d, 23), 7)` for `yyyy-mm`.\n- Argument order: MySQL `(date, format)`, SQL Server `FORMAT(date, format)` and `CONVERT(type, date, style)`.\n- Specifier case matters: MySQL `%m` month vs `%i` minutes; .NET `MM` month vs `mm` minutes, `HH` 24-hour vs `hh` 12-hour.\n- A 'yyyy-MM' string sorts correctly; a month **name** (`%b`) sorts alphabetically - order by the numeric month.\n\n- Full specifier table: see the **Specifier cheat sheet** example below.",
+      "syntax": {
+        "mysql": "DATE_FORMAT(date, format)",
+        "tsql": "FORMAT(date, format [, culture])\nCONVERT(VARCHAR(n), date, style)"
+      },
+      "args": [
+        {
+          "name": "date (position 1)",
+          "meaning": "The date or datetime value (MySQL accepts date-like strings)."
+        },
+        {
+          "name": "format (position 2)",
+          "meaning": "MySQL: `%` specifiers. SQL Server FORMAT: .NET pattern."
+        },
+        {
+          "name": "style (CONVERT position 3)",
+          "meaning": "Numeric style code, e.g. 23, 112, 101, 103, 120."
+        }
+      ],
+      "examples": [
+        {
+          "id": "specifier-table",
+          "title": "Specifier cheat sheet",
+          "explain_md": "Look-up table, not date math. Read across: the same meaning in MySQL `DATE_FORMAT`, SQL Server `FORMAT`, and the `CONVERT` style code where one exists.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "date_format_specifiers",
+              "description_md": "Cheat sheet: what to write for each date part. Column mysql_spec is for DATE_FORMAT/STR_TO_DATE, sqlserver_format for FORMAT, convert_style for CONVERT(VARCHAR, d, style).",
+              "columns": [
+                {
+                  "name": "spec_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "meaning",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "mysql_spec",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "sqlserver_format",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "convert_style",
+                  "type": "VARCHAR(5)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "4-digit year",
+                  "%Y",
+                  "yyyy",
+                  ""
+                ],
+                [
+                  2,
+                  "2-digit year",
+                  "%y",
+                  "yy",
+                  ""
+                ],
+                [
+                  3,
+                  "Month 01-12",
+                  "%m",
+                  "MM",
+                  ""
+                ],
+                [
+                  4,
+                  "Month 1-12",
+                  "%c",
+                  "M",
+                  ""
+                ],
+                [
+                  5,
+                  "Month name",
+                  "%M",
+                  "MMMM",
+                  ""
+                ],
+                [
+                  6,
+                  "Month abbreviation",
+                  "%b",
+                  "MMM",
+                  ""
+                ],
+                [
+                  7,
+                  "Day 01-31",
+                  "%d",
+                  "dd",
+                  ""
+                ],
+                [
+                  8,
+                  "Day 1-31",
+                  "%e",
+                  "d",
+                  ""
+                ],
+                [
+                  9,
+                  "Weekday name",
+                  "%W",
+                  "dddd",
+                  ""
+                ],
+                [
+                  10,
+                  "Weekday abbreviation",
+                  "%a",
+                  "ddd",
+                  ""
+                ],
+                [
+                  11,
+                  "Hour 00-23",
+                  "%H",
+                  "HH",
+                  ""
+                ],
+                [
+                  12,
+                  "Hour 01-12",
+                  "%h",
+                  "hh",
+                  ""
+                ],
+                [
+                  13,
+                  "Minute",
+                  "%i",
+                  "mm",
+                  ""
+                ],
+                [
+                  14,
+                  "Second",
+                  "%s",
+                  "ss",
+                  ""
+                ],
+                [
+                  15,
+                  "AM/PM",
+                  "%p",
+                  "tt",
+                  ""
+                ],
+                [
+                  16,
+                  "yyyy-mm-dd",
+                  "%Y-%m-%d",
+                  "yyyy-MM-dd",
+                  "23"
+                ],
+                [
+                  17,
+                  "yyyy-mm-dd hh:mi:ss",
+                  "%Y-%m-%d %H:%i:%s",
+                  "yyyy-MM-dd HH:mm:ss",
+                  "120"
+                ],
+                [
+                  18,
+                  "yyyymmdd",
+                  "%Y%m%d",
+                  "yyyyMMdd",
+                  "112"
+                ],
+                [
+                  19,
+                  "mm/dd/yyyy",
+                  "%m/%d/%Y",
+                  "MM/dd/yyyy",
+                  "101"
+                ],
+                [
+                  20,
+                  "dd/mm/yyyy",
+                  "%d/%m/%Y",
+                  "dd/MM/yyyy",
+                  "103"
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT meaning, mysql_spec, sqlserver_format, convert_style FROM date_format_specifiers ORDER BY spec_id;",
+          "tsql": "SELECT meaning, mysql_spec, sqlserver_format, convert_style FROM date_format_specifiers ORDER BY spec_id;",
+          "expected": {
+            "columns": [
+              "meaning",
+              "mysql_spec",
+              "sqlserver_format",
+              "convert_style"
+            ],
+            "rows": [
+              [
+                "4-digit year",
+                "%Y",
+                "yyyy",
+                ""
+              ],
+              [
+                "2-digit year",
+                "%y",
+                "yy",
+                ""
+              ],
+              [
+                "Month 01-12",
+                "%m",
+                "MM",
+                ""
+              ],
+              [
+                "Month 1-12",
+                "%c",
+                "M",
+                ""
+              ],
+              [
+                "Month name",
+                "%M",
+                "MMMM",
+                ""
+              ],
+              [
+                "Month abbreviation",
+                "%b",
+                "MMM",
+                ""
+              ],
+              [
+                "Day 01-31",
+                "%d",
+                "dd",
+                ""
+              ],
+              [
+                "Day 1-31",
+                "%e",
+                "d",
+                ""
+              ],
+              [
+                "Weekday name",
+                "%W",
+                "dddd",
+                ""
+              ],
+              [
+                "Weekday abbreviation",
+                "%a",
+                "ddd",
+                ""
+              ],
+              [
+                "Hour 00-23",
+                "%H",
+                "HH",
+                ""
+              ],
+              [
+                "Hour 01-12",
+                "%h",
+                "hh",
+                ""
+              ],
+              [
+                "Minute",
+                "%i",
+                "mm",
+                ""
+              ],
+              [
+                "Second",
+                "%s",
+                "ss",
+                ""
+              ],
+              [
+                "AM/PM",
+                "%p",
+                "tt",
+                ""
+              ],
+              [
+                "yyyy-mm-dd",
+                "%Y-%m-%d",
+                "yyyy-MM-dd",
+                "23"
+              ],
+              [
+                "yyyy-mm-dd hh:mi:ss",
+                "%Y-%m-%d %H:%i:%s",
+                "yyyy-MM-dd HH:mm:ss",
+                "120"
+              ],
+              [
+                "yyyymmdd",
+                "%Y%m%d",
+                "yyyyMMdd",
+                "112"
+              ],
+              [
+                "mm/dd/yyyy",
+                "%m/%d/%Y",
+                "MM/dd/yyyy",
+                "101"
+              ],
+              [
+                "dd/mm/yyyy",
+                "%d/%m/%Y",
+                "dd/MM/yyyy",
+                "103"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "format-literal",
+          "title": "One timestamp, several formats",
+          "explain_md": "2024-03-05 14:07:09 as year-month, a readable date, 24-hour time and weekday.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT DATE_FORMAT(CAST('2024-03-05 14:07:09' AS DATETIME), '%Y-%m') AS ym, DATE_FORMAT(CAST('2024-03-05 14:07:09' AS DATETIME), '%b %e, %Y') AS pretty, DATE_FORMAT(CAST('2024-03-05 14:07:09' AS DATETIME), '%H:%i') AS hm, DATE_FORMAT(CAST('2024-03-05 14:07:09' AS DATETIME), '%W') AS weekday_name;",
+          "tsql": "SELECT FORMAT(CAST('2024-03-05 14:07:09' AS DATETIME), 'yyyy-MM') AS ym, FORMAT(CAST('2024-03-05 14:07:09' AS DATETIME), 'MMM d, yyyy') AS pretty, FORMAT(CAST('2024-03-05 14:07:09' AS DATETIME), 'HH:mm') AS hm, FORMAT(CAST('2024-03-05 14:07:09' AS DATETIME), 'dddd') AS weekday_name;",
+          "expected": {
+            "columns": [
+              "ym",
+              "pretty",
+              "hm",
+              "weekday_name"
+            ],
+            "rows": [
+              [
+                "2024-03",
+                "Mar 5, 2024",
+                "14:07",
+                "Tuesday"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "format-month-bucket",
+          "title": "Month bucket from a date column",
+          "explain_md": "`'%Y-%m'` / `'yyyy-MM'` gives a sortable text key for monthly reports.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT DATE_FORMAT(order_date, '%Y-%m') AS ym, COUNT(*) AS orders_n FROM orders GROUP BY DATE_FORMAT(order_date, '%Y-%m') ORDER BY ym;",
+          "tsql": "SELECT FORMAT(order_date, 'yyyy-MM') AS ym, COUNT(*) AS orders_n FROM orders GROUP BY FORMAT(order_date, 'yyyy-MM') ORDER BY ym;",
+          "expected": {
+            "columns": [
+              "ym",
+              "orders_n"
+            ],
+            "rows": [
+              [
+                "2024-01",
+                "2"
+              ],
+              [
+                "2024-02",
+                "4"
+              ],
+              [
+                "2024-03",
+                "3"
+              ],
+              [
+                "2024-04",
+                "2"
+              ],
+              [
+                "2024-05",
+                "1"
+              ],
+              [
+                "2024-06",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "convert-style",
+          "title": "CONVERT styles",
+          "explain_md": "SQL Server's fast formatting: style 23 = `yyyy-mm-dd`, 112 = `yyyymmdd`, 101 = `mm/dd/yyyy`. MySQL equivalents use DATE_FORMAT.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT DATE_FORMAT(CAST('2024-03-05' AS DATE), '%Y-%m-%d') AS iso, DATE_FORMAT(CAST('2024-03-05' AS DATE), '%Y%m%d') AS compact, DATE_FORMAT(CAST('2024-03-05' AS DATE), '%m/%d/%Y') AS us;",
+          "tsql": "SELECT CONVERT(VARCHAR(10), CAST('2024-03-05' AS DATE), 23) AS iso, CONVERT(VARCHAR(8), CAST('2024-03-05' AS DATE), 112) AS compact, CONVERT(VARCHAR(10), CAST('2024-03-05' AS DATE), 101) AS us;",
+          "expected": {
+            "columns": [
+              "iso",
+              "compact",
+              "us"
+            ],
+            "rows": [
+              [
+                "2024-03-05",
+                "20240305",
+                "03/05/2024"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "date-add",
+      "heading": "Adding and subtracting time",
+      "body_md": "- MySQL: `DATE_ADD(d, INTERVAL n unit)`, `DATE_SUB(...)`, or the operator form `d + INTERVAL n unit` / `d - INTERVAL n unit`. Units: `SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, QUARTER, YEAR`. `TIMESTAMPADD(unit, n, d)` also exists.\n- SQL Server: `DATEADD(unit, n, d)`. Position 1 is the unit (`day`, `month`, `year`...), position 2 the signed amount, position 3 the date. Subtract with a negative `n`.\n- **Month-end clamp**: adding a month to Jan 31 gives the last day of the next month (Feb 29 in 2024) in both engines. Adding a year to Feb 29 gives Feb 28.\n- SQL Server `date + 1` works for DATETIME but **fails for DATE** - always use DATEADD. In MySQL `date + 1` is a number, not a date.\n- 'Last 30 days': `d >= CURDATE() - INTERVAL 30 DAY` / `d >= DATEADD(DAY, -30, CAST(GETDATE() AS DATE))`.",
+      "syntax": {
+        "mysql": "DATE_ADD(date, INTERVAL expr unit)\nDATE_SUB(date, INTERVAL expr unit)\ndate + INTERVAL expr unit",
+        "tsql": "DATEADD(datepart, number, date)"
+      },
+      "args": [
+        {
+          "name": "date (MySQL position 1 / SQL Server position 3)",
+          "meaning": "The starting date or datetime."
+        },
+        {
+          "name": "expr / number",
+          "meaning": "Signed amount to add. Negative subtracts."
+        },
+        {
+          "name": "unit / datepart",
+          "meaning": "MySQL: after the INTERVAL amount. SQL Server: position 1."
+        }
+      ],
+      "examples": [
+        {
+          "id": "add-literals",
+          "title": "Month-end clamp",
+          "explain_md": "Jan 31 + 1 month lands on Feb 29; Feb 29 + 1 year lands on Feb 28; subtract with DATE_SUB or a negative DATEADD.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT DATE_ADD(CAST('2024-01-31' AS DATE), INTERVAL 1 MONTH) AS plus_month, DATE_ADD(CAST('2024-02-29' AS DATE), INTERVAL 1 YEAR) AS plus_year, DATE_SUB(CAST('2024-03-01' AS DATE), INTERVAL 1 DAY) AS day_before, CAST('2024-03-01' AS DATE) + INTERVAL 2 WEEK AS plus_2_weeks;",
+          "tsql": "SELECT DATEADD(MONTH, 1, CAST('2024-01-31' AS DATE)) AS plus_month, DATEADD(YEAR, 1, CAST('2024-02-29' AS DATE)) AS plus_year, DATEADD(DAY, -1, CAST('2024-03-01' AS DATE)) AS day_before, DATEADD(WEEK, 2, CAST('2024-03-01' AS DATE)) AS plus_2_weeks;",
+          "expected": {
+            "columns": [
+              "plus_month",
+              "plus_year",
+              "day_before",
+              "plus_2_weeks"
+            ],
+            "rows": [
+              [
+                "2024-02-29",
+                "2025-02-28",
+                "2024-02-29",
+                "2024-03-15"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "add-due-date",
+          "title": "Due date 30 days after the order",
+          "explain_md": "Operator form on a column.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, order_date, order_date + INTERVAL 30 DAY AS due_date FROM orders WHERE order_id <= 103 ORDER BY order_id;",
+          "tsql": "SELECT order_id, order_date, DATEADD(DAY, 30, order_date) AS due_date FROM orders WHERE order_id <= 103 ORDER BY order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "order_date",
+              "due_date"
+            ],
+            "rows": [
+              [
+                "101",
+                "2024-01-06",
+                "2024-02-05"
+              ],
+              [
+                "102",
+                "2024-01-21",
+                "2024-02-20"
+              ],
+              [
+                "103",
+                "2024-02-02",
+                "2024-03-03"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "date-diff",
+      "heading": "Differences: DATEDIFF, TIMESTAMPDIFF",
+      "body_md": "**The argument order flips between engines** - the top date-question slip.\n- MySQL `DATEDIFF(end, start)` - **two arguments, result in days**, time of day ignored. `DATEDIFF('2024-03-01', '2024-02-01')` = 29. Reversed order gives a negative number.\n- SQL Server `DATEDIFF(unit, start, end)` - **three arguments**: position 1 the unit, then start, then end. Same 29 days, written `DATEDIFF(DAY, '2024-02-01', '2024-03-01')`.\n- MySQL `TIMESTAMPDIFF(unit, start, end)` takes the unit first like SQL Server and returns **complete units** (floors the elapsed time).\n- SQL Server `DATEDIFF` counts **boundaries crossed**, not elapsed time: `DATEDIFF(YEAR, '2023-12-31', '2024-01-01')` = 1 and `DATEDIFF(MONTH, '2024-01-31', '2024-02-01')` = 1, although one day passed. The same pair gives 0 in MySQL `TIMESTAMPDIFF`.\n- Full months in SQL Server: `DATEDIFF(MONTH, s, e) - CASE WHEN DAY(e) < DAY(s) THEN 1 ELSE 0 END`.\n- Inclusive day count (both endpoints): add 1.\n- SQL Server `DATEDIFF` returns INT; use `DATEDIFF_BIG` for seconds over ~68 years.",
+      "syntax": {
+        "mysql": "DATEDIFF(end_date, start_date)           -- days\nTIMESTAMPDIFF(unit, start, end)       -- whole units",
+        "tsql": "DATEDIFF(datepart, start_date, end_date)   -- boundaries crossed"
+      },
+      "args": [
+        {
+          "name": "end (MySQL DATEDIFF position 1)",
+          "meaning": "The later date; the result is positive when this is later."
+        },
+        {
+          "name": "start (MySQL DATEDIFF position 2)",
+          "meaning": "The earlier date."
+        },
+        {
+          "name": "unit / datepart (TIMESTAMPDIFF and SQL Server DATEDIFF position 1)",
+          "meaning": "SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, QUARTER, YEAR."
+        },
+        {
+          "name": "start, end (positions 2 and 3)",
+          "meaning": "Order is (start, end) in both TIMESTAMPDIFF and SQL Server DATEDIFF."
+        }
+      ],
+      "examples": [
+        {
+          "id": "diff-days",
+          "title": "Days between dates, both orders",
+          "explain_md": "Feb 2024 has 29 days. MySQL takes (end, start); SQL Server takes (unit, start, end). Swapping the dates negates the answer.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT DATEDIFF(CAST('2024-03-01' AS DATE), CAST('2024-02-01' AS DATE)) AS days_forward, DATEDIFF(CAST('2024-02-01' AS DATE), CAST('2024-03-01' AS DATE)) AS days_reversed;",
+          "tsql": "SELECT DATEDIFF(DAY, CAST('2024-02-01' AS DATE), CAST('2024-03-01' AS DATE)) AS days_forward, DATEDIFF(DAY, CAST('2024-03-01' AS DATE), CAST('2024-02-01' AS DATE)) AS days_reversed;",
+          "expected": {
+            "columns": [
+              "days_forward",
+              "days_reversed"
+            ],
+            "rows": [
+              [
+                "29",
+                "-29"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "diff-full-months",
+          "title": "Complete months",
+          "explain_md": "Jan 31 to Feb 1 is 0 full months, Jan 15 to Mar 14 is 1, Jan 15 to Mar 15 is 2.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT TIMESTAMPDIFF(MONTH, CAST('2024-01-31' AS DATE), CAST('2024-02-01' AS DATE)) AS m_a, TIMESTAMPDIFF(MONTH, CAST('2024-01-15' AS DATE), CAST('2024-03-14' AS DATE)) AS m_b, TIMESTAMPDIFF(MONTH, CAST('2024-01-15' AS DATE), CAST('2024-03-15' AS DATE)) AS m_c;",
+          "tsql": "SELECT DATEDIFF(MONTH, CAST('2024-01-31' AS DATE), CAST('2024-02-01' AS DATE)) - CASE WHEN DAY(CAST('2024-02-01' AS DATE)) < DAY(CAST('2024-01-31' AS DATE)) THEN 1 ELSE 0 END AS m_a, DATEDIFF(MONTH, CAST('2024-01-15' AS DATE), CAST('2024-03-14' AS DATE)) - CASE WHEN DAY(CAST('2024-03-14' AS DATE)) < DAY(CAST('2024-01-15' AS DATE)) THEN 1 ELSE 0 END AS m_b, DATEDIFF(MONTH, CAST('2024-01-15' AS DATE), CAST('2024-03-15' AS DATE)) - CASE WHEN DAY(CAST('2024-03-15' AS DATE)) < DAY(CAST('2024-01-15' AS DATE)) THEN 1 ELSE 0 END AS m_c;",
+          "dialect_note_md": "The T-SQL subtracts 1 when the end day-of-month is earlier than the start day, turning boundary counts into complete months.",
+          "expected": {
+            "columns": [
+              "m_a",
+              "m_b",
+              "m_c"
+            ],
+            "rows": [
+              [
+                "0",
+                "1",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "diff-boundaries",
+          "title": "Boundary counting vs elapsed time",
+          "explain_md": "One day apart, but the year boundary was crossed.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT TIMESTAMPDIFF(YEAR, CAST('2023-12-31' AS DATE), CAST('2024-01-01' AS DATE)) AS years_diff, TIMESTAMPDIFF(MONTH, CAST('2023-12-31' AS DATE), CAST('2024-01-01' AS DATE)) AS months_diff, DATEDIFF(CAST('2024-01-01' AS DATE), CAST('2023-12-31' AS DATE)) AS days_diff;",
+          "tsql": "SELECT DATEDIFF(YEAR, CAST('2023-12-31' AS DATE), CAST('2024-01-01' AS DATE)) AS years_diff, DATEDIFF(MONTH, CAST('2023-12-31' AS DATE), CAST('2024-01-01' AS DATE)) AS months_diff, DATEDIFF(DAY, CAST('2023-12-31' AS DATE), CAST('2024-01-01' AS DATE)) AS days_diff;",
+          "dialect_note_md": "SQL Server returns 1, 1, 1 (a year and a month boundary are crossed); MySQL TIMESTAMPDIFF returns 0, 0 and DATEDIFF returns 1. This is a genuine semantic difference.",
+          "expected": {
+            "columns": [
+              "years_diff",
+              "months_diff",
+              "days_diff"
+            ],
+            "rows": [
+              [
+                "0",
+                "0",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "diff-gap-minutes",
+          "title": "Minutes between consecutive events",
+          "explain_md": "User 1's gaps: first event has no predecessor (NULL), then 10, 45 and 10 minutes. `LAG` fetches the previous timestamp.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT event_id, TIMESTAMPDIFF(MINUTE, LAG(event_ts) OVER (PARTITION BY user_id ORDER BY event_ts, event_id), event_ts) AS gap_min FROM events WHERE user_id = 1 ORDER BY event_id;",
+          "tsql": "SELECT event_id, DATEDIFF(MINUTE, LAG(event_ts) OVER (PARTITION BY user_id ORDER BY event_ts, event_id), event_ts) AS gap_min FROM events WHERE user_id = 1 ORDER BY event_id;",
+          "expected": {
+            "columns": [
+              "event_id",
+              "gap_min"
+            ],
+            "rows": [
+              [
+                "1",
+                null
+              ],
+              [
+                "2",
+                "10"
+              ],
+              [
+                "3",
+                "45"
+              ],
+              [
+                "4",
+                "10"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "MySQL DATEDIFF ignores the time part: `DATEDIFF('2024-01-02 00:01', '2024-01-01 23:59')` is 1 although 2 minutes passed.",
+        "SQL Server `DATEDIFF(DAY, ...)` on DATETIME values also counts midnight crossings, not 24-hour periods."
+      ]
+    },
+    {
+      "id": "truncate-period",
+      "heading": "Start/end of month, week, year",
+      "body_md": "- **First day of month**: MySQL `d - INTERVAL (DAY(d) - 1) DAY` (stays a DATE). `DATE_FORMAT(d, '%Y-%m-01')` returns text. SQL Server: `DATEFROMPARTS(YEAR(d), MONTH(d), 1)`; **2022+** `DATETRUNC(MONTH, d)`; classic `DATEADD(MONTH, DATEDIFF(MONTH, 0, d), 0)`.\n- **Last day of month**: MySQL `LAST_DAY(d)`; SQL Server `EOMONTH(d [, months_to_add])`. `EOMONTH(d, -1)` is the end of the previous month; add 1 day to get this month's start.\n- **First of year**: MySQL `MAKEDATE(YEAR(d), 1)`; SQL Server `DATEFROMPARTS(YEAR(d), 1, 1)`.\n- **Week start**: MySQL Monday: `d - INTERVAL WEEKDAY(d) DAY`; Sunday: `d - INTERVAL (DAYOFWEEK(d) - 1) DAY`. SQL Server Monday (default DATEFIRST): `DATEADD(DAY, -((DATEPART(WEEKDAY, d) + 5) % 7), d)`; 2022+ `DATETRUNC(ISO_WEEK, d)` is Monday, while `DATETRUNC(WEEK, d)` depends on `SET DATEFIRST`.\n- Month length: `DAY(LAST_DAY(d))` / `DAY(EOMONTH(d))`.\n- Bucketing to month: group by the first-of-month DATE, not by text, so ordering and joins stay simple.",
+      "syntax": {
+        "mysql": "LAST_DAY(date)\nMAKEDATE(year, dayofyear)\ndate - INTERVAL (DAY(date) - 1) DAY",
+        "tsql": "EOMONTH(date [, months_to_add])\nDATEFROMPARTS(year, month, day)\nDATETRUNC(datepart, date)   -- 2022+"
+      },
+      "args": [
+        {
+          "name": "months_to_add (EOMONTH position 2)",
+          "meaning": "Optional signed month offset applied before taking the month end."
+        },
+        {
+          "name": "year, month, day (DATEFROMPARTS)",
+          "meaning": "Integers, in that order."
+        }
+      ],
+      "examples": [
+        {
+          "id": "first-last-day",
+          "title": "First day and last day of the month",
+          "explain_md": "Feb 2024 is a leap February, so the last day is the 29th; the month has 29 days.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT CAST('2024-02-10' AS DATE) - INTERVAL (DAY(CAST('2024-02-10' AS DATE)) - 1) DAY AS month_start, LAST_DAY(CAST('2024-02-10' AS DATE)) AS month_end, DAY(LAST_DAY(CAST('2024-02-10' AS DATE))) AS days_in_month, LAST_DAY(CAST('2023-02-10' AS DATE)) AS month_end_2023;",
+          "tsql": "SELECT DATEFROMPARTS(YEAR(CAST('2024-02-10' AS DATE)), MONTH(CAST('2024-02-10' AS DATE)), 1) AS month_start, EOMONTH(CAST('2024-02-10' AS DATE)) AS month_end, DAY(EOMONTH(CAST('2024-02-10' AS DATE))) AS days_in_month, EOMONTH(CAST('2023-02-10' AS DATE)) AS month_end_2023;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "month_end",
+              "days_in_month",
+              "month_end_2023"
+            ],
+            "rows": [
+              [
+                "2024-02-01",
+                "2024-02-29",
+                "29",
+                "2023-02-28"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "month-bucket-date",
+          "title": "Group orders by first-of-month",
+          "explain_md": "A real DATE bucket sorts and joins naturally. Completed orders only.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_date - INTERVAL (DAY(order_date) - 1) DAY AS month_start, SUM(amount) AS revenue FROM orders WHERE status = 'completed' GROUP BY order_date - INTERVAL (DAY(order_date) - 1) DAY ORDER BY month_start;",
+          "tsql": "SELECT DATEFROMPARTS(YEAR(order_date), MONTH(order_date), 1) AS month_start, SUM(amount) AS revenue FROM orders WHERE status = 'completed' GROUP BY DATEFROMPARTS(YEAR(order_date), MONTH(order_date), 1) ORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue"
+            ],
+            "rows": [
+              [
+                "2024-01-01",
+                "165.50"
+              ],
+              [
+                "2024-02-01",
+                "275.00"
+              ],
+              [
+                "2024-03-01",
+                "420.00"
+              ],
+              [
+                "2024-04-01",
+                "50.00"
+              ],
+              [
+                "2024-05-01",
+                "65.00"
+              ],
+              [
+                "2024-06-01",
+                "140.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "week-start",
+          "title": "Monday of the week",
+          "explain_md": "2024-03-06 is a Wednesday; its ISO week starts Monday 2024-03-04. MySQL WEEKDAY is 0 for Monday.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT CAST('2024-03-06' AS DATE) - INTERVAL WEEKDAY(CAST('2024-03-06' AS DATE)) DAY AS week_start_monday;",
+          "tsql": "SELECT DATEADD(DAY, -((DATEPART(WEEKDAY, CAST('2024-03-06' AS DATE)) + 5) % 7), CAST('2024-03-06' AS DATE)) AS week_start_monday;",
+          "dialect_note_md": "Assumes the default `DATEFIRST 7` (Sunday = 1). On SQL Server 2022+ the setting-proof form is `DATETRUNC(ISO_WEEK, d)`. A DATEFIRST-independent classic: `DATEADD(DAY, DATEDIFF(DAY, '1900-01-01', d) / 7 * 7, '1900-01-01')` (1900-01-01 was a Monday).",
+          "expected": {
+            "columns": [
+              "week_start_monday"
+            ],
+            "rows": [
+              [
+                "2024-03-04"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "day-of-week",
+      "heading": "Day of week numbering",
+      "body_md": "Three numbering schemes - memorise which engine uses which.\n- MySQL `DAYOFWEEK(d)`: **1 = Sunday** ... 7 = Saturday. MySQL `WEEKDAY(d)`: **0 = Monday** ... 6 = Sunday. `DAYNAME(d)` gives the name.\n- SQL Server `DATEPART(WEEKDAY, d)`: depends on `SET DATEFIRST` (default 7 for US English, which makes **1 = Sunday**, like DAYOFWEEK). With `DATEFIRST 1` Monday is 1. Language settings change it too.\n- Locale-proof SQL Server tests: `DATENAME(WEEKDAY, d)` (language-dependent text) or `(DATEPART(WEEKDAY, d) + @@DATEFIRST) % 7` which is 0 for Saturday and 1 for Sunday regardless of DATEFIRST.\n- ISO week number: MySQL `WEEK(d, 3)` / `WEEKOFYEAR(d)`; SQL Server `DATEPART(ISO_WEEK, d)`. Plain `WEEK(d)` (mode 0) and `DATEPART(WEEK, d)` follow Sunday-first rules and differ around New Year.\n- Weekend filter in MySQL: `DAYOFWEEK(d) IN (1, 7)` (or `WEEKDAY(d) >= 5`).",
+      "syntax": {
+        "mysql": "DAYOFWEEK(date)   -- 1 = Sunday\nWEEKDAY(date)     -- 0 = Monday\nDAYNAME(date)",
+        "tsql": "DATEPART(WEEKDAY, date)   -- depends on DATEFIRST\nDATENAME(WEEKDAY, date)   -- text"
+      },
+      "examples": [
+        {
+          "id": "weekday-numbers",
+          "title": "One week of numbers",
+          "explain_md": "2024-03-01 is a Friday: DAYOFWEEK 6 (Sunday = 1), WEEKDAY 4 (Monday = 0).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date, DAYNAME(sale_date) AS day_name, DAYOFWEEK(sale_date) AS dayofweek_sun1, WEEKDAY(sale_date) AS weekday_mon0 FROM daily_sales WHERE region = 'East' AND sale_date <= '2024-03-04' ORDER BY sale_date;",
+          "tsql": "SELECT sale_date, DATENAME(WEEKDAY, sale_date) AS day_name, DATEPART(WEEKDAY, sale_date) AS dayofweek_sun1, (DATEPART(WEEKDAY, sale_date) + 5) % 7 AS weekday_mon0 FROM daily_sales WHERE region = 'East' AND sale_date <= '2024-03-04' ORDER BY sale_date;",
+          "dialect_note_md": "The SQL Server numbers assume the default `DATEFIRST 7` (Sunday = 1); `(DATEPART(WEEKDAY, d) + 5) % 7` converts that to Monday = 0.",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "day_name",
+              "dayofweek_sun1",
+              "weekday_mon0"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "Friday",
+                "6",
+                "4"
+              ],
+              [
+                "2024-03-02",
+                "Saturday",
+                "7",
+                "5"
+              ],
+              [
+                "2024-03-03",
+                "Sunday",
+                "1",
+                "6"
+              ],
+              [
+                "2024-03-04",
+                "Monday",
+                "2",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "weekend-split",
+          "title": "Weekend vs weekday revenue",
+          "explain_md": "Mar 2-3 and 9-10 are weekends. Totals across both regions.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT CASE WHEN DAYOFWEEK(sale_date) IN (1, 7) THEN 'weekend' ELSE 'weekday' END AS day_type, SUM(revenue) AS revenue FROM daily_sales GROUP BY CASE WHEN DAYOFWEEK(sale_date) IN (1, 7) THEN 'weekend' ELSE 'weekday' END ORDER BY day_type;",
+          "tsql": "SELECT CASE WHEN DATEPART(WEEKDAY, sale_date) IN (1, 7) THEN 'weekend' ELSE 'weekday' END AS day_type, SUM(revenue) AS revenue FROM daily_sales GROUP BY CASE WHEN DATEPART(WEEKDAY, sale_date) IN (1, 7) THEN 'weekend' ELSE 'weekday' END ORDER BY day_type;",
+          "dialect_note_md": "Correct only when `DATEFIRST` is 7 (the US English default). For a setting-proof test use `DATENAME(WEEKDAY, d) IN ('Saturday', 'Sunday')` or the `@@DATEFIRST` formula.",
+          "expected": {
+            "columns": [
+              "day_type",
+              "revenue"
+            ],
+            "rows": [
+              [
+                "weekday",
+                "985.00"
+              ],
+              [
+                "weekend",
+                "730.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "parsing-text",
+      "heading": "Parsing text into dates",
+      "body_md": "- ISO text `'YYYY-MM-DD'` converts with `CAST(s AS DATE)` in both engines. Anything else needs a format.\n- MySQL `STR_TO_DATE(str, format)` with the same `%` specifiers as DATE_FORMAT. Position 1 = the text, position 2 = its format. Returns NULL (with a warning) for text that does not match; use `%d/%m/%Y` for day-first.\n- SQL Server `CONVERT(DATE, str, style)`: position 1 the target type, 2 the text, 3 the style code of the **input** (103 = `dd/mm/yyyy`, 101 = `mm/dd/yyyy`, 112 = `yyyymmdd`). `TRY_CONVERT` returns NULL on failure where CONVERT raises an error. `PARSE(str AS DATE USING 'en-GB')` is culture-based and slow.\n- `yyyymmdd` (no dashes) is the one text form SQL Server always reads correctly, regardless of `SET LANGUAGE` / `DATEFORMAT`. For DATETIME (not DATETIME2/DATE), `'2024-03-05'` can be read as year-day-month in some languages.\n- Manual parse when nothing else works: `DATEFROMPARTS(CAST(SUBSTRING(s, 7, 4) AS INT), CAST(SUBSTRING(s, 4, 2) AS INT), CAST(LEFT(s, 2) AS INT))` for `'dd/mm/yyyy'`.",
+      "syntax": {
+        "mysql": "STR_TO_DATE(str, format)",
+        "tsql": "CONVERT(DATE, str [, style])\nTRY_CONVERT(DATE, str [, style])\nTRY_CAST(str AS DATE)"
+      },
+      "args": [
+        {
+          "name": "str (STR_TO_DATE position 1)",
+          "meaning": "The text to parse."
+        },
+        {
+          "name": "format (position 2)",
+          "meaning": "MySQL `%` layout describing the text exactly, e.g. `%d/%m/%Y`, `%M %e, %Y`."
+        },
+        {
+          "name": "style (CONVERT position 3)",
+          "meaning": "Numeric code for the input layout: 101 mm/dd/yyyy, 103 dd/mm/yyyy, 104 dd.mm.yyyy, 112 yyyymmdd, 23 yyyy-mm-dd."
+        }
+      ],
+      "examples": [
+        {
+          "id": "parse-iso",
+          "title": "ISO text to DATE",
+          "explain_md": "The ISO form needs no format string; CAST handles it in both engines.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT CAST('2024-03-15' AS DATE) AS parsed, CAST('2024-03-15 08:30:00' AS DATETIME) AS parsed_ts, YEAR(CAST('2024-03-15' AS DATE)) AS yr;",
+          "tsql": "SELECT CAST('2024-03-15' AS DATE) AS parsed, CAST('2024-03-15 08:30:00' AS DATETIME) AS parsed_ts, YEAR(CAST('2024-03-15' AS DATE)) AS yr;",
+          "expected": {
+            "columns": [
+              "parsed",
+              "parsed_ts",
+              "yr"
+            ],
+            "rows": [
+              [
+                "2024-03-15",
+                "2024-03-15 08:30:00",
+                "2024"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "parse-custom",
+          "title": "Day-first text",
+          "explain_md": "MySQL names the layout with a format; the T-SQL below slices the pieces so it runs everywhere (`CONVERT(DATE, '15/03/2024', 103)` is the shorthand).",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT STR_TO_DATE('15/03/2024', '%d/%m/%Y') AS parsed_dmy, STR_TO_DATE('2024-03-05', '%Y-%m-%d') AS parsed_iso;",
+          "tsql": "SELECT DATEFROMPARTS(CAST(SUBSTRING('15/03/2024', 7, 4) AS INT), CAST(SUBSTRING('15/03/2024', 4, 2) AS INT), CAST(LEFT('15/03/2024', 2) AS INT)) AS parsed_dmy, CAST('2024-03-05' AS DATE) AS parsed_iso;",
+          "dialect_note_md": "In SQL Server write `CONVERT(DATE, '15/03/2024', 103)`; the slicing form above is only used so the example also runs in the browser.",
+          "expected": {
+            "columns": [
+              "parsed_dmy",
+              "parsed_iso"
+            ],
+            "rows": [
+              [
+                "2024-03-15",
+                "2024-03-05"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "half-open-ranges",
+      "heading": "Half-open ranges: all of a day or a month",
+      "body_md": "Use `>= start AND < next_start`. It is correct for DATE, DATETIME and fractional seconds, and it can use an index.\n- Whole day: `ts >= '2024-05-01' AND ts < '2024-05-02'` (or `< d + INTERVAL 1 DAY`).\n- Whole month: `d >= '2024-02-01' AND d < '2024-03-01'`, with the end computed as `start + INTERVAL 1 MONTH` / `DATEADD(MONTH, 1, start)`.\n- `BETWEEN '2024-05-01' AND '2024-05-01'` on a DATETIME means midnight to midnight: it misses everything after 00:00:00. `BETWEEN a AND '2024-05-31 23:59:59'` still drops the last second's fractions.\n- `BETWEEN` is fine on DATE columns (inclusive both ends, no time part).\n- Do not wrap the column: `WHERE YEAR(d) = 2024` or `DATE(ts) = '2024-05-01'` forces a scan; compare the raw column against a range.",
+      "examples": [
+        {
+          "id": "range-day",
+          "title": "All events on 2024-05-01",
+          "explain_md": "The half-open range finds all 7 events of that day (user 3 at 18:00 included); the BETWEEN version finds none because every event has a time after midnight.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT (SELECT COUNT(*) FROM events WHERE event_ts >= '2024-05-01' AND event_ts < '2024-05-02') AS half_open, (SELECT COUNT(*) FROM events WHERE event_ts BETWEEN '2024-05-01' AND '2024-05-01') AS between_trap;",
+          "tsql": "SELECT (SELECT COUNT(*) FROM events WHERE event_ts >= '2024-05-01' AND event_ts < '2024-05-02') AS half_open, (SELECT COUNT(*) FROM events WHERE event_ts BETWEEN '2024-05-01' AND '2024-05-01') AS between_trap;",
+          "expected": {
+            "columns": [
+              "half_open",
+              "between_trap"
+            ],
+            "rows": [
+              [
+                "7",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "range-month",
+          "title": "Orders placed in February 2024",
+          "explain_md": "Start inclusive, next month's start exclusive; orders 103-106.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, order_date FROM orders WHERE order_date >= CAST('2024-02-01' AS DATE) AND order_date < CAST('2024-02-01' AS DATE) + INTERVAL 1 MONTH ORDER BY order_id;",
+          "tsql": "SELECT order_id, order_date FROM orders WHERE order_date >= CAST('2024-02-01' AS DATE) AND order_date < DATEADD(MONTH, 1, CAST('2024-02-01' AS DATE)) ORDER BY order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "order_date"
+            ],
+            "rows": [
+              [
+                "103",
+                "2024-02-02"
+              ],
+              [
+                "104",
+                "2024-02-03"
+              ],
+              [
+                "105",
+                "2024-02-03"
+              ],
+              [
+                "106",
+                "2024-02-14"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Months have different lengths: derive the end from the start (`start + 1 MONTH`) instead of hard-coding the 30th or 31st.",
+        "SQL Server: write date literals as `'YYYYMMDD'` or `'YYYY-MM-DDThh:mm:ss'` when comparing to DATETIME so `SET DATEFORMAT` cannot change the meaning."
+      ]
+    },
+    {
+      "id": "age-tenure",
+      "heading": "Age and tenure",
+      "body_md": "'How many full years has this person been here?' needs complete-unit counting.\n- MySQL: `TIMESTAMPDIFF(YEAR, start, ref)` is already complete years (anniversary-aware). `TIMESTAMPDIFF(MONTH, ...)` likewise.\n- SQL Server: `DATEDIFF(YEAR, start, ref)` only counts calendar-year boundaries, so subtract 1 if the anniversary has not happened yet: `DATEDIFF(YEAR, s, ref) - CASE WHEN DATEADD(YEAR, DATEDIFF(YEAR, s, ref), s) > ref THEN 1 ELSE 0 END`.\n- Never `DATEDIFF(DAY, ...) / 365`: leap years drift.\n- Use a **fixed reference date** in reports and tests (`'2024-12-31'`), or pass `CURDATE()` / `GETDATE()` in production.\n- Days of tenure: MySQL `DATEDIFF(ref, hire)`; SQL Server `DATEDIFF(DAY, hire, ref)`.",
+      "examples": [
+        {
+          "id": "tenure",
+          "title": "Complete years and months on 2024-12-31",
+          "explain_md": "Dev joined 2021-05-03: 3 full years, 43 full months. Hal joined 2024-01-08: 0 years, 11 months.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, hire_date, TIMESTAMPDIFF(YEAR, hire_date, CAST('2024-12-31' AS DATE)) AS full_years, TIMESTAMPDIFF(MONTH, hire_date, CAST('2024-12-31' AS DATE)) AS full_months, DATEDIFF(CAST('2024-12-31' AS DATE), hire_date) AS days FROM employees WHERE emp_id IN (4, 8, 10) ORDER BY emp_id;",
+          "tsql": "SELECT name, hire_date, DATEDIFF(YEAR, hire_date, CAST('2024-12-31' AS DATE)) - CASE WHEN DATEADD(YEAR, DATEDIFF(YEAR, hire_date, CAST('2024-12-31' AS DATE)), hire_date) > CAST('2024-12-31' AS DATE) THEN 1 ELSE 0 END AS full_years, DATEDIFF(MONTH, hire_date, CAST('2024-12-31' AS DATE)) - CASE WHEN DAY(CAST('2024-12-31' AS DATE)) < DAY(hire_date) THEN 1 ELSE 0 END AS full_months, DATEDIFF(DAY, hire_date, CAST('2024-12-31' AS DATE)) AS days FROM employees WHERE emp_id IN (4, 8, 10) ORDER BY emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "hire_date",
+              "full_years",
+              "full_months",
+              "days"
+            ],
+            "rows": [
+              [
+                "Dev",
+                "2021-05-03",
+                "3",
+                "43",
+                "1338"
+              ],
+              [
+                "Hal",
+                "2024-01-08",
+                "0",
+                "11",
+                "358"
+              ],
+              [
+                "Jon",
+                "2024-04-01",
+                "0",
+                "8",
+                "274"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "age-birthday",
+          "title": "Age with a birthday not yet reached",
+          "explain_md": "Born 1990-09-15, on 2024-06-01: calendar years differ by 34 but the person is 33.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT TIMESTAMPDIFF(YEAR, CAST('1990-09-15' AS DATE), CAST('2024-06-01' AS DATE)) AS age_years, TIMESTAMPDIFF(YEAR, CAST('1990-09-15' AS DATE), CAST('2024-09-15' AS DATE)) AS age_on_birthday;",
+          "tsql": "SELECT DATEDIFF(YEAR, CAST('1990-09-15' AS DATE), CAST('2024-06-01' AS DATE)) - CASE WHEN DATEADD(YEAR, DATEDIFF(YEAR, CAST('1990-09-15' AS DATE), CAST('2024-06-01' AS DATE)), CAST('1990-09-15' AS DATE)) > CAST('2024-06-01' AS DATE) THEN 1 ELSE 0 END AS age_years, DATEDIFF(YEAR, CAST('1990-09-15' AS DATE), CAST('2024-09-15' AS DATE)) - CASE WHEN DATEADD(YEAR, DATEDIFF(YEAR, CAST('1990-09-15' AS DATE), CAST('2024-09-15' AS DATE)), CAST('1990-09-15' AS DATE)) > CAST('2024-09-15' AS DATE) THEN 1 ELSE 0 END AS age_on_birthday;",
+          "expected": {
+            "columns": [
+              "age_years",
+              "age_on_birthday"
+            ],
+            "rows": [
+              [
+                "33",
+                "34"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Feb 29 birthdays: `DATEADD(YEAR, n, '2000-02-29')` returns Feb 28 in non-leap years, so such people age one day early under the DATEADD idiom."
+      ]
+    }
+  ]
+}

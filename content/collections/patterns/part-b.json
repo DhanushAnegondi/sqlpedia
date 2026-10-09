@@ -1,0 +1,2991 @@
+{
+  "problems": [
+    {
+      "id": "P101",
+      "slug": "top-three-products-per-category",
+      "title": "Top three products per category",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Ranking",
+        "Top N per group"
+      ],
+      "statement_md": "A grocery-delivery app wants the best sellers in each category. Total the `line_total` of every product, then return the products whose total revenue is among the **three highest distinct revenue values** in their category: if two products tie, they share a place, and every product tied at the cutoff is kept. Return `category`, `product`, `total_revenue`, ordered by `category`, then `total_revenue` descending, then `product`.",
+      "tables": [
+        {
+          "name": "basket_lines",
+          "description_md": "One row per product line in a delivered basket.",
+          "columns": [
+            {
+              "name": "line_id",
+              "type": "INT"
+            },
+            {
+              "name": "category",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "product",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "line_total",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Dairy",
+              "Milk",
+              240.0
+            ],
+            [
+              2,
+              "Dairy",
+              "Milk",
+              160.0
+            ],
+            [
+              3,
+              "Dairy",
+              "Yogurt",
+              180.0
+            ],
+            [
+              4,
+              "Dairy",
+              "Yogurt",
+              120.0
+            ],
+            [
+              5,
+              "Dairy",
+              "Cheese",
+              180.0
+            ],
+            [
+              6,
+              "Dairy",
+              "Cheese",
+              120.0
+            ],
+            [
+              7,
+              "Dairy",
+              "Butter",
+              120.0
+            ],
+            [
+              8,
+              "Dairy",
+              "Butter",
+              80.0
+            ],
+            [
+              9,
+              "Dairy",
+              "Cream",
+              60.0
+            ],
+            [
+              10,
+              "Dairy",
+              "Cream",
+              40.0
+            ],
+            [
+              11,
+              "Bakery",
+              "Bread",
+              300.0
+            ],
+            [
+              12,
+              "Bakery",
+              "Bread",
+              200.0
+            ],
+            [
+              13,
+              "Bakery",
+              "Bagels",
+              210.0
+            ],
+            [
+              14,
+              "Bakery",
+              "Bagels",
+              140.0
+            ],
+            [
+              15,
+              "Bakery",
+              "Muffins",
+              120.0
+            ],
+            [
+              16,
+              "Bakery",
+              "Muffins",
+              80.0
+            ],
+            [
+              17,
+              "Bakery",
+              "Rolls",
+              120.0
+            ],
+            [
+              18,
+              "Bakery",
+              "Rolls",
+              80.0
+            ],
+            [
+              19,
+              "Bakery",
+              "Cake",
+              120.0
+            ],
+            [
+              20,
+              "Bakery",
+              "Cake",
+              80.0
+            ],
+            [
+              21,
+              "Bakery",
+              "Scones",
+              30.0
+            ],
+            [
+              22,
+              "Bakery",
+              "Scones",
+              20.0
+            ],
+            [
+              23,
+              "Produce",
+              "Apples",
+              150.0
+            ],
+            [
+              24,
+              "Produce",
+              "Apples",
+              100.0
+            ],
+            [
+              25,
+              "Produce",
+              "Pears",
+              108.0
+            ],
+            [
+              26,
+              "Produce",
+              "Pears",
+              72.0
+            ],
+            [
+              27,
+              "Produce",
+              "Kiwis",
+              72.0
+            ],
+            [
+              28,
+              "Produce",
+              "Kiwis",
+              48.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Aggregate to one row per product first, then rank those totals.",
+        "Decide how ties should consume rank positions before choosing the ranking function."
+      ],
+      "notes_md": "Pattern family: top N per group with ties kept.\n\nApproach in words: build per-product totals in a CTE or subquery, rank them inside each category, filter on the rank in an outer query (window results cannot be filtered in the same SELECT's WHERE).\n\nSyntax reminder: `fn() OVER (PARTITION BY grp ORDER BY metric DESC)`.\n\nTrap: the three ranking functions treat ties differently. Ask yourself whether a gap in rank numbers after a tie should shrink the cutoff.",
+      "solutions": [
+        {
+          "label": "DENSE_RANK on aggregated totals",
+          "explain_md": "Dense ranks do not skip numbers after ties, so rank <= 3 keeps every product tied at the cutoff.",
+          "sql": "WITH totals AS (\n  SELECT category, product, SUM(line_total) AS total_revenue\n  FROM basket_lines\n  GROUP BY category, product\n), ranked AS (\n  SELECT category, product, total_revenue,\n         DENSE_RANK() OVER (PARTITION BY category ORDER BY total_revenue DESC) AS rnk\n  FROM totals\n)\nSELECT category, product, total_revenue\nFROM ranked\nWHERE rnk <= 3\nORDER BY category, total_revenue DESC, product;"
+        },
+        {
+          "label": "Count distinct higher totals",
+          "explain_md": "A product qualifies if fewer than three distinct totals in its category are larger than its own.",
+          "sql": "WITH totals AS (\n  SELECT category, product, SUM(line_total) AS total_revenue\n  FROM basket_lines\n  GROUP BY category, product\n)\nSELECT t.category, t.product, t.total_revenue\nFROM totals t\nWHERE (SELECT COUNT(DISTINCT x.total_revenue)\n       FROM totals x\n       WHERE x.category = t.category AND x.total_revenue > t.total_revenue) < 3\nORDER BY t.category, t.total_revenue DESC, t.product;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "ROW_NUMBER always returns exactly three rows per category and breaks ties arbitrarily, so tied products at the cutoff are dropped.",
+          "sql": "WITH totals AS (\n  SELECT category, product, SUM(line_total) AS total_revenue\n  FROM basket_lines\n  GROUP BY category, product\n), ranked AS (\n  SELECT category, product, total_revenue,\n         ROW_NUMBER() OVER (PARTITION BY category ORDER BY total_revenue DESC, product) AS rn\n  FROM totals\n)\nSELECT category, product, total_revenue FROM ranked WHERE rn <= 3\nORDER BY category, total_revenue DESC, product;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "category",
+          "product",
+          "total_revenue"
+        ],
+        "rows": [
+          [
+            "Bakery",
+            "Bread",
+            "500.00"
+          ],
+          [
+            "Bakery",
+            "Bagels",
+            "350.00"
+          ],
+          [
+            "Bakery",
+            "Cake",
+            "200.00"
+          ],
+          [
+            "Bakery",
+            "Muffins",
+            "200.00"
+          ],
+          [
+            "Bakery",
+            "Rolls",
+            "200.00"
+          ],
+          [
+            "Dairy",
+            "Milk",
+            "400.00"
+          ],
+          [
+            "Dairy",
+            "Cheese",
+            "300.00"
+          ],
+          [
+            "Dairy",
+            "Yogurt",
+            "300.00"
+          ],
+          [
+            "Dairy",
+            "Butter",
+            "200.00"
+          ],
+          [
+            "Produce",
+            "Apples",
+            "250.00"
+          ],
+          [
+            "Produce",
+            "Pears",
+            "180.00"
+          ],
+          [
+            "Produce",
+            "Kiwis",
+            "120.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P102",
+      "slug": "lowest-rated-shops-per-region",
+      "title": "Lowest-rated shops per region",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Ranking",
+        "Top N per group",
+        "NULL handling"
+      ],
+      "statement_md": "Operations wants to coach the weakest partner shops. Shops with no rating yet (`avg_rating` is NULL) are not rated and must be ignored. For each region, return the shops whose rating is one of the **two lowest distinct rating values** in that region (ties share a place and are all kept). Return `region`, `shop_name`, `avg_rating`, ordered by `region`, `avg_rating`, `shop_name`.",
+      "tables": [
+        {
+          "name": "shops",
+          "description_md": "One row per partner shop. `avg_rating` is NULL until a shop has reviews.",
+          "columns": [
+            {
+              "name": "shop_id",
+              "type": "INT"
+            },
+            {
+              "name": "region",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "shop_name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "avg_rating",
+              "type": "DECIMAL(3,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "North",
+              "Harbor Mart",
+              3.1
+            ],
+            [
+              2,
+              "North",
+              "Pine Pantry",
+              2.5
+            ],
+            [
+              3,
+              "North",
+              "Birch Basket",
+              null
+            ],
+            [
+              4,
+              "North",
+              "Elm Express",
+              2.5
+            ],
+            [
+              5,
+              "North",
+              "Oak Outlet",
+              4.0
+            ],
+            [
+              6,
+              "South",
+              "Sunny Stop",
+              4.2
+            ],
+            [
+              7,
+              "South",
+              "Cedar Corner",
+              null
+            ],
+            [
+              8,
+              "South",
+              "Maple Market",
+              3.9
+            ],
+            [
+              9,
+              "South",
+              "Willow Grocer",
+              4.8
+            ],
+            [
+              10,
+              "East",
+              "River Retail",
+              3.0
+            ],
+            [
+              11,
+              "East",
+              "Lake Larder",
+              3.0
+            ],
+            [
+              12,
+              "East",
+              "Bay Basket",
+              3.0
+            ],
+            [
+              13,
+              "East",
+              "Cove Cart",
+              4.4
+            ],
+            [
+              14,
+              "East",
+              "Dune Deli",
+              2.9
+            ],
+            [
+              15,
+              "West",
+              "Ridge Roots",
+              null
+            ],
+            [
+              16,
+              "West",
+              "Peak Provisions",
+              4.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Where do NULLs land when you sort ascending in MySQL?",
+        "Remove the unrated shops before ranking, not after."
+      ],
+      "notes_md": "Pattern family: bottom N per group with ties and NULLs.\n\nApproach in words: filter out NULL ratings, rank ascending within region with a ranking function that does not skip numbers after ties, keep the first two places.\n\nSyntax reminder: `DENSE_RANK() OVER (PARTITION BY grp ORDER BY metric ASC)`.\n\nTrap: in MySQL, NULL sorts first in an ascending ORDER BY, so unrated rows can look like the worst performers. A WHERE after the window does not help, because the NULL row has already taken a rank.",
+      "solutions": [
+        {
+          "label": "Filter NULLs, then DENSE_RANK ascending",
+          "explain_md": "Filtering inside the CTE keeps NULL rows from taking rank 1; dense ranks keep ties at the cutoff.",
+          "sql": "WITH rated AS (\n  SELECT region, shop_name, avg_rating,\n         DENSE_RANK() OVER (PARTITION BY region ORDER BY avg_rating ASC) AS rnk\n  FROM shops\n  WHERE avg_rating IS NOT NULL\n)\nSELECT region, shop_name, avg_rating\nFROM rated\nWHERE rnk <= 2\nORDER BY region, avg_rating, shop_name;"
+        },
+        {
+          "label": "Count distinct lower ratings",
+          "explain_md": "A shop is kept if fewer than two distinct ratings in its region are lower than its own.",
+          "sql": "SELECT s.region, s.shop_name, s.avg_rating\nFROM shops s\nWHERE s.avg_rating IS NOT NULL\n  AND (SELECT COUNT(DISTINCT x.avg_rating)\n       FROM shops x\n       WHERE x.region = s.region AND x.avg_rating < s.avg_rating) < 2\nORDER BY s.region, s.avg_rating, s.shop_name;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Ranking before removing NULLs lets the unrated shop take rank 1 (NULL sorts first ascending), pushing real low performers out.",
+          "sql": "WITH r AS (\n  SELECT region, shop_name, avg_rating,\n         DENSE_RANK() OVER (PARTITION BY region ORDER BY avg_rating ASC) AS rnk\n  FROM shops\n)\nSELECT region, shop_name, avg_rating FROM r\nWHERE rnk <= 2 AND avg_rating IS NOT NULL\nORDER BY region, avg_rating, shop_name;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "region",
+          "shop_name",
+          "avg_rating"
+        ],
+        "rows": [
+          [
+            "East",
+            "Dune Deli",
+            "2.90"
+          ],
+          [
+            "East",
+            "Bay Basket",
+            "3.00"
+          ],
+          [
+            "East",
+            "Lake Larder",
+            "3.00"
+          ],
+          [
+            "East",
+            "River Retail",
+            "3.00"
+          ],
+          [
+            "North",
+            "Elm Express",
+            "2.50"
+          ],
+          [
+            "North",
+            "Pine Pantry",
+            "2.50"
+          ],
+          [
+            "North",
+            "Harbor Mart",
+            "3.10"
+          ],
+          [
+            "South",
+            "Maple Market",
+            "3.90"
+          ],
+          [
+            "South",
+            "Sunny Stop",
+            "4.20"
+          ],
+          [
+            "West",
+            "Peak Provisions",
+            "4.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P103",
+      "slug": "latest-plan-per-user",
+      "title": "Latest plan change per user",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Deduplication",
+        "Ranking"
+      ],
+      "statement_md": "A subscription app logs every plan change in `profile_changes`. Return each user's current plan: the row with the latest `updated_at`. When two changes for a user carry the exact same timestamp, the one with the **higher `change_id`** is considered later. Return `user_id`, `plan`, `updated_at`, ordered by `user_id`.",
+      "tables": [
+        {
+          "name": "profile_changes",
+          "description_md": "One row per plan change. `change_id` is not guaranteed to follow time order.",
+          "columns": [
+            {
+              "name": "change_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "plan",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "updated_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              10,
+              "free",
+              "2026-01-05 09:00:00"
+            ],
+            [
+              2,
+              10,
+              "pro",
+              "2026-02-11 14:30:00"
+            ],
+            [
+              3,
+              10,
+              "team",
+              "2026-03-02 08:15:00"
+            ],
+            [
+              4,
+              20,
+              "free",
+              "2026-01-20 10:00:00"
+            ],
+            [
+              5,
+              20,
+              "pro",
+              "2026-02-20 10:00:00"
+            ],
+            [
+              6,
+              20,
+              "team",
+              "2026-02-20 10:00:00"
+            ],
+            [
+              8,
+              30,
+              "pro",
+              "2026-03-10 12:00:00"
+            ],
+            [
+              7,
+              30,
+              "team",
+              "2026-03-15 18:45:00"
+            ],
+            [
+              9,
+              40,
+              "free",
+              "2026-02-01 00:00:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Number each user's rows from newest to oldest; what must the ORDER BY contain to be deterministic?",
+        "Keep only the first row of each numbering."
+      ],
+      "notes_md": "Pattern family: latest record per key (deduplication).\n\nApproach in words: number rows per key newest-first with an ORDER BY that includes a tie-breaker, then keep number 1.\n\nSyntax reminder: `ROW_NUMBER() OVER (PARTITION BY key ORDER BY ts DESC, id DESC)`.\n\nTraps: joining back to `MAX(ts)` returns both rows of a timestamp tie; `MAX(id)` is only the latest row when ids follow time.",
+      "solutions": [
+        {
+          "label": "ROW_NUMBER with tie-breaker",
+          "explain_md": "The secondary sort on change_id makes the ordering total, so exactly one row gets number 1.",
+          "sql": "WITH ranked AS (\n  SELECT user_id, plan, updated_at,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY updated_at DESC, change_id DESC) AS rn\n  FROM profile_changes\n)\nSELECT user_id, plan, updated_at\nFROM ranked\nWHERE rn = 1\nORDER BY user_id;"
+        },
+        {
+          "label": "Correlated LIMIT 1",
+          "explain_md": "For each row, check whether it is the first row of that user's newest-first ordering.",
+          "sql": "SELECT p.user_id, p.plan, p.updated_at\nFROM profile_changes p\nWHERE p.change_id = (SELECT q.change_id\n                     FROM profile_changes q\n                     WHERE q.user_id = p.user_id\n                     ORDER BY q.updated_at DESC, q.change_id DESC\n                     LIMIT 1)\nORDER BY p.user_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Joining to MAX(updated_at) keeps both rows when two changes share the latest timestamp.",
+          "sql": "SELECT p.user_id, p.plan, p.updated_at\nFROM profile_changes p\nJOIN (SELECT user_id, MAX(updated_at) AS mx FROM profile_changes GROUP BY user_id) m\n  ON m.user_id = p.user_id AND m.mx = p.updated_at\nORDER BY p.user_id;"
+        },
+        {
+          "explain_md": "Taking the highest change_id assumes ids follow time order, which they do not for every user.",
+          "sql": "SELECT p.user_id, p.plan, p.updated_at\nFROM profile_changes p\nWHERE p.change_id = (SELECT MAX(q.change_id) FROM profile_changes q WHERE q.user_id = p.user_id)\nORDER BY p.user_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "user_id",
+          "plan",
+          "updated_at"
+        ],
+        "rows": [
+          [
+            "10",
+            "team",
+            "2026-03-02 08:15:00"
+          ],
+          [
+            "20",
+            "team",
+            "2026-02-20 10:00:00"
+          ],
+          [
+            "30",
+            "team",
+            "2026-03-15 18:45:00"
+          ],
+          [
+            "40",
+            "free",
+            "2026-02-01 00:00:00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P104",
+      "slug": "third-payment-per-user",
+      "title": "Third payment per user",
+      "difficulty": "Easy",
+      "topics": [
+        "Window functions",
+        "Ranking",
+        "Top N per group"
+      ],
+      "statement_md": "Marketing wants to reward the moment a customer makes their **third payment**. Return that payment for every user who has at least three: `user_id`, `payment_id`, `paid_at`, `amount`. Payments are ordered by `paid_at`; when two payments share the exact timestamp the lower `payment_id` comes first. Order the output by `user_id`.",
+      "tables": [
+        {
+          "name": "payments",
+          "description_md": "One row per payment. `payment_id` does not always follow time order.",
+          "columns": [
+            {
+              "name": "payment_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "paid_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              "2026-03-01 10:00:00",
+              25.0
+            ],
+            [
+              102,
+              1,
+              "2026-03-05 11:00:00",
+              40.0
+            ],
+            [
+              103,
+              1,
+              "2026-03-09 09:30:00",
+              15.5
+            ],
+            [
+              104,
+              1,
+              "2026-03-20 16:00:00",
+              60.0
+            ],
+            [
+              105,
+              2,
+              "2026-03-02 08:00:00",
+              12.0
+            ],
+            [
+              106,
+              2,
+              "2026-03-11 08:30:00",
+              18.0
+            ],
+            [
+              110,
+              3,
+              "2026-02-10 08:00:00",
+              30.0
+            ],
+            [
+              108,
+              3,
+              "2026-02-12 09:00:00",
+              22.0
+            ],
+            [
+              109,
+              3,
+              "2026-02-01 07:00:00",
+              18.0
+            ],
+            [
+              111,
+              3,
+              "2026-03-01 07:30:00",
+              50.0
+            ],
+            [
+              120,
+              4,
+              "2026-01-03 10:00:00",
+              10.0
+            ],
+            [
+              122,
+              4,
+              "2026-01-04 12:00:00",
+              20.0
+            ],
+            [
+              121,
+              4,
+              "2026-01-04 12:00:00",
+              35.0
+            ],
+            [
+              123,
+              4,
+              "2026-01-09 09:00:00",
+              5.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need a position number that never repeats, even for equal timestamps.",
+        "Filter on the position in an outer query."
+      ],
+      "notes_md": "Pattern family: the Nth row per group (exactly one row per position).\n\nApproach in words: number each user's payments chronologically with a full tie-breaker, keep number 3.\n\nSyntax reminder: `ROW_NUMBER() OVER (PARTITION BY u ORDER BY ts, id)`.\n\nTrap: RANK and DENSE_RANK let ties share a number, so a tie at position 2 can leave nobody at 3 (RANK) or move the third row (DENSE_RANK).",
+      "solutions": [
+        {
+          "label": "ROW_NUMBER",
+          "explain_md": "ROW_NUMBER gives each payment a unique position within the user.",
+          "sql": "WITH numbered AS (\n  SELECT user_id, payment_id, paid_at, amount,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY paid_at, payment_id) AS rn\n  FROM payments\n)\nSELECT user_id, payment_id, paid_at, amount\nFROM numbered\nWHERE rn = 3\nORDER BY user_id;"
+        },
+        {
+          "label": "Count earlier payments",
+          "explain_md": "A payment is the third when exactly two payments come before it in (paid_at, payment_id) order.",
+          "sql": "SELECT p.user_id, p.payment_id, p.paid_at, p.amount\nFROM payments p\nWHERE (SELECT COUNT(*)\n       FROM payments q\n       WHERE q.user_id = p.user_id\n         AND (q.paid_at < p.paid_at OR (q.paid_at = p.paid_at AND q.payment_id < p.payment_id))) = 2\nORDER BY p.user_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "RANK lets the two payments at the same timestamp share position 2, so position 3 does not exist for that user.",
+          "sql": "WITH r AS (\n  SELECT user_id, payment_id, paid_at, amount,\n         RANK() OVER (PARTITION BY user_id ORDER BY paid_at) AS rk\n  FROM payments\n)\nSELECT user_id, payment_id, paid_at, amount FROM r WHERE rk = 3 ORDER BY user_id;"
+        },
+        {
+          "explain_md": "Ordering by payment_id instead of time picks the wrong row when ids are out of order.",
+          "sql": "WITH r AS (\n  SELECT user_id, payment_id, paid_at, amount,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY payment_id) AS rn\n  FROM payments\n)\nSELECT user_id, payment_id, paid_at, amount FROM r WHERE rn = 3 ORDER BY user_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "user_id",
+          "payment_id",
+          "paid_at",
+          "amount"
+        ],
+        "rows": [
+          [
+            "1",
+            "103",
+            "2026-03-09 09:30:00",
+            "15.50"
+          ],
+          [
+            "3",
+            "108",
+            "2026-02-12 09:00:00",
+            "22.00"
+          ],
+          [
+            "4",
+            "122",
+            "2026-01-04 12:00:00",
+            "20.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P105",
+      "slug": "running-balance-per-account",
+      "title": "Running balance per account",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Running totals"
+      ],
+      "statement_md": "A payments platform keeps a ledger of credits (positive) and debits (negative). For every entry return the account's running balance **after that entry**, entries ordered by `entry_date` then `entry_id`, restarting at each account. Return `entry_id`, `account_id`, `entry_date`, `amount`, `running_balance`, ordered by `account_id`, `entry_date`, `entry_id`.",
+      "tables": [
+        {
+          "name": "ledger_entries",
+          "description_md": "One row per ledger entry; several entries can fall on the same day.",
+          "columns": [
+            {
+              "name": "entry_id",
+              "type": "INT"
+            },
+            {
+              "name": "account_id",
+              "type": "INT"
+            },
+            {
+              "name": "entry_date",
+              "type": "DATE"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-04-01",
+              100.0
+            ],
+            [
+              2,
+              1,
+              "2026-04-03",
+              -30.0
+            ],
+            [
+              3,
+              1,
+              "2026-04-03",
+              50.0
+            ],
+            [
+              4,
+              1,
+              "2026-04-03",
+              -20.0
+            ],
+            [
+              5,
+              1,
+              "2026-04-07",
+              15.0
+            ],
+            [
+              6,
+              2,
+              "2026-04-02",
+              500.0
+            ],
+            [
+              7,
+              2,
+              "2026-04-02",
+              -125.0
+            ],
+            [
+              8,
+              2,
+              "2026-04-04",
+              -75.0
+            ],
+            [
+              9,
+              2,
+              "2026-04-04",
+              40.0
+            ],
+            [
+              10,
+              2,
+              "2026-04-09",
+              10.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The frame decides whether same-day rows see each other. Which frame do you get if you write none?",
+        "Make the ORDER BY unique so the order inside a day is defined."
+      ],
+      "notes_md": "Pattern family: running total per partition.\n\nApproach in words: SUM over a window partitioned by account, ordered by date and id, with the frame stated explicitly so each row sums only rows up to itself.\n\nSyntax reminder: `SUM(x) OVER (PARTITION BY a ORDER BY d, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)`.\n\nTrap: with ORDER BY but no frame the default is RANGE, which treats rows with equal sort keys as peers and gives them all the same total.",
+      "solutions": [
+        {
+          "label": "SUM OVER with ROWS frame",
+          "explain_md": "An explicit ROWS frame counts physical rows, so each entry gets its own running value.",
+          "sql": "SELECT entry_id, account_id, entry_date, amount,\n       SUM(amount) OVER (PARTITION BY account_id ORDER BY entry_date, entry_id\n                         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_balance\nFROM ledger_entries\nORDER BY account_id, entry_date, entry_id;"
+        },
+        {
+          "label": "Self-join",
+          "explain_md": "Sum every entry of the same account that sorts at or before the current one.",
+          "sql": "SELECT e.entry_id, e.account_id, e.entry_date, e.amount,\n       SUM(x.amount) AS running_balance\nFROM ledger_entries e\nJOIN ledger_entries x\n  ON x.account_id = e.account_id\n AND (x.entry_date < e.entry_date OR (x.entry_date = e.entry_date AND x.entry_id <= e.entry_id))\nGROUP BY e.entry_id, e.account_id, e.entry_date, e.amount\nORDER BY e.account_id, e.entry_date, e.entry_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Ordering by date only uses the default RANGE frame, so same-day entries all show the end-of-day balance.",
+          "sql": "SELECT entry_id, account_id, entry_date, amount,\n       SUM(amount) OVER (PARTITION BY account_id ORDER BY entry_date) AS running_balance\nFROM ledger_entries\nORDER BY account_id, entry_date, entry_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "entry_id",
+          "account_id",
+          "entry_date",
+          "amount",
+          "running_balance"
+        ],
+        "rows": [
+          [
+            "1",
+            "1",
+            "2026-04-01",
+            "100.00",
+            "100.00"
+          ],
+          [
+            "2",
+            "1",
+            "2026-04-03",
+            "-30.00",
+            "70.00"
+          ],
+          [
+            "3",
+            "1",
+            "2026-04-03",
+            "50.00",
+            "120.00"
+          ],
+          [
+            "4",
+            "1",
+            "2026-04-03",
+            "-20.00",
+            "100.00"
+          ],
+          [
+            "5",
+            "1",
+            "2026-04-07",
+            "15.00",
+            "115.00"
+          ],
+          [
+            "6",
+            "2",
+            "2026-04-02",
+            "500.00",
+            "500.00"
+          ],
+          [
+            "7",
+            "2",
+            "2026-04-02",
+            "-125.00",
+            "375.00"
+          ],
+          [
+            "8",
+            "2",
+            "2026-04-04",
+            "-75.00",
+            "300.00"
+          ],
+          [
+            "9",
+            "2",
+            "2026-04-04",
+            "40.00",
+            "340.00"
+          ],
+          [
+            "10",
+            "2",
+            "2026-04-09",
+            "10.00",
+            "350.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P106",
+      "slug": "three-day-rolling-average",
+      "title": "Three-day rolling average with missing days",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Rolling windows",
+        "Dates"
+      ],
+      "statement_md": "Growth wants the average daily signups over the **last three calendar days** (the row's date and the two days before it). A calendar day with no row in `daily_signups` had zero signups, and counts as 0 inside the average, so the divisor is always 3. Return `signup_date`, `signups`, `rolling_avg_3d` (rounded to 2 decimals) for each existing row, ordered by `signup_date`.",
+      "tables": [
+        {
+          "name": "daily_signups",
+          "description_md": "One row per day that had at least one signup; quiet days are absent.",
+          "columns": [
+            {
+              "name": "signup_date",
+              "type": "DATE"
+            },
+            {
+              "name": "signups",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2026-03-01",
+              10
+            ],
+            [
+              "2026-03-02",
+              14
+            ],
+            [
+              "2026-03-03",
+              9
+            ],
+            [
+              "2026-03-06",
+              20
+            ],
+            [
+              "2026-03-07",
+              11
+            ],
+            [
+              "2026-03-08",
+              17
+            ],
+            [
+              "2026-03-12",
+              6
+            ],
+            [
+              "2026-03-13",
+              8
+            ],
+            [
+              "2026-03-14",
+              12
+            ],
+            [
+              "2026-03-15",
+              5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Three rows and three days are only the same thing when no day is missing.",
+        "Either let the window frame measure days, or join each row to the dates in its range."
+      ],
+      "notes_md": "Pattern family: rolling window over calendar time.\n\nApproach in words: sum the signups whose date lies in [date - 2 days, date], then divide by 3.\n\nSyntax reminders: a ROWS frame counts rows; a RANGE frame with an interval counts calendar distance: `RANGE BETWEEN INTERVAL 2 DAY PRECEDING AND CURRENT ROW` (ORDER BY must be a single date column). A self-join on `BETWEEN` also works.\n\nTrap: `AVG(...) ROWS BETWEEN 2 PRECEDING` averages rows, not days.",
+      "solutions": [
+        {
+          "label": "Self-join on a date range",
+          "explain_md": "Join each day to the days in its three-day span, sum, divide by 3.",
+          "sql": "SELECT d.signup_date, d.signups,\n       ROUND(SUM(x.signups) / 3, 2) AS rolling_avg_3d\nFROM daily_signups d\nJOIN daily_signups x\n  ON x.signup_date BETWEEN DATE_SUB(d.signup_date, INTERVAL 2 DAY) AND d.signup_date\nGROUP BY d.signup_date, d.signups\nORDER BY d.signup_date;"
+        },
+        {
+          "label": "RANGE frame with INTERVAL",
+          "explain_md": "A RANGE frame over a date counts by calendar distance, so missing days naturally contribute nothing.",
+          "sql": "SELECT signup_date, signups,\n       ROUND(SUM(signups) OVER (ORDER BY signup_date\n                                RANGE BETWEEN INTERVAL 2 DAY PRECEDING AND CURRENT ROW) / 3, 2) AS rolling_avg_3d\nFROM daily_signups\nORDER BY signup_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A ROWS frame averages the previous two existing rows, which can be many days old, and divides by the row count.",
+          "sql": "SELECT signup_date, signups,\n       ROUND(AVG(signups) OVER (ORDER BY signup_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS rolling_avg_3d\nFROM daily_signups\nORDER BY signup_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "signup_date",
+          "signups",
+          "rolling_avg_3d"
+        ],
+        "rows": [
+          [
+            "2026-03-01",
+            "10",
+            "3.33"
+          ],
+          [
+            "2026-03-02",
+            "14",
+            "8.00"
+          ],
+          [
+            "2026-03-03",
+            "9",
+            "11.00"
+          ],
+          [
+            "2026-03-06",
+            "20",
+            "6.67"
+          ],
+          [
+            "2026-03-07",
+            "11",
+            "10.33"
+          ],
+          [
+            "2026-03-08",
+            "17",
+            "16.00"
+          ],
+          [
+            "2026-03-12",
+            "6",
+            "2.00"
+          ],
+          [
+            "2026-03-13",
+            "8",
+            "4.67"
+          ],
+          [
+            "2026-03-14",
+            "12",
+            "8.67"
+          ],
+          [
+            "2026-03-15",
+            "5",
+            "8.33"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P107",
+      "slug": "seven-day-rolling-revenue-date-spine",
+      "title": "Seven-day rolling revenue with a date spine",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Rolling windows",
+        "Recursive CTEs",
+        "Dates"
+      ],
+      "statement_md": "A retail dashboard needs one row for **every calendar day** between the first and the last sale in `store_sales`, including days with no sales. For each day return `sale_date`, `daily_revenue` (0 if no sales), and `rolling_7d_revenue`, the revenue of that day and the six calendar days before it. Order by `sale_date`.",
+      "tables": [
+        {
+          "name": "store_sales",
+          "description_md": "One row per sale; days without sales have no rows at all.",
+          "columns": [
+            {
+              "name": "sale_id",
+              "type": "INT"
+            },
+            {
+              "name": "sale_date",
+              "type": "DATE"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-05-01",
+              120.0
+            ],
+            [
+              2,
+              "2026-05-01",
+              80.0
+            ],
+            [
+              3,
+              "2026-05-02",
+              60.0
+            ],
+            [
+              4,
+              "2026-05-05",
+              200.0
+            ],
+            [
+              5,
+              "2026-05-05",
+              40.0
+            ],
+            [
+              6,
+              "2026-05-06",
+              90.0
+            ],
+            [
+              7,
+              "2026-05-09",
+              150.0
+            ],
+            [
+              8,
+              "2026-05-11",
+              70.0
+            ],
+            [
+              9,
+              "2026-05-12",
+              110.0
+            ],
+            [
+              10,
+              "2026-05-14",
+              300.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "MySQL has no generate_series. A recursive CTE can walk one day at a time.",
+        "After the spine is joined to the daily totals, every row is one day, so a row-count frame becomes a day-count frame."
+      ],
+      "notes_md": "Pattern family: date spine + rolling window.\n\nApproach in words: find min and max date, generate every date with a recursive CTE, LEFT JOIN the aggregated daily totals, COALESCE missing days to 0, then apply the rolling frame.\n\nSyntax reminders: `WITH RECURSIVE s AS (SELECT start_d AS d UNION ALL SELECT d + INTERVAL 1 DAY FROM s WHERE d < end_d)`; `SUM(x) OVER (ORDER BY d ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)`.\n\nTrap: a 7-row frame over only the days that have sales spans more than 7 days.",
+      "solutions": [
+        {
+          "label": "Spine, LEFT JOIN, ROWS 6 PRECEDING",
+          "explain_md": "On a gap-free spine one row equals one day, so six preceding rows are six preceding days.",
+          "sql": "WITH RECURSIVE bounds AS (\n  SELECT MIN(sale_date) AS first_d, MAX(sale_date) AS last_d FROM store_sales\n), spine AS (\n  SELECT first_d AS d FROM bounds\n  UNION ALL\n  SELECT DATE_ADD(s.d, INTERVAL 1 DAY) FROM spine s, bounds b WHERE s.d < b.last_d\n), daily AS (\n  SELECT sale_date, SUM(amount) AS rev FROM store_sales GROUP BY sale_date\n), filled AS (\n  SELECT s.d AS sale_date, COALESCE(dl.rev, 0) AS daily_revenue\n  FROM spine s LEFT JOIN daily dl ON dl.sale_date = s.d\n)\nSELECT sale_date, daily_revenue,\n       SUM(daily_revenue) OVER (ORDER BY sale_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rolling_7d_revenue\nFROM filled\nORDER BY sale_date;"
+        },
+        {
+          "label": "Spine with a range subquery",
+          "explain_md": "For each spine date, sum the daily totals whose date is within the past seven days.",
+          "sql": "WITH RECURSIVE bounds AS (\n  SELECT MIN(sale_date) AS first_d, MAX(sale_date) AS last_d FROM store_sales\n), spine AS (\n  SELECT first_d AS d FROM bounds\n  UNION ALL\n  SELECT DATE_ADD(s.d, INTERVAL 1 DAY) FROM spine s, bounds b WHERE s.d < b.last_d\n), daily AS (\n  SELECT sale_date, SUM(amount) AS rev FROM store_sales GROUP BY sale_date\n)\nSELECT s.d AS sale_date,\n       COALESCE((SELECT rev FROM daily WHERE sale_date = s.d), 0) AS daily_revenue,\n       COALESCE((SELECT SUM(x.rev) FROM daily x\n                 WHERE x.sale_date BETWEEN DATE_SUB(s.d, INTERVAL 6 DAY) AND s.d), 0) AS rolling_7d_revenue\nFROM spine s\nORDER BY s.d;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Windowing over only the days that have sales skips quiet days and spans more than seven calendar days.",
+          "sql": "SELECT sale_date, SUM(amount) AS daily_revenue,\n       SUM(SUM(amount)) OVER (ORDER BY sale_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rolling_7d_revenue\nFROM store_sales\nGROUP BY sale_date\nORDER BY sale_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "sale_date",
+          "daily_revenue",
+          "rolling_7d_revenue"
+        ],
+        "rows": [
+          [
+            "2026-05-01",
+            "200.00",
+            "200.00"
+          ],
+          [
+            "2026-05-02",
+            "60.00",
+            "260.00"
+          ],
+          [
+            "2026-05-03",
+            "0.00",
+            "260.00"
+          ],
+          [
+            "2026-05-04",
+            "0.00",
+            "260.00"
+          ],
+          [
+            "2026-05-05",
+            "240.00",
+            "500.00"
+          ],
+          [
+            "2026-05-06",
+            "90.00",
+            "590.00"
+          ],
+          [
+            "2026-05-07",
+            "0.00",
+            "590.00"
+          ],
+          [
+            "2026-05-08",
+            "0.00",
+            "390.00"
+          ],
+          [
+            "2026-05-09",
+            "150.00",
+            "480.00"
+          ],
+          [
+            "2026-05-10",
+            "0.00",
+            "480.00"
+          ],
+          [
+            "2026-05-11",
+            "70.00",
+            "550.00"
+          ],
+          [
+            "2026-05-12",
+            "110.00",
+            "420.00"
+          ],
+          [
+            "2026-05-13",
+            "0.00",
+            "330.00"
+          ],
+          [
+            "2026-05-14",
+            "300.00",
+            "630.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P108",
+      "slug": "month-over-month-growth",
+      "title": "Month-over-month revenue growth",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Period comparisons",
+        "NULL handling"
+      ],
+      "statement_md": "Finance tracks `monthly_revenue`. For each month return `month_start`, `revenue`, `prev_month_revenue` and `growth_pct`, the percentage change from the **previous calendar month**, rounded to 1 decimal. If the previous calendar month has no row, `prev_month_revenue` and `growth_pct` are NULL. If the previous month's revenue is 0, `growth_pct` is NULL (no division by zero). Order by `month_start`.",
+      "tables": [
+        {
+          "name": "monthly_revenue",
+          "description_md": "One row per month that had a closed ledger; some months are missing.",
+          "columns": [
+            {
+              "name": "month_start",
+              "type": "DATE"
+            },
+            {
+              "name": "revenue",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              "2026-01-01",
+              100.0
+            ],
+            [
+              "2026-02-01",
+              120.0
+            ],
+            [
+              "2026-04-01",
+              90.0
+            ],
+            [
+              "2026-05-01",
+              0.0
+            ],
+            [
+              "2026-06-01",
+              60.0
+            ],
+            [
+              "2026-07-01",
+              75.0
+            ],
+            [
+              "2026-08-01",
+              75.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The row before in sort order is not always the month before.",
+        "Guard the denominator so a zero cannot divide."
+      ],
+      "notes_md": "Pattern family: period-over-period comparison.\n\nApproach in words: fetch the previous row's month and revenue (LAG, or a self-join on month + 1), accept it only if it really is one month earlier, then compute the percentage.\n\nSyntax reminders: `LAG(col, 1) OVER (ORDER BY d)`; `TIMESTAMPDIFF(MONTH, a, b)`; `x / NULLIF(y, 0)`.\n\nTrap: plain LAG compares with whatever row came before, even across a missing month.",
+      "solutions": [
+        {
+          "label": "Self-join on previous month",
+          "explain_md": "LEFT JOIN each month to the row exactly one month earlier; NULLIF guards the zero denominator.",
+          "sql": "SELECT c.month_start, c.revenue,\n       p.revenue AS prev_month_revenue,\n       ROUND(100 * (c.revenue - p.revenue) / NULLIF(p.revenue, 0), 1) AS growth_pct\nFROM monthly_revenue c\nLEFT JOIN monthly_revenue p\n  ON p.month_start = DATE_SUB(c.month_start, INTERVAL 1 MONTH)\nORDER BY c.month_start;"
+        },
+        {
+          "label": "LAG with a gap check",
+          "explain_md": "LAG supplies the previous row; a CASE keeps it only if its month is exactly one month earlier.",
+          "sql": "WITH x AS (\n  SELECT month_start, revenue,\n         LAG(month_start) OVER (ORDER BY month_start) AS pm,\n         LAG(revenue) OVER (ORDER BY month_start) AS pr\n  FROM monthly_revenue\n), y AS (\n  SELECT month_start, revenue,\n         CASE WHEN TIMESTAMPDIFF(MONTH, pm, month_start) = 1 THEN pr END AS prev_month_revenue\n  FROM x\n)\nSELECT month_start, revenue, prev_month_revenue,\n       ROUND(100 * (revenue - prev_month_revenue) / NULLIF(prev_month_revenue, 0), 1) AS growth_pct\nFROM y\nORDER BY month_start;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Plain LAG compares April with February because March has no row.",
+          "sql": "SELECT month_start, revenue,\n       LAG(revenue) OVER (ORDER BY month_start) AS prev_month_revenue,\n       ROUND(100 * (revenue - LAG(revenue) OVER (ORDER BY month_start))\n             / NULLIF(LAG(revenue) OVER (ORDER BY month_start), 0), 1) AS growth_pct\nFROM monthly_revenue\nORDER BY month_start;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "month_start",
+          "revenue",
+          "prev_month_revenue",
+          "growth_pct"
+        ],
+        "rows": [
+          [
+            "2026-01-01",
+            "100.00",
+            null,
+            null
+          ],
+          [
+            "2026-02-01",
+            "120.00",
+            "100.00",
+            "20.0"
+          ],
+          [
+            "2026-04-01",
+            "90.00",
+            null,
+            null
+          ],
+          [
+            "2026-05-01",
+            "0.00",
+            "90.00",
+            "-100.0"
+          ],
+          [
+            "2026-06-01",
+            "60.00",
+            "0.00",
+            null
+          ],
+          [
+            "2026-07-01",
+            "75.00",
+            "60.00",
+            "25.0"
+          ],
+          [
+            "2026-08-01",
+            "75.00",
+            "75.00",
+            "0.0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P109",
+      "slug": "year-over-year-growth-per-product",
+      "title": "Year-over-year growth per product",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Period comparisons",
+        "Self-joins"
+      ],
+      "statement_md": "For every row dated in 2026, compare `units` with the same product in the **same month one year earlier**. Return `product`, `month_start`, `units`, `units_year_ago`, `yoy_pct` (percent change, 1 decimal). `units_year_ago` is NULL if that product has no row for that month last year; `yoy_pct` is also NULL when the year-ago value is missing or 0. Order by `product`, `month_start`.",
+      "tables": [
+        {
+          "name": "monthly_units",
+          "description_md": "Units sold per product per month. Not every product has every month.",
+          "columns": [
+            {
+              "name": "product",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "month_start",
+              "type": "DATE"
+            },
+            {
+              "name": "units",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "Pulse Band",
+              "2025-01-01",
+              100
+            ],
+            [
+              "Pulse Band",
+              "2025-02-01",
+              0
+            ],
+            [
+              "Pulse Band",
+              "2025-03-01",
+              80
+            ],
+            [
+              "Pulse Band",
+              "2025-04-01",
+              90
+            ],
+            [
+              "Pulse Band",
+              "2025-05-01",
+              95
+            ],
+            [
+              "Pulse Band",
+              "2025-06-01",
+              70
+            ],
+            [
+              "Pulse Band",
+              "2025-07-01",
+              85
+            ],
+            [
+              "Pulse Band",
+              "2025-08-01",
+              60
+            ],
+            [
+              "Pulse Band",
+              "2025-09-01",
+              75
+            ],
+            [
+              "Pulse Band",
+              "2025-10-01",
+              110
+            ],
+            [
+              "Pulse Band",
+              "2025-11-01",
+              120
+            ],
+            [
+              "Pulse Band",
+              "2025-12-01",
+              150
+            ],
+            [
+              "Pulse Band",
+              "2026-01-01",
+              130
+            ],
+            [
+              "Pulse Band",
+              "2026-02-01",
+              45
+            ],
+            [
+              "Trail Cap",
+              "2025-01-01",
+              50
+            ],
+            [
+              "Trail Cap",
+              "2025-03-01",
+              60
+            ],
+            [
+              "Trail Cap",
+              "2026-01-01",
+              55
+            ],
+            [
+              "Trail Cap",
+              "2026-02-01",
+              40
+            ],
+            [
+              "Trail Cap",
+              "2026-03-01",
+              66
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Row offsets only equal calendar offsets when the series has no gaps.",
+        "Match on product and on the date shifted back by twelve months."
+      ],
+      "notes_md": "Pattern family: year-over-year comparison.\n\nApproach in words: for each month find the row of the same product exactly 12 months earlier and compare. Either join the table to itself on a shifted date, or look the value up with a correlated subquery.\n\nSyntax reminders: `DATE_SUB(d, INTERVAL 12 MONTH)`; `LAG(x, 12) OVER (PARTITION BY p ORDER BY d)` is only correct on complete monthly series.\n\nTrap: LAG with offset 12 looks 12 rows back, not 12 months back.",
+      "solutions": [
+        {
+          "label": "Self-join on shifted month",
+          "explain_md": "LEFT JOIN each row to the same product's row 12 months earlier; filter to 2026 rows.",
+          "sql": "SELECT c.product, c.month_start, c.units,\n       p.units AS units_year_ago,\n       ROUND(100 * (c.units - p.units) / NULLIF(p.units, 0), 1) AS yoy_pct\nFROM monthly_units c\nLEFT JOIN monthly_units p\n  ON p.product = c.product\n AND p.month_start = DATE_SUB(c.month_start, INTERVAL 12 MONTH)\nWHERE c.month_start >= '2026-01-01'\nORDER BY c.product, c.month_start;"
+        },
+        {
+          "label": "Correlated subquery",
+          "explain_md": "Look up the year-ago units per row with a scalar subquery, then compute the percentage in an outer query.",
+          "sql": "WITH x AS (\n  SELECT c.product, c.month_start, c.units,\n         (SELECT p.units FROM monthly_units p\n          WHERE p.product = c.product\n            AND p.month_start = DATE_SUB(c.month_start, INTERVAL 12 MONTH)) AS units_year_ago\n  FROM monthly_units c\n  WHERE c.month_start >= '2026-01-01'\n)\nSELECT product, month_start, units, units_year_ago,\n       ROUND(100 * (units - units_year_ago) / NULLIF(units_year_ago, 0), 1) AS yoy_pct\nFROM x\nORDER BY product, month_start;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "LAG(units, 12) goes back twelve rows. It works for the gap-free product but is NULL or wrong for the product with missing months.",
+          "sql": "WITH x AS (\n  SELECT product, month_start, units,\n         LAG(units, 12) OVER (PARTITION BY product ORDER BY month_start) AS units_year_ago\n  FROM monthly_units\n)\nSELECT product, month_start, units, units_year_ago,\n       ROUND(100 * (units - units_year_ago) / NULLIF(units_year_ago, 0), 1) AS yoy_pct\nFROM x\nWHERE month_start >= '2026-01-01'\nORDER BY product, month_start;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "product",
+          "month_start",
+          "units",
+          "units_year_ago",
+          "yoy_pct"
+        ],
+        "rows": [
+          [
+            "Pulse Band",
+            "2026-01-01",
+            "130",
+            "100",
+            "30.0"
+          ],
+          [
+            "Pulse Band",
+            "2026-02-01",
+            "45",
+            "0",
+            null
+          ],
+          [
+            "Trail Cap",
+            "2026-01-01",
+            "55",
+            "50",
+            "10.0"
+          ],
+          [
+            "Trail Cap",
+            "2026-02-01",
+            "40",
+            null,
+            null
+          ],
+          [
+            "Trail Cap",
+            "2026-03-01",
+            "66",
+            "60",
+            "10.0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P110",
+      "slug": "customer-spend-quartiles",
+      "title": "Customer spend quartiles",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "NTILE"
+      ],
+      "statement_md": "Split customers into four spend quartiles of as-equal-as-possible size, quartile 1 being the biggest spenders. Order customers by `total_spend` descending, breaking ties by lower `customer_id` first. Return `customer_id`, `total_spend`, `spend_quartile`, ordered by `total_spend` descending, then `customer_id`.",
+      "tables": [
+        {
+          "name": "customer_spend",
+          "description_md": "Lifetime spend per customer.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "total_spend",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              800
+            ],
+            [
+              102,
+              1200
+            ],
+            [
+              103,
+              410
+            ],
+            [
+              104,
+              300
+            ],
+            [
+              105,
+              800
+            ],
+            [
+              106,
+              950
+            ],
+            [
+              107,
+              120
+            ],
+            [
+              108,
+              640
+            ],
+            [
+              109,
+              410
+            ],
+            [
+              110,
+              500
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "There is a built-in function that cuts an ordered set into N buckets.",
+        "With 10 customers the buckets cannot all hold the same number of rows; which buckets get the extras?"
+      ],
+      "notes_md": "Pattern family: bucketing / percentile groups.\n\nApproach in words: order customers by spend descending with a tie-break and cut into four buckets.\n\nSyntax reminder: `NTILE(4) OVER (ORDER BY metric DESC, id)`; when the row count is not divisible by 4 the first buckets get one extra row.\n\nTrap: hand-made formulas based on ROW_NUMBER and COUNT often split uneven groups in a different place than NTILE does.",
+      "solutions": [
+        {
+          "label": "NTILE(4)",
+          "explain_md": "NTILE assigns bucket numbers in order, giving leftover rows to the earliest buckets.",
+          "sql": "SELECT customer_id, total_spend,\n       NTILE(4) OVER (ORDER BY total_spend DESC, customer_id) AS spend_quartile\nFROM customer_spend\nORDER BY total_spend DESC, customer_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A ROW_NUMBER/COUNT formula spreads uneven remainders differently (3,2,3,2) than NTILE (3,3,2,2).",
+          "sql": "WITH r AS (\n  SELECT customer_id, total_spend,\n         ROW_NUMBER() OVER (ORDER BY total_spend DESC, customer_id) AS rn,\n         COUNT(*) OVER () AS n\n  FROM customer_spend\n)\nSELECT customer_id, total_spend, FLOOR((rn - 1) * 4 / n) + 1 AS spend_quartile\nFROM r\nORDER BY total_spend DESC, customer_id;"
+        },
+        {
+          "explain_md": "Ordering ascending flips the meaning: quartile 1 becomes the smallest spenders.",
+          "sql": "SELECT customer_id, total_spend,\n       NTILE(4) OVER (ORDER BY total_spend, customer_id) AS spend_quartile\nFROM customer_spend\nORDER BY total_spend DESC, customer_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "total_spend",
+          "spend_quartile"
+        ],
+        "rows": [
+          [
+            "102",
+            "1200.00",
+            "1"
+          ],
+          [
+            "106",
+            "950.00",
+            "1"
+          ],
+          [
+            "101",
+            "800.00",
+            "1"
+          ],
+          [
+            "105",
+            "800.00",
+            "2"
+          ],
+          [
+            "108",
+            "640.00",
+            "2"
+          ],
+          [
+            "110",
+            "500.00",
+            "2"
+          ],
+          [
+            "103",
+            "410.00",
+            "3"
+          ],
+          [
+            "109",
+            "410.00",
+            "3"
+          ],
+          [
+            "104",
+            "300.00",
+            "4"
+          ],
+          [
+            "107",
+            "120.00",
+            "4"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P111",
+      "slug": "top-ten-percent-earners",
+      "title": "Top 10 percent of earners",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Ranking",
+        "Statistics"
+      ],
+      "statement_md": "HR wants the highest-paid 10% of employees. An employee is in the top 10% if their **position from the top** (employees with equal salary share a position, the next position skips ahead) is at most 10% of the total headcount. Return `emp_id`, `name`, `salary`, ordered by `salary` descending, then `emp_id`.",
+      "tables": [
+        {
+          "name": "staff",
+          "description_md": "One row per employee.",
+          "columns": [
+            {
+              "name": "emp_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Hana",
+              160
+            ],
+            [
+              2,
+              "Ben",
+              190
+            ],
+            [
+              3,
+              "Milo",
+              130
+            ],
+            [
+              4,
+              "Dara",
+              175
+            ],
+            [
+              5,
+              "Sam",
+              100
+            ],
+            [
+              6,
+              "Ava",
+              200
+            ],
+            [
+              7,
+              "Jun",
+              145
+            ],
+            [
+              8,
+              "Pia",
+              115
+            ],
+            [
+              9,
+              "Eli",
+              170
+            ],
+            [
+              10,
+              "Kai",
+              140
+            ],
+            [
+              11,
+              "Tess",
+              95
+            ],
+            [
+              12,
+              "Chen",
+              190
+            ],
+            [
+              13,
+              "Gus",
+              160
+            ],
+            [
+              14,
+              "Nia",
+              125
+            ],
+            [
+              15,
+              "Rosa",
+              105
+            ],
+            [
+              16,
+              "Fay",
+              165
+            ],
+            [
+              17,
+              "Lena",
+              135
+            ],
+            [
+              18,
+              "Ivo",
+              150
+            ],
+            [
+              19,
+              "Quin",
+              110
+            ],
+            [
+              20,
+              "Omar",
+              120
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Compare a rank with a fraction of the total headcount. Which window gives you the headcount on every row?",
+        "Multiply instead of dividing to avoid fractions."
+      ],
+      "notes_md": "Pattern family: percentile cut-off with ties.\n\nApproach in words: rank salaries descending with a function where equal salaries share a position, count all rows with an unpartitioned window, keep rows whose rank is within 10% of the count.\n\nSyntax reminders: `RANK() OVER (ORDER BY x DESC)`, `COUNT(*) OVER ()`.\n\nTrap: NTILE(10) and ROW_NUMBER always cut at an exact row count and split ties arbitrarily.",
+      "solutions": [
+        {
+          "label": "RANK against headcount",
+          "explain_md": "Rank gives tied salaries the same position; keeping rank * 10 <= headcount keeps all ties at the cutoff.",
+          "sql": "WITH r AS (\n  SELECT emp_id, name, salary,\n         RANK() OVER (ORDER BY salary DESC) AS rk,\n         COUNT(*) OVER () AS n\n  FROM staff\n)\nSELECT emp_id, name, salary\nFROM r\nWHERE rk * 10 <= n\nORDER BY salary DESC, emp_id;"
+        },
+        {
+          "label": "Count strictly higher salaries",
+          "explain_md": "An employee's position is the number of strictly higher salaries plus one.",
+          "sql": "SELECT s.emp_id, s.name, s.salary\nFROM staff s\nWHERE ((SELECT COUNT(*) FROM staff x WHERE x.salary > s.salary) + 1) * 10 <= (SELECT COUNT(*) FROM staff)\nORDER BY s.salary DESC, s.emp_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "NTILE(10) cuts exactly two rows and splits the tie at 190 arbitrarily.",
+          "sql": "WITH t AS (\n  SELECT emp_id, name, salary,\n         NTILE(10) OVER (ORDER BY salary DESC, emp_id) AS decile\n  FROM staff\n)\nSELECT emp_id, name, salary FROM t WHERE decile = 1 ORDER BY salary DESC, emp_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "emp_id",
+          "name",
+          "salary"
+        ],
+        "rows": [
+          [
+            "6",
+            "Ava",
+            "200"
+          ],
+          [
+            "2",
+            "Ben",
+            "190"
+          ],
+          [
+            "12",
+            "Chen",
+            "190"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P112",
+      "slug": "long-gaps-between-purchases",
+      "title": "Long gaps between purchases",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Value functions",
+        "Dates"
+      ],
+      "statement_md": "Retention wants to see win-back purchases. For each purchase that happened **more than 14 days** after the same user's previous purchase, return `purchase_id`, `user_id`, `purchased_on`, `days_since_prev`, and `next_item`: the item of that user's next purchase (NULL if there is none). Purchases are ordered by `purchased_on`, ties by `purchase_id`. Order the output by `user_id`, `purchased_on`, `purchase_id`.",
+      "tables": [
+        {
+          "name": "purchases",
+          "description_md": "One row per purchase. `purchase_id` does not always follow date order.",
+          "columns": [
+            {
+              "name": "purchase_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "purchased_on",
+              "type": "DATE"
+            },
+            {
+              "name": "item",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-01-03",
+              "coffee beans"
+            ],
+            [
+              2,
+              1,
+              "2026-01-10",
+              "grinder"
+            ],
+            [
+              3,
+              1,
+              "2026-02-08",
+              "filters"
+            ],
+            [
+              4,
+              1,
+              "2026-02-08",
+              "mug"
+            ],
+            [
+              5,
+              1,
+              "2026-03-20",
+              "kettle"
+            ],
+            [
+              9,
+              2,
+              "2026-01-15",
+              "tea"
+            ],
+            [
+              7,
+              2,
+              "2026-02-20",
+              "teapot"
+            ],
+            [
+              8,
+              2,
+              "2026-02-25",
+              "honey"
+            ],
+            [
+              10,
+              2,
+              "2026-04-30",
+              "cups"
+            ],
+            [
+              6,
+              3,
+              "2026-02-14",
+              "candle"
+            ],
+            [
+              11,
+              4,
+              "2026-03-01",
+              "soap"
+            ],
+            [
+              12,
+              4,
+              "2026-03-15",
+              "towel"
+            ],
+            [
+              13,
+              4,
+              "2026-03-30",
+              "lamp"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need both the previous and the next row of each user, so compute them before you filter.",
+        "Subtracting two dates in MySQL is done with a dedicated function."
+      ],
+      "notes_md": "Pattern family: consecutive-event gaps (LAG and LEAD).\n\nApproach in words: in a CTE compute the previous date and the next item per user over a fully ordered window; filter on the gap in the outer query.\n\nSyntax reminders: `LAG(d) OVER (PARTITION BY u ORDER BY d, id)`, `LEAD(item) OVER (...)`, `DATEDIFF(later, earlier)`.\n\nTrap: ordering by id instead of date, and filtering rows before the LEAD is computed.",
+      "solutions": [
+        {
+          "label": "LAG and LEAD in a CTE",
+          "explain_md": "Both neighbours come from the same fully ordered window; the gap filter happens afterwards so LEAD still sees every purchase.",
+          "sql": "WITH x AS (\n  SELECT purchase_id, user_id, purchased_on,\n         DATEDIFF(purchased_on, LAG(purchased_on) OVER (PARTITION BY user_id ORDER BY purchased_on, purchase_id)) AS days_since_prev,\n         LEAD(item) OVER (PARTITION BY user_id ORDER BY purchased_on, purchase_id) AS next_item\n  FROM purchases\n)\nSELECT purchase_id, user_id, purchased_on, days_since_prev, next_item\nFROM x\nWHERE days_since_prev > 14\nORDER BY user_id, purchased_on, purchase_id;"
+        },
+        {
+          "label": "Numbered self-join",
+          "explain_md": "Number purchases per user, then join each to the row numbered one lower and one higher.",
+          "sql": "WITH n AS (\n  SELECT purchase_id, user_id, purchased_on, item,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY purchased_on, purchase_id) AS rn\n  FROM purchases\n)\nSELECT c.purchase_id, c.user_id, c.purchased_on,\n       DATEDIFF(c.purchased_on, p.purchased_on) AS days_since_prev,\n       nx.item AS next_item\nFROM n c\nJOIN n p ON p.user_id = c.user_id AND p.rn = c.rn - 1\nLEFT JOIN n nx ON nx.user_id = c.user_id AND nx.rn = c.rn + 1\nWHERE DATEDIFF(c.purchased_on, p.purchased_on) > 14\nORDER BY c.user_id, c.purchased_on, c.purchase_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Ordering the window by purchase_id compares purchases that are not neighbours in time.",
+          "sql": "WITH x AS (\n  SELECT purchase_id, user_id, purchased_on,\n         DATEDIFF(purchased_on, LAG(purchased_on) OVER (PARTITION BY user_id ORDER BY purchase_id)) AS days_since_prev,\n         LEAD(item) OVER (PARTITION BY user_id ORDER BY purchase_id) AS next_item\n  FROM purchases\n)\nSELECT purchase_id, user_id, purchased_on, days_since_prev, next_item\nFROM x WHERE days_since_prev > 14\nORDER BY user_id, purchased_on, purchase_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "purchase_id",
+          "user_id",
+          "purchased_on",
+          "days_since_prev",
+          "next_item"
+        ],
+        "rows": [
+          [
+            "3",
+            "1",
+            "2026-02-08",
+            "29",
+            "mug"
+          ],
+          [
+            "5",
+            "1",
+            "2026-03-20",
+            "40",
+            null
+          ],
+          [
+            "7",
+            "2",
+            "2026-02-20",
+            "36",
+            "honey"
+          ],
+          [
+            "10",
+            "2",
+            "2026-04-30",
+            "64",
+            null
+          ],
+          [
+            "13",
+            "4",
+            "2026-03-30",
+            "15",
+            null
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P113",
+      "slug": "first-and-last-weigh-in",
+      "title": "First and last weigh-in per user",
+      "difficulty": "Easy",
+      "topics": [
+        "Window functions",
+        "Value functions",
+        "NULL handling"
+      ],
+      "statement_md": "A fitness app wants each user's progress. Ignoring entries where `weight_kg` is NULL (a missed log), return one row per user with `first_weight_kg` (earliest `logged_on`), `last_weight_kg` (latest `logged_on`) and `change_kg` (last minus first). If two entries share a date, the lower `entry_id` is earlier. Order by `user_id`.",
+      "tables": [
+        {
+          "name": "weigh_ins",
+          "description_md": "One row per logged weigh-in; `weight_kg` is NULL when the user skipped the scale.",
+          "columns": [
+            {
+              "name": "entry_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "logged_on",
+              "type": "DATE"
+            },
+            {
+              "name": "weight_kg",
+              "type": "DECIMAL(5,1)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-01-01",
+              82.0
+            ],
+            [
+              2,
+              1,
+              "2026-01-15",
+              81.2
+            ],
+            [
+              3,
+              1,
+              "2026-02-20",
+              79.8
+            ],
+            [
+              4,
+              1,
+              "2026-02-01",
+              80.5
+            ],
+            [
+              5,
+              2,
+              "2026-01-03",
+              70.0
+            ],
+            [
+              6,
+              2,
+              "2026-01-10",
+              70.6
+            ],
+            [
+              7,
+              2,
+              "2026-02-02",
+              71.4
+            ],
+            [
+              8,
+              2,
+              "2026-02-10",
+              null
+            ],
+            [
+              9,
+              3,
+              "2026-01-20",
+              65.5
+            ],
+            [
+              10,
+              4,
+              "2026-01-05",
+              90.0
+            ],
+            [
+              11,
+              4,
+              "2026-01-05",
+              89.0
+            ],
+            [
+              12,
+              4,
+              "2026-02-05",
+              88.5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "There is a window function that returns the value from the first row of the frame, and one for the last.",
+        "Check which rows the default frame includes when you use the last-row function."
+      ],
+      "notes_md": "Pattern family: first/last value per group.\n\nApproach in words: filter out NULL weights, compute the first and last value over the whole partition, collapse to one row per user.\n\nSyntax reminders: `FIRST_VALUE(x) OVER (PARTITION BY u ORDER BY d, id)`; for the last row either extend the frame to `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` or run FIRST_VALUE with the opposite sort.\n\nTrap: with ORDER BY and no explicit frame, the frame stops at the current row, so LAST_VALUE just returns the current row.",
+      "solutions": [
+        {
+          "label": "Explicit full frame",
+          "explain_md": "Widening the frame to the whole partition lets LAST_VALUE see the last row; DISTINCT collapses the per-row repeats.",
+          "sql": "SELECT DISTINCT user_id,\n       FIRST_VALUE(weight_kg) OVER w AS first_weight_kg,\n       LAST_VALUE(weight_kg) OVER w AS last_weight_kg,\n       LAST_VALUE(weight_kg) OVER w - FIRST_VALUE(weight_kg) OVER w AS change_kg\nFROM weigh_ins\nWHERE weight_kg IS NOT NULL\nWINDOW w AS (PARTITION BY user_id ORDER BY logged_on, entry_id\n             ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)\nORDER BY user_id;"
+        },
+        {
+          "label": "FIRST_VALUE twice with opposite sort",
+          "explain_md": "FIRST_VALUE over the reverse ordering is the last value, and needs no custom frame.",
+          "sql": "SELECT DISTINCT user_id,\n       FIRST_VALUE(weight_kg) OVER (PARTITION BY user_id ORDER BY logged_on, entry_id) AS first_weight_kg,\n       FIRST_VALUE(weight_kg) OVER (PARTITION BY user_id ORDER BY logged_on DESC, entry_id DESC) AS last_weight_kg,\n       FIRST_VALUE(weight_kg) OVER (PARTITION BY user_id ORDER BY logged_on DESC, entry_id DESC)\n         - FIRST_VALUE(weight_kg) OVER (PARTITION BY user_id ORDER BY logged_on, entry_id) AS change_kg\nFROM weigh_ins\nWHERE weight_kg IS NOT NULL\nORDER BY user_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "LAST_VALUE with the default frame returns the current row's own weight, so DISTINCT yields many rows per user.",
+          "sql": "SELECT DISTINCT user_id,\n       FIRST_VALUE(weight_kg) OVER (PARTITION BY user_id ORDER BY logged_on, entry_id) AS first_weight_kg,\n       LAST_VALUE(weight_kg) OVER (PARTITION BY user_id ORDER BY logged_on, entry_id) AS last_weight_kg,\n       LAST_VALUE(weight_kg) OVER (PARTITION BY user_id ORDER BY logged_on, entry_id)\n         - FIRST_VALUE(weight_kg) OVER (PARTITION BY user_id ORDER BY logged_on, entry_id) AS change_kg\nFROM weigh_ins\nWHERE weight_kg IS NOT NULL\nORDER BY user_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "user_id",
+          "first_weight_kg",
+          "last_weight_kg",
+          "change_kg"
+        ],
+        "rows": [
+          [
+            "1",
+            "82.0",
+            "79.8",
+            "-2.2"
+          ],
+          [
+            "2",
+            "70.0",
+            "71.4",
+            "1.4"
+          ],
+          [
+            "3",
+            "65.5",
+            "65.5",
+            "0.0"
+          ],
+          [
+            "4",
+            "90.0",
+            "88.5",
+            "-1.5"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P114",
+      "slug": "share-of-team-cloud-cost",
+      "title": "Share of team cloud cost",
+      "difficulty": "Easy",
+      "topics": [
+        "Window functions",
+        "Aggregation",
+        "NULL handling"
+      ],
+      "statement_md": "Each team's cloud bill is split into services. For every row return `team`, `service`, `monthly_cost`, `pct_of_team` (the service's share of its **team's** total, as a percentage rounded to 1 decimal), and `vs_team_avg` (cost minus the team's average service cost, rounded to 2 decimals). A NULL cost (invoice pending) gives NULL in both new columns and is ignored in the team total and average. Order by `team`, `service`.",
+      "tables": [
+        {
+          "name": "cloud_costs",
+          "description_md": "One row per team and service. `monthly_cost` is NULL while the invoice is pending.",
+          "columns": [
+            {
+              "name": "cost_id",
+              "type": "INT"
+            },
+            {
+              "name": "team",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "service",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "monthly_cost",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Search",
+              "compute",
+              4200.0
+            ],
+            [
+              2,
+              "Search",
+              "storage",
+              1800.0
+            ],
+            [
+              3,
+              "Search",
+              "network",
+              null
+            ],
+            [
+              4,
+              "Search",
+              "support",
+              600.0
+            ],
+            [
+              5,
+              "Ads",
+              "compute",
+              3000.0
+            ],
+            [
+              6,
+              "Ads",
+              "storage",
+              1000.0
+            ],
+            [
+              7,
+              "Ads",
+              "network",
+              1000.0
+            ],
+            [
+              8,
+              "Data",
+              "compute",
+              900.0
+            ],
+            [
+              9,
+              "Data",
+              "storage",
+              2700.0
+            ],
+            [
+              10,
+              "Data",
+              "network",
+              400.0
+            ],
+            [
+              11,
+              "Data",
+              "support",
+              0.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Aggregate functions can be used as window functions with OVER.",
+        "The window needs a partition, otherwise you get a grand total."
+      ],
+      "notes_md": "Pattern family: percentage of total / compare with group aggregate.\n\nApproach in words: keep every row and attach the team's SUM and AVG with windows, then do the arithmetic.\n\nSyntax reminders: `SUM(x) OVER (PARTITION BY team)`, `AVG(x) OVER (PARTITION BY team)`; SUM and AVG skip NULLs.\n\nTrap: `OVER ()` with no PARTITION BY divides by the grand total across all teams.",
+      "solutions": [
+        {
+          "label": "SUM and AVG OVER partition",
+          "explain_md": "Window aggregates attach team-level values to each row without collapsing rows.",
+          "sql": "SELECT team, service, monthly_cost,\n       ROUND(100 * monthly_cost / SUM(monthly_cost) OVER (PARTITION BY team), 1) AS pct_of_team,\n       ROUND(monthly_cost - AVG(monthly_cost) OVER (PARTITION BY team), 2) AS vs_team_avg\nFROM cloud_costs\nORDER BY team, service;"
+        },
+        {
+          "label": "Join to a grouped subquery",
+          "explain_md": "Compute team totals and averages with GROUP BY, join back on team.",
+          "sql": "SELECT c.team, c.service, c.monthly_cost,\n       ROUND(100 * c.monthly_cost / t.total_cost, 1) AS pct_of_team,\n       ROUND(c.monthly_cost - t.avg_cost, 2) AS vs_team_avg\nFROM cloud_costs c\nJOIN (SELECT team, SUM(monthly_cost) AS total_cost, AVG(monthly_cost) AS avg_cost\n      FROM cloud_costs GROUP BY team) t ON t.team = c.team\nORDER BY c.team, c.service;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without PARTITION BY the shares are against the grand total of all teams.",
+          "sql": "SELECT team, service, monthly_cost,\n       ROUND(100 * monthly_cost / SUM(monthly_cost) OVER (), 1) AS pct_of_team,\n       ROUND(monthly_cost - AVG(monthly_cost) OVER (), 2) AS vs_team_avg\nFROM cloud_costs\nORDER BY team, service;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "team",
+          "service",
+          "monthly_cost",
+          "pct_of_team",
+          "vs_team_avg"
+        ],
+        "rows": [
+          [
+            "Ads",
+            "compute",
+            "3000.00",
+            "60.0",
+            "1333.33"
+          ],
+          [
+            "Ads",
+            "network",
+            "1000.00",
+            "20.0",
+            "-666.67"
+          ],
+          [
+            "Ads",
+            "storage",
+            "1000.00",
+            "20.0",
+            "-666.67"
+          ],
+          [
+            "Data",
+            "compute",
+            "900.00",
+            "22.5",
+            "-100.00"
+          ],
+          [
+            "Data",
+            "network",
+            "400.00",
+            "10.0",
+            "-600.00"
+          ],
+          [
+            "Data",
+            "storage",
+            "2700.00",
+            "67.5",
+            "1700.00"
+          ],
+          [
+            "Data",
+            "support",
+            "0.00",
+            "0.0",
+            "-1000.00"
+          ],
+          [
+            "Search",
+            "compute",
+            "4200.00",
+            "63.6",
+            "2000.00"
+          ],
+          [
+            "Search",
+            "network",
+            null,
+            null,
+            null
+          ],
+          [
+            "Search",
+            "storage",
+            "1800.00",
+            "27.3",
+            "-400.00"
+          ],
+          [
+            "Search",
+            "support",
+            "600.00",
+            "9.1",
+            "-1600.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P115",
+      "slug": "median-delivery-time-per-city",
+      "title": "Median delivery time per city",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Statistics",
+        "Top N per group"
+      ],
+      "statement_md": "MySQL has no median function. Return the **median** `minutes` per city (for an even count, the mean of the two middle values), ignoring deliveries whose `minutes` is NULL (not yet delivered). Return `city`, `median_minutes` (rounded to 1 decimal), ordered by `city`.",
+      "tables": [
+        {
+          "name": "delivery_times",
+          "description_md": "One row per delivery. `minutes` is NULL while the order is still out.",
+          "columns": [
+            {
+              "name": "delivery_id",
+              "type": "INT"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(15)"
+            },
+            {
+              "name": "minutes",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Aldergate",
+              22
+            ],
+            [
+              2,
+              "Aldergate",
+              35
+            ],
+            [
+              3,
+              "Aldergate",
+              18
+            ],
+            [
+              4,
+              "Aldergate",
+              40
+            ],
+            [
+              5,
+              "Aldergate",
+              30
+            ],
+            [
+              6,
+              "Aldergate",
+              null
+            ],
+            [
+              7,
+              "Brookfield",
+              90
+            ],
+            [
+              8,
+              "Brookfield",
+              15
+            ],
+            [
+              9,
+              "Brookfield",
+              25
+            ],
+            [
+              10,
+              "Brookfield",
+              20
+            ],
+            [
+              11,
+              "Brookfield",
+              60
+            ],
+            [
+              12,
+              "Brookfield",
+              15
+            ],
+            [
+              13,
+              "Cedarby",
+              30
+            ],
+            [
+              14,
+              "Cedarby",
+              45
+            ],
+            [
+              15,
+              "Cedarby",
+              30
+            ],
+            [
+              16,
+              "Cedarby",
+              30
+            ],
+            [
+              17,
+              "Dunmore",
+              28
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Number the values in each city in sorted order, and also know how many values the city has.",
+        "Which one or two row numbers hold the middle, for odd and even counts?"
+      ],
+      "notes_md": "Pattern family: median without PERCENTILE_CONT.\n\nApproach in words: after dropping NULLs, give each value a position and each city a count; keep the middle position(s) and average them with GROUP BY.\n\nSyntax reminders: `ROW_NUMBER() OVER (PARTITION BY c ORDER BY v, id)`, `COUNT(*) OVER (PARTITION BY c)`. Alternative: number ascending and descending and keep rows where the two numbers differ by at most 1.\n\nTrap: AVG is the mean, not the median; and COUNT(*) before dropping NULLs shifts the middle.",
+      "solutions": [
+        {
+          "label": "Position vs count",
+          "explain_md": "For count n the middle positions are floor((n+1)/2) and floor(n/2)+1 (same row when n is odd); average them.",
+          "sql": "WITH r AS (\n  SELECT city, minutes,\n         ROW_NUMBER() OVER (PARTITION BY city ORDER BY minutes, delivery_id) AS rn,\n         COUNT(*) OVER (PARTITION BY city) AS cnt\n  FROM delivery_times\n  WHERE minutes IS NOT NULL\n)\nSELECT city, ROUND(AVG(minutes), 1) AS median_minutes\nFROM r\nWHERE rn IN (FLOOR((cnt + 1) / 2), FLOOR(cnt / 2) + 1)\nGROUP BY city\nORDER BY city;"
+        },
+        {
+          "label": "Ascending and descending numbers",
+          "explain_md": "The middle rows are those where the ascending and descending row numbers differ by at most 1.",
+          "sql": "WITH r AS (\n  SELECT city, minutes,\n         ROW_NUMBER() OVER (PARTITION BY city ORDER BY minutes, delivery_id) AS asc_rn,\n         CAST(ROW_NUMBER() OVER (PARTITION BY city ORDER BY minutes DESC, delivery_id DESC) AS SIGNED) AS desc_rn\n  FROM delivery_times\n  WHERE minutes IS NOT NULL\n)\nSELECT city, ROUND(AVG(minutes), 1) AS median_minutes\nFROM r\nWHERE asc_rn BETWEEN desc_rn - 1 AND desc_rn + 1\nGROUP BY city\nORDER BY city;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "AVG returns the mean, which the long deliveries drag upward.",
+          "sql": "SELECT city, ROUND(AVG(minutes), 1) AS median_minutes\nFROM delivery_times\nGROUP BY city\nORDER BY city;"
+        },
+        {
+          "explain_md": "Taking only the lower middle row is wrong for cities with an even number of deliveries.",
+          "sql": "WITH r AS (\n  SELECT city, minutes,\n         ROW_NUMBER() OVER (PARTITION BY city ORDER BY minutes, delivery_id) AS rn,\n         COUNT(*) OVER (PARTITION BY city) AS cnt\n  FROM delivery_times\n  WHERE minutes IS NOT NULL\n)\nSELECT city, ROUND(minutes, 1) AS median_minutes\nFROM r\nWHERE rn = FLOOR((cnt + 1) / 2)\nORDER BY city;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "city",
+          "median_minutes"
+        ],
+        "rows": [
+          [
+            "Aldergate",
+            "30.0"
+          ],
+          [
+            "Brookfield",
+            "22.5"
+          ],
+          [
+            "Cedarby",
+            "30.0"
+          ],
+          [
+            "Dunmore",
+            "28.0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P116",
+      "slug": "service-status-changes",
+      "title": "Service status changes",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Value functions",
+        "Gaps and islands"
+      ],
+      "statement_md": "A monitor pings each service every few minutes and stores its `status`. Return one row for every **status change**: a ping whose status differs from the same service's previous ping (a service's first ping is not a change). Columns: `service`, `changed_at` (that ping's time), `from_status`, `to_status`, and `minutes_since_last_change`, the minutes since the same service's previous status change (NULL for a service's first change). Order by `service`, `changed_at`.",
+      "tables": [
+        {
+          "name": "service_pings",
+          "description_md": "One row per health check.",
+          "columns": [
+            {
+              "name": "ping_id",
+              "type": "INT"
+            },
+            {
+              "name": "service",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "checked_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "auth",
+              "2026-06-01 00:00:00",
+              "UP"
+            ],
+            [
+              2,
+              "auth",
+              "2026-06-01 00:05:00",
+              "UP"
+            ],
+            [
+              3,
+              "auth",
+              "2026-06-01 00:10:00",
+              "DOWN"
+            ],
+            [
+              4,
+              "auth",
+              "2026-06-01 00:15:00",
+              "DOWN"
+            ],
+            [
+              5,
+              "auth",
+              "2026-06-01 00:20:00",
+              "UP"
+            ],
+            [
+              6,
+              "auth",
+              "2026-06-01 00:25:00",
+              "DEGRADED"
+            ],
+            [
+              7,
+              "auth",
+              "2026-06-01 00:30:00",
+              "DEGRADED"
+            ],
+            [
+              8,
+              "search",
+              "2026-06-01 00:00:00",
+              "DEGRADED"
+            ],
+            [
+              9,
+              "search",
+              "2026-06-01 00:05:00",
+              "DEGRADED"
+            ],
+            [
+              10,
+              "search",
+              "2026-06-01 00:10:00",
+              "UP"
+            ],
+            [
+              11,
+              "search",
+              "2026-06-01 00:15:00",
+              "UP"
+            ],
+            [
+              12,
+              "search",
+              "2026-06-01 00:25:00",
+              "DOWN"
+            ],
+            [
+              13,
+              "billing",
+              "2026-06-01 00:00:00",
+              "UP"
+            ],
+            [
+              14,
+              "billing",
+              "2026-06-01 00:05:00",
+              "UP"
+            ],
+            [
+              15,
+              "billing",
+              "2026-06-01 00:10:00",
+              "UP"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "First find the changes using the previous ping; then work with only those rows.",
+        "Looking back one change needs a second window, running over the already filtered rows."
+      ],
+      "notes_md": "Pattern family: change detection with layered windows.\n\nApproach in words: layer 1 attaches the previous status to each ping and keeps rows where it exists and differs; layer 2 runs LAG again over those change rows to get the previous change time.\n\nSyntax reminders: `status <> LAG(status) OVER (PARTITION BY s ORDER BY t)`; `TIMESTAMPDIFF(MINUTE, earlier, later)`. Window results cannot be filtered in the same SELECT, so use a CTE per layer.\n\nTrap: a LAG of the time in the first layer measures the gap since the previous ping, not the previous change.",
+      "solutions": [
+        {
+          "label": "Two CTE layers",
+          "explain_md": "The first CTE flags changes; the second applies LAG on the filtered change rows only.",
+          "sql": "WITH p AS (\n  SELECT service, checked_at, status,\n         LAG(status) OVER (PARTITION BY service ORDER BY checked_at, ping_id) AS prev_status\n  FROM service_pings\n), ch AS (\n  SELECT service, checked_at, prev_status, status,\n         LAG(checked_at) OVER (PARTITION BY service ORDER BY checked_at) AS prev_change_at\n  FROM p\n  WHERE prev_status IS NOT NULL AND status <> prev_status\n)\nSELECT service, checked_at AS changed_at, prev_status AS from_status, status AS to_status,\n       TIMESTAMPDIFF(MINUTE, prev_change_at, checked_at) AS minutes_since_last_change\nFROM ch\nORDER BY service, changed_at;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Computing LAG(checked_at) over all pings gives the minutes since the previous ping, not the previous change.",
+          "sql": "WITH p AS (\n  SELECT service, checked_at, status,\n         LAG(status) OVER (PARTITION BY service ORDER BY checked_at, ping_id) AS prev_status,\n         LAG(checked_at) OVER (PARTITION BY service ORDER BY checked_at, ping_id) AS prev_at\n  FROM service_pings\n)\nSELECT service, checked_at AS changed_at, prev_status AS from_status, status AS to_status,\n       TIMESTAMPDIFF(MINUTE, prev_at, checked_at) AS minutes_since_last_change\nFROM p\nWHERE prev_status IS NOT NULL AND status <> prev_status\nORDER BY service, changed_at;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "service",
+          "changed_at",
+          "from_status",
+          "to_status",
+          "minutes_since_last_change"
+        ],
+        "rows": [
+          [
+            "auth",
+            "2026-06-01 00:10:00",
+            "UP",
+            "DOWN",
+            null
+          ],
+          [
+            "auth",
+            "2026-06-01 00:20:00",
+            "DOWN",
+            "UP",
+            "10"
+          ],
+          [
+            "auth",
+            "2026-06-01 00:25:00",
+            "UP",
+            "DEGRADED",
+            "5"
+          ],
+          [
+            "search",
+            "2026-06-01 00:10:00",
+            "DEGRADED",
+            "UP",
+            null
+          ],
+          [
+            "search",
+            "2026-06-01 00:25:00",
+            "UP",
+            "DOWN",
+            "15"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

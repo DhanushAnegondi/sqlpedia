@@ -1,0 +1,919 @@
+{
+  "id": "ntile-buckets",
+  "title": "NTILE and buckets",
+  "group": "Window functions",
+  "order": 8,
+  "summary_md": "Split rows into equal-count buckets with NTILE, equal-width buckets with FLOOR, percentile buckets with PERCENT_RANK/CUME_DIST, and named bands with CASE.",
+  "sections": [
+    {
+      "id": "ntile-basics",
+      "heading": "NTILE(n): split rows into n buckets",
+      "body_md": "- `NTILE(n)` sorts the rows (by the window `ORDER BY`) and deals them into `n` buckets numbered 1..n, as equal in size as possible.\n- Bucket sizes differ by at most 1. When rows do not divide evenly, the **first** buckets get the extra rows: 9 rows into 4 buckets = 3,2,2,2.\n- It works on row *position*, not value: equal values can land in different buckets. Add a tiebreaker so the split is stable.\n- With `PARTITION BY`, each partition is split on its own. If a partition has fewer rows than `n`, only buckets 1..rows are used.\n- `n` must be a positive integer constant.",
+      "syntax": {
+        "mysql": "NTILE(n) OVER ([PARTITION BY p] ORDER BY x [DESC], tiebreak)",
+        "tsql": "NTILE(n) OVER ([PARTITION BY p] ORDER BY x [DESC], tiebreak)"
+      },
+      "args": [
+        {
+          "name": "n",
+          "meaning": "Number of buckets to create (4 = quartiles, 10 = deciles, 100 = percentiles)."
+        },
+        {
+          "name": "PARTITION BY p",
+          "meaning": "Optional. Builds separate buckets inside each group."
+        },
+        {
+          "name": "ORDER BY x",
+          "meaning": "Required in practice. Bucket 1 holds the first rows in this order (DESC = biggest values in bucket 1)."
+        },
+        {
+          "name": "tiebreak",
+          "meaning": "Extra sort key so tied values are assigned to buckets deterministically."
+        }
+      ],
+      "examples": [
+        {
+          "id": "ntile4-salaries",
+          "title": "Quartiles of salary (9 earners into 4 buckets)",
+          "explain_md": "Nine non-NULL salaries into 4 buckets: sizes 3,2,2,2. Bucket 1 holds the highest earners because the order is DESC.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary,\n       NTILE(4) OVER (ORDER BY salary DESC, emp_id) AS quartile\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary DESC, emp_id;",
+          "tsql": "SELECT name, salary,\n       NTILE(4) OVER (ORDER BY salary DESC, emp_id) AS quartile\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary DESC, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "quartile"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000",
+                "1"
+              ],
+              [
+                "Ben",
+                "150000",
+                "1"
+              ],
+              [
+                "Cara",
+                "150000",
+                "1"
+              ],
+              [
+                "Dev",
+                "120000",
+                "2"
+              ],
+              [
+                "Fay",
+                "110000",
+                "2"
+              ],
+              [
+                "Eli",
+                "95000",
+                "3"
+              ],
+              [
+                "Ivy",
+                "90000",
+                "3"
+              ],
+              [
+                "Gus",
+                "80000",
+                "4"
+              ],
+              [
+                "Hal",
+                "80000",
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "bucket-sizes",
+          "title": "Count rows per bucket (uneven split)",
+          "explain_md": "14 orders into 4 buckets is 3 rows each plus 2 left over. The leftovers go to buckets 1 and 2, so the sizes are 4,4,3,3.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT bucket, COUNT(*) AS n_orders\nFROM (\n  SELECT NTILE(4) OVER (ORDER BY amount, order_id) AS bucket\n  FROM orders\n) t\nGROUP BY bucket\nORDER BY bucket;",
+          "tsql": "SELECT bucket, COUNT(*) AS n_orders\nFROM (\n  SELECT NTILE(4) OVER (ORDER BY amount, order_id) AS bucket\n  FROM orders\n) t\nGROUP BY bucket\nORDER BY bucket;",
+          "expected": {
+            "columns": [
+              "bucket",
+              "n_orders"
+            ],
+            "rows": [
+              [
+                "1",
+                "4"
+              ],
+              [
+                "2",
+                "4"
+              ],
+              [
+                "3",
+                "3"
+              ],
+              [
+                "4",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "ntile-ties-split",
+          "title": "Equal values can be split across buckets",
+          "explain_md": "9 rows into 5 buckets = 2,2,2,2,1. Ben and Cara earn the same 150000, but Ben is the 2nd row (bucket 1) and Cara the 3rd (bucket 2). NTILE does not keep ties together.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary,\n       NTILE(5) OVER (ORDER BY salary DESC, emp_id) AS bucket\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary DESC, emp_id;",
+          "tsql": "SELECT name, salary,\n       NTILE(5) OVER (ORDER BY salary DESC, emp_id) AS bucket\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary DESC, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "bucket"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000",
+                "1"
+              ],
+              [
+                "Ben",
+                "150000",
+                "1"
+              ],
+              [
+                "Cara",
+                "150000",
+                "2"
+              ],
+              [
+                "Dev",
+                "120000",
+                "2"
+              ],
+              [
+                "Fay",
+                "110000",
+                "3"
+              ],
+              [
+                "Eli",
+                "95000",
+                "3"
+              ],
+              [
+                "Ivy",
+                "90000",
+                "4"
+              ],
+              [
+                "Gus",
+                "80000",
+                "4"
+              ],
+              [
+                "Hal",
+                "80000",
+                "5"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "ntile-more-buckets-than-rows",
+          "title": "More buckets than rows",
+          "explain_md": "Asking for 20 buckets over 10 rows gives each row its own bucket, 1 to 10. Buckets 11-20 simply do not exist.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT MIN(bucket) AS first_bucket, MAX(bucket) AS last_bucket, COUNT(*) AS n_rows\nFROM (\n  SELECT NTILE(20) OVER (ORDER BY emp_id) AS bucket\n  FROM employees\n) t;",
+          "tsql": "SELECT MIN(bucket) AS first_bucket, MAX(bucket) AS last_bucket, COUNT(*) AS n_rows\nFROM (\n  SELECT NTILE(20) OVER (ORDER BY emp_id) AS bucket\n  FROM employees\n) t;",
+          "expected": {
+            "columns": [
+              "first_bucket",
+              "last_bucket",
+              "n_rows"
+            ],
+            "rows": [
+              [
+                "1",
+                "10",
+                "10"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Ties are not kept together: two people with identical pay can get different quartiles.",
+        "Without a full `ORDER BY` (value + id), which tied row gets which bucket is arbitrary and can change between runs.",
+        "NULLs sort first in ascending order and would fill bucket 1; filter them out or decide where they go."
+      ]
+    },
+    {
+      "id": "quartiles-deciles-top-pct",
+      "heading": "Quartiles, deciles and 'top 25%'",
+      "body_md": "- Quartiles = `NTILE(4)`, deciles = `NTILE(10)`, percentiles = `NTILE(100)`. Order DESC so bucket 1 is the top.\n- 'Top 25% of earners' via NTILE: filter `bucket = 1`. With uneven sizes bucket 1 may be more than 25% of rows (3 of 9 = 33%).\n- For an exact cutoff use `CUME_DIST() <= 0.25`: the fraction of rows at or above the current value. It keeps ties together, so the top group can be smaller than 25% or larger when ties straddle the line.\n- Bucket boundaries: group by the bucket and take `MIN`/`MAX` of the value.\n- Per-group quartiles: add `PARTITION BY dept`.",
+      "syntax": {
+        "mysql": "CUME_DIST() OVER (ORDER BY x DESC)  -- share of rows with value >= x",
+        "tsql": "CUME_DIST() OVER (ORDER BY x DESC)"
+      },
+      "args": [
+        {
+          "name": "ORDER BY x DESC",
+          "meaning": "Rank from the top; CUME_DIST then reads as 'share of rows at least this high'."
+        },
+        {
+          "name": "<= 0.25",
+          "meaning": "Keeps rows whose cumulative share is at most 25%."
+        }
+      ],
+      "examples": [
+        {
+          "id": "top-quartile-ntile",
+          "title": "Top 25% of earners with NTILE",
+          "explain_md": "Bucket 1 of 4 over 9 earners has 3 rows. That is the top third, not exactly the top quarter.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary\nFROM (\n  SELECT name, salary, emp_id,\n         NTILE(4) OVER (ORDER BY salary DESC, emp_id) AS quartile\n  FROM employees\n  WHERE salary IS NOT NULL\n) t\nWHERE quartile = 1\nORDER BY salary DESC, emp_id;",
+          "tsql": "SELECT name, salary\nFROM (\n  SELECT name, salary, emp_id,\n         NTILE(4) OVER (ORDER BY salary DESC, emp_id) AS quartile\n  FROM employees\n  WHERE salary IS NOT NULL\n) t\nWHERE quartile = 1\nORDER BY salary DESC, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000"
+              ],
+              [
+                "Ben",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "top-quartile-cume-dist",
+          "title": "Top 25% of earners with CUME_DIST",
+          "explain_md": "Ana is 1 of 9 rows (0.111). Ben and Cara tie, so both sit at 3/9 = 0.333, over the 0.25 cutoff. Only Ana qualifies. Ties are never split by CUME_DIST.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary, ROUND(cd, 3) AS cume_d\nFROM (\n  SELECT name, salary, emp_id,\n         CUME_DIST() OVER (ORDER BY salary DESC) AS cd\n  FROM employees\n  WHERE salary IS NOT NULL\n) t\nWHERE cd <= 0.25\nORDER BY salary DESC, emp_id;",
+          "tsql": "SELECT name, salary, ROUND(cd, 3) AS cume_d\nFROM (\n  SELECT name, salary, emp_id,\n         CUME_DIST() OVER (ORDER BY salary DESC) AS cd\n  FROM employees\n  WHERE salary IS NOT NULL\n) t\nWHERE cd <= 0.25\nORDER BY salary DESC, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "cume_d"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000",
+                "0.111"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "quartile-boundaries",
+          "title": "Value range of each order-amount quartile",
+          "explain_md": "Group by the bucket and read MIN/MAX. 120.00 shows up in both quartile 3 and quartile 4 because two equal orders were dealt into neighbouring buckets.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT quartile, MIN(amount) AS min_amount, MAX(amount) AS max_amount, COUNT(*) AS n_orders\nFROM (\n  SELECT amount, NTILE(4) OVER (ORDER BY amount, order_id) AS quartile\n  FROM orders\n) t\nGROUP BY quartile\nORDER BY quartile;",
+          "tsql": "SELECT quartile, MIN(amount) AS min_amount, MAX(amount) AS max_amount, COUNT(*) AS n_orders\nFROM (\n  SELECT amount, NTILE(4) OVER (ORDER BY amount, order_id) AS quartile\n  FROM orders\n) t\nGROUP BY quartile\nORDER BY quartile;",
+          "expected": {
+            "columns": [
+              "quartile",
+              "min_amount",
+              "max_amount",
+              "n_orders"
+            ],
+            "rows": [
+              [
+                "1",
+                "15.00",
+                "50.00",
+                "4"
+              ],
+              [
+                "2",
+                "60.00",
+                "80.00",
+                "4"
+              ],
+              [
+                "3",
+                "90.00",
+                "120.00",
+                "3"
+              ],
+              [
+                "4",
+                "120.00",
+                "300.00",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "top-earner-per-dept-half",
+          "title": "Upper half of each department (per-group NTILE)",
+          "explain_md": "NTILE(2) per department puts the upper half in bucket 1. Odd-sized groups give the extra row to bucket 1 (Engineering: 4 people = 2+2; Sales: 3 people = 2+1). Single-person departments land entirely in bucket 1.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept, name, salary\nFROM (\n  SELECT dept, name, salary, emp_id,\n         NTILE(2) OVER (PARTITION BY dept ORDER BY salary DESC, emp_id) AS half\n  FROM employees\n  WHERE salary IS NOT NULL\n) t\nWHERE half = 1\nORDER BY dept, salary DESC, emp_id;",
+          "tsql": "SELECT dept, name, salary\nFROM (\n  SELECT dept, name, salary, emp_id,\n         NTILE(2) OVER (PARTITION BY dept ORDER BY salary DESC, emp_id) AS half\n  FROM employees\n  WHERE salary IS NOT NULL\n) t\nWHERE half = 1\nORDER BY dept, salary DESC, emp_id;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "150000"
+              ],
+              [
+                "Engineering",
+                "Cara",
+                "150000"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "110000"
+              ],
+              [
+                "Sales",
+                "Gus",
+                "80000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "'Top 25%' with NTILE is only exact when the row count divides by 4; otherwise use `CUME_DIST`.",
+        "NTILE is by position; CUME_DIST and PERCENT_RANK are by value. Pick by whether ties should stay together."
+      ]
+    },
+    {
+      "id": "percent-rank-buckets",
+      "heading": "PERCENT_RANK and percentile buckets",
+      "body_md": "- `PERCENT_RANK() = (rank - 1) / (rows - 1)`: ranges from 0 (lowest) to 1 (highest). The first row is always 0, the last is always 1. Ties share a value.\n- `CUME_DIST() = rows with value <= current / total rows`: ranges from 1/rows to 1. Never 0.\n- Turn either into a bucket number by scaling: `CEILING(CUME_DIST() * 4)` gives 1..4 and keeps ties together, because equal values have the same CUME_DIST.\n- Avoid `FLOOR(PERCENT_RANK() * 4)`: the top row has PERCENT_RANK = 1, which becomes bucket 4 (a 5th bucket numbered 0..4). Use `CEILING(CUME_DIST() * k)` instead.\n- Both return floating point numbers. `ROUND(..., 3)` before showing them.",
+      "syntax": {
+        "mysql": "PERCENT_RANK() OVER (ORDER BY x)\nCUME_DIST()    OVER (ORDER BY x)",
+        "tsql": "PERCENT_RANK() OVER (ORDER BY x)\nCUME_DIST()    OVER (ORDER BY x)"
+      },
+      "args": [
+        {
+          "name": "ORDER BY x",
+          "meaning": "Ascending: the smallest value gets the lowest percentile. Use DESC to measure from the top."
+        },
+        {
+          "name": "PARTITION BY (optional)",
+          "meaning": "Percentile within each group instead of across the table."
+        }
+      ],
+      "examples": [
+        {
+          "id": "percent-rank-vs-cume-dist",
+          "title": "PERCENT_RANK and CUME_DIST side by side",
+          "explain_md": "Nine salaries, ascending. Gus and Hal tie at 80000 (rank 1, PERCENT_RANK 0, CUME_DIST 2/9 = 0.222). Ana is last: PERCENT_RANK 1, CUME_DIST 1.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary,\n       ROUND(PERCENT_RANK() OVER (ORDER BY salary), 3) AS pct_rank,\n       ROUND(CUME_DIST()    OVER (ORDER BY salary), 3) AS cume_d\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary, emp_id;",
+          "tsql": "SELECT name, salary,\n       ROUND(PERCENT_RANK() OVER (ORDER BY salary), 3) AS pct_rank,\n       ROUND(CUME_DIST()    OVER (ORDER BY salary), 3) AS cume_d\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "pct_rank",
+              "cume_d"
+            ],
+            "rows": [
+              [
+                "Gus",
+                "80000",
+                "0",
+                "0.222"
+              ],
+              [
+                "Hal",
+                "80000",
+                "0",
+                "0.222"
+              ],
+              [
+                "Ivy",
+                "90000",
+                "0.25",
+                "0.333"
+              ],
+              [
+                "Eli",
+                "95000",
+                "0.375",
+                "0.444"
+              ],
+              [
+                "Fay",
+                "110000",
+                "0.5",
+                "0.556"
+              ],
+              [
+                "Dev",
+                "120000",
+                "0.625",
+                "0.667"
+              ],
+              [
+                "Ben",
+                "150000",
+                "0.75",
+                "0.889"
+              ],
+              [
+                "Cara",
+                "150000",
+                "0.75",
+                "0.889"
+              ],
+              [
+                "Ana",
+                "250000",
+                "1",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cume-dist-quartile-bucket",
+          "title": "Percentile bucket that keeps ties together",
+          "explain_md": "`CEILING(CUME_DIST() * 4)` maps each salary to 1..4. Gus and Hal (same pay) always share a bucket, which NTILE could not guarantee.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary,\n       CEILING(CUME_DIST() OVER (ORDER BY salary) * 4) AS quartile\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary, emp_id;",
+          "tsql": "SELECT name, salary,\n       CEILING(CUME_DIST() OVER (ORDER BY salary) * 4) AS quartile\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "quartile"
+            ],
+            "rows": [
+              [
+                "Gus",
+                "80000",
+                "1"
+              ],
+              [
+                "Hal",
+                "80000",
+                "1"
+              ],
+              [
+                "Ivy",
+                "90000",
+                "2"
+              ],
+              [
+                "Eli",
+                "95000",
+                "2"
+              ],
+              [
+                "Fay",
+                "110000",
+                "3"
+              ],
+              [
+                "Dev",
+                "120000",
+                "3"
+              ],
+              [
+                "Ben",
+                "150000",
+                "4"
+              ],
+              [
+                "Cara",
+                "150000",
+                "4"
+              ],
+              [
+                "Ana",
+                "250000",
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "percent-rank-per-dept",
+          "title": "Percentile inside each department",
+          "explain_md": "PARTITION BY restarts the percentile. A department of one person has PERCENT_RANK 0 (there is no spread to measure).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept, name, salary,\n       ROUND(PERCENT_RANK() OVER (PARTITION BY dept ORDER BY salary), 3) AS pct_rank\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY dept, salary, emp_id;",
+          "tsql": "SELECT dept, name, salary,\n       ROUND(PERCENT_RANK() OVER (PARTITION BY dept ORDER BY salary), 3) AS pct_rank\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY dept, salary, emp_id;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary",
+              "pct_rank"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Eli",
+                "95000",
+                "0"
+              ],
+              [
+                "Engineering",
+                "Dev",
+                "120000",
+                "0.333"
+              ],
+              [
+                "Engineering",
+                "Ben",
+                "150000",
+                "0.667"
+              ],
+              [
+                "Engineering",
+                "Cara",
+                "150000",
+                "0.667"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000",
+                "0"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000",
+                "0"
+              ],
+              [
+                "Sales",
+                "Gus",
+                "80000",
+                "0"
+              ],
+              [
+                "Sales",
+                "Hal",
+                "80000",
+                "0"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "110000",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`FLOOR(PERCENT_RANK() * k)` yields k+1 buckets because the maximum row is exactly 1.0.",
+        "PERCENT_RANK with a single row in the partition returns 0, never divides by zero.",
+        "Floating point: comparing `CUME_DIST() = 0.25` can miss. Compare with `<=` or `>=`."
+      ]
+    },
+    {
+      "id": "histogram-buckets",
+      "heading": "Fixed-width histogram buckets",
+      "body_md": "- Equal-width buckets (unlike NTILE, which makes equal-count buckets): `FLOOR(x / width) * width` gives the bucket's lower bound.\n- `GROUP BY` that expression and `COUNT(*)` to get a histogram. Order by the bucket start.\n- MySQL `/` is true division, so `FLOOR(x / width)` works. SQL Server `/` on two integers truncates; divide by `width * 1.0` (or `CAST`) so negative values also floor correctly.\n- Only buckets that contain rows appear. To show empty buckets, left join the counts onto a generated list of bucket starts.",
+      "syntax": {
+        "mysql": "FLOOR(x / width) * width AS bucket_start",
+        "tsql": "FLOOR(x / (width * 1.0)) * width AS bucket_start"
+      },
+      "args": [
+        {
+          "name": "x",
+          "meaning": "The numeric column being bucketed."
+        },
+        {
+          "name": "width",
+          "meaning": "Size of each bucket, e.g. 50000 for salary bands."
+        },
+        {
+          "name": "FLOOR(x / width)",
+          "meaning": "Which bucket number the value falls in (0 = [0, width))."
+        },
+        {
+          "name": "* width",
+          "meaning": "Converts the bucket number back to the bucket's lower bound."
+        }
+      ],
+      "examples": [
+        {
+          "id": "salary-histogram",
+          "title": "Salary histogram in 50000 bands",
+          "explain_md": "Bucket 50000 means 50000-99999, bucket 100000 means 100000-149999, and so on. The NULL salary is excluded.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT FLOOR(salary / 50000) * 50000 AS bucket_start, COUNT(*) AS n_people\nFROM employees\nWHERE salary IS NOT NULL\nGROUP BY FLOOR(salary / 50000) * 50000\nORDER BY bucket_start;",
+          "tsql": "SELECT FLOOR(salary / 50000.0) * 50000 AS bucket_start, COUNT(*) AS n_people\nFROM employees\nWHERE salary IS NOT NULL\nGROUP BY FLOOR(salary / 50000.0) * 50000\nORDER BY bucket_start;",
+          "dialect_note_md": "SQL Server: `salary / 50000` with an INT column is integer division, which already truncates to the same bucket for positive values; the `.0` makes it correct for negatives too. Results are numerically equal; only the displayed scale can differ.",
+          "expected": {
+            "columns": [
+              "bucket_start",
+              "n_people"
+            ],
+            "rows": [
+              [
+                "50000",
+                "4"
+              ],
+              [
+                "100000",
+                "2"
+              ],
+              [
+                "150000",
+                "2"
+              ],
+              [
+                "250000",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "order-amount-histogram",
+          "title": "Order amounts in bands of 50, completed orders",
+          "explain_md": "Each bucket start is the multiple of 50 at or below the amount, so 45.50 falls in 0, 50.00 falls in 50, and 300.00 falls in 300.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT FLOOR(amount / 50) * 50 AS bucket_start, COUNT(*) AS n_orders, SUM(amount) AS total\nFROM orders\nWHERE status = 'completed'\nGROUP BY FLOOR(amount / 50) * 50\nORDER BY bucket_start;",
+          "tsql": "SELECT FLOOR(amount / 50.0) * 50 AS bucket_start, COUNT(*) AS n_orders, SUM(amount) AS total\nFROM orders\nWHERE status = 'completed'\nGROUP BY FLOOR(amount / 50.0) * 50\nORDER BY bucket_start;",
+          "expected": {
+            "columns": [
+              "bucket_start",
+              "n_orders",
+              "total"
+            ],
+            "rows": [
+              [
+                "0",
+                "3",
+                "90.50"
+              ],
+              [
+                "50",
+                "3",
+                "175.00"
+              ],
+              [
+                "100",
+                "3",
+                "350.00"
+              ],
+              [
+                "200",
+                "1",
+                "200.00"
+              ],
+              [
+                "300",
+                "1",
+                "300.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "histogram-share",
+          "title": "Histogram with percent of total",
+          "explain_md": "Wrap the grouped counts and divide by the total with a window `SUM`. Counts are integers, so multiply by 100.0 to avoid integer division in SQL Server.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT bucket_start, n_people,\n       ROUND(100.0 * n_people / SUM(n_people) OVER (), 1) AS pct\nFROM (\n  SELECT FLOOR(salary / 50000) * 50000 AS bucket_start, COUNT(*) AS n_people\n  FROM employees\n  WHERE salary IS NOT NULL\n  GROUP BY FLOOR(salary / 50000) * 50000\n) t\nORDER BY bucket_start;",
+          "tsql": "SELECT bucket_start, n_people,\n       ROUND(100.0 * n_people / SUM(n_people) OVER (), 1) AS pct\nFROM (\n  SELECT FLOOR(salary / 50000.0) * 50000 AS bucket_start, COUNT(*) AS n_people\n  FROM employees\n  WHERE salary IS NOT NULL\n  GROUP BY FLOOR(salary / 50000.0) * 50000\n) t\nORDER BY bucket_start;",
+          "expected": {
+            "columns": [
+              "bucket_start",
+              "n_people",
+              "pct"
+            ],
+            "rows": [
+              [
+                "50000",
+                "4",
+                "44.4"
+              ],
+              [
+                "100000",
+                "2",
+                "22.2"
+              ],
+              [
+                "150000",
+                "2",
+                "22.2"
+              ],
+              [
+                "250000",
+                "1",
+                "11.1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Empty buckets do not appear in `GROUP BY` output; a gap in the histogram is a missing row, not a zero.",
+        "Bucket edges are inclusive at the bottom, exclusive at the top: a value of exactly 50000 is in the 50000 bucket.",
+        "To bucket by a non-zero origin, shift first: `FLOOR((x - origin) / width) * width + origin`."
+      ]
+    },
+    {
+      "id": "case-buckets",
+      "heading": "CASE-based custom buckets",
+      "body_md": "- When band edges are irregular or need names, use a searched `CASE`. Branches are tested top to bottom and the first match wins, so write them from smallest to largest threshold.\n- Handle NULL explicitly (`WHEN x IS NULL THEN 'unknown'`) or it falls through to `ELSE`.\n- Group by the same `CASE` expression, or compute it in a CTE and group by the alias (MySQL also allows the alias in `GROUP BY`; SQL Server does not).\n- Add a numeric sort key so bands print in a sensible order, not alphabetically ('high' < 'low' < 'mid').",
+      "syntax": {
+        "mysql": "CASE\n  WHEN x IS NULL THEN 'unknown'\n  WHEN x < t1 THEN 'low'\n  WHEN x < t2 THEN 'mid'\n  ELSE 'high'\nEND AS band",
+        "tsql": "-- same; GROUP BY must repeat the CASE (or use a CTE / derived table)"
+      },
+      "args": [
+        {
+          "name": "WHEN x IS NULL",
+          "meaning": "Catches missing values first; otherwise comparisons with NULL are never true and NULL lands in ELSE."
+        },
+        {
+          "name": "WHEN x < t1",
+          "meaning": "Upper-exclusive threshold. Order the branches ascending."
+        },
+        {
+          "name": "ELSE",
+          "meaning": "Everything not matched above: the top band (and NULL, if not handled)."
+        }
+      ],
+      "examples": [
+        {
+          "id": "salary-bands",
+          "title": "Salary bands with a deliberate sort order",
+          "explain_md": "A CTE assigns the band and a sort key once. Jon's NULL becomes 'unknown' instead of silently landing in the top band.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH banded AS (\n  SELECT name,\n         CASE WHEN salary IS NULL THEN 'unknown'\n              WHEN salary < 100000 THEN 'low'\n              WHEN salary < 150000 THEN 'mid'\n              ELSE 'high' END AS band,\n         CASE WHEN salary IS NULL THEN 4\n              WHEN salary < 100000 THEN 1\n              WHEN salary < 150000 THEN 2\n              ELSE 3 END AS band_order\n  FROM employees\n)\nSELECT band, COUNT(*) AS n_people\nFROM banded\nGROUP BY band, band_order\nORDER BY band_order;",
+          "tsql": "WITH banded AS (\n  SELECT name,\n         CASE WHEN salary IS NULL THEN 'unknown'\n              WHEN salary < 100000 THEN 'low'\n              WHEN salary < 150000 THEN 'mid'\n              ELSE 'high' END AS band,\n         CASE WHEN salary IS NULL THEN 4\n              WHEN salary < 100000 THEN 1\n              WHEN salary < 150000 THEN 2\n              ELSE 3 END AS band_order\n  FROM employees\n)\nSELECT band, COUNT(*) AS n_people\nFROM banded\nGROUP BY band, band_order\nORDER BY band_order;",
+          "expected": {
+            "columns": [
+              "band",
+              "n_people"
+            ],
+            "rows": [
+              [
+                "low",
+                "4"
+              ],
+              [
+                "mid",
+                "2"
+              ],
+              [
+                "high",
+                "3"
+              ],
+              [
+                "unknown",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "order-size-tiers",
+          "title": "Order size tiers with revenue per tier",
+          "explain_md": "Small < 50, medium < 150, large otherwise. 50.00 exactly is 'medium' because the test is `< 50`.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH t AS (\n  SELECT amount,\n         CASE WHEN amount < 50 THEN 'small'\n              WHEN amount < 150 THEN 'medium'\n              ELSE 'large' END AS tier,\n         CASE WHEN amount < 50 THEN 1\n              WHEN amount < 150 THEN 2\n              ELSE 3 END AS tier_order\n  FROM orders\n  WHERE status = 'completed'\n)\nSELECT tier, COUNT(*) AS n_orders, SUM(amount) AS revenue\nFROM t\nGROUP BY tier, tier_order\nORDER BY tier_order;",
+          "tsql": "WITH t AS (\n  SELECT amount,\n         CASE WHEN amount < 50 THEN 'small'\n              WHEN amount < 150 THEN 'medium'\n              ELSE 'large' END AS tier,\n         CASE WHEN amount < 50 THEN 1\n              WHEN amount < 150 THEN 2\n              ELSE 3 END AS tier_order\n  FROM orders\n  WHERE status = 'completed'\n)\nSELECT tier, COUNT(*) AS n_orders, SUM(amount) AS revenue\nFROM t\nGROUP BY tier, tier_order\nORDER BY tier_order;",
+          "expected": {
+            "columns": [
+              "tier",
+              "n_orders",
+              "revenue"
+            ],
+            "rows": [
+              [
+                "small",
+                "3",
+                "90.50"
+              ],
+              [
+                "medium",
+                "6",
+                "525.00"
+              ],
+              [
+                "large",
+                "2",
+                "500.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "null-falls-through",
+          "title": "What happens if NULL is not handled",
+          "explain_md": "Without an `IS NULL` branch, `salary < 100000` is unknown for Jon, so he falls through to ELSE and is counted as 'high'. Compare the 'high' count with the previous example.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT CASE WHEN salary < 100000 THEN 'low'\n            WHEN salary < 150000 THEN 'mid'\n            ELSE 'high' END AS band,\n       COUNT(*) AS n_people\nFROM employees\nGROUP BY CASE WHEN salary < 100000 THEN 'low'\n              WHEN salary < 150000 THEN 'mid'\n              ELSE 'high' END\nORDER BY n_people DESC, band;",
+          "tsql": "SELECT CASE WHEN salary < 100000 THEN 'low'\n            WHEN salary < 150000 THEN 'mid'\n            ELSE 'high' END AS band,\n       COUNT(*) AS n_people\nFROM employees\nGROUP BY CASE WHEN salary < 100000 THEN 'low'\n              WHEN salary < 150000 THEN 'mid'\n              ELSE 'high' END\nORDER BY n_people DESC, band;",
+          "expected": {
+            "columns": [
+              "band",
+              "n_people"
+            ],
+            "rows": [
+              [
+                "high",
+                "4"
+              ],
+              [
+                "low",
+                "4"
+              ],
+              [
+                "mid",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Overlapping conditions are not an error: the first true branch silently wins. Test edges (`<` vs `<=`).",
+        "`GROUP BY band` using the select alias works in MySQL but fails in SQL Server; repeat the expression or use a CTE.",
+        "Sorting by the band name sorts alphabetically. Carry a numeric order column or sort by `MIN(value)`."
+      ]
+    }
+  ]
+}

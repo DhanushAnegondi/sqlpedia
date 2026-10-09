@@ -1,0 +1,2711 @@
+{
+  "id": "data-engineering-sql",
+  "title": "Data-engineering SQL",
+  "group": "Patterns",
+  "order": 6,
+  "summary_md": "The SQL a data engineer is asked about: reconciling source to target, data-quality checks, point-in-time (SCD2) lookups, latest state from history, incremental loads with a watermark, and upserts that are safe to rerun.",
+  "sections": [
+    {
+      "id": "recon-rows",
+      "heading": "Source-to-target reconciliation: counts, missing, extra",
+      "body_md": "**Cue:** \"compare the source and target tables\", \"find rows that didn't load\", \"validate a migration\".\n\n**Order of checks (cheap to expensive):**\n- Row counts and column totals (`COUNT(*)`, `SUM`, `COUNT(col)`, `MIN`/`MAX`).\n- Missing keys: source LEFT JOIN target, `target.key IS NULL`.\n- Extra keys: target LEFT JOIN source, `source.key IS NULL`.\n- Value mismatches on keys present in both (next section).\n\n**Duplicates first:** if the key is not unique on either side, joins fan out and every number above lies. Check key uniqueness before comparing.",
+      "examples": [
+        {
+          "id": "count-checksum",
+          "title": "First pass: row counts and column totals",
+          "explain_md": "Cheap smoke test. Both sides have 5 rows, so a count alone passes while the data differs: totals (250.00 vs 245.00) and non-null emails (3 vs 4) expose it. `COUNT(col)` skips NULLs, `COUNT(*)` does not.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "src_customers",
+              "description_md": "Source system extract. Customer 3 and 6 have NULL email.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  50.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  4,
+                  "Di",
+                  "d@x.com",
+                  20.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  null,
+                  5.0
+                ]
+              ]
+            },
+            {
+              "name": "tgt_customers",
+              "description_md": "Warehouse copy. Missing id 4; has extra id 5; id 2 has a different balance; id 6 has an email where the source has NULL.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  55.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  5,
+                  "Ed",
+                  "e@x.com",
+                  10.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  "f@x.com",
+                  5.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT 'source' AS side, COUNT(*) AS row_count, SUM(balance) AS total_balance, COUNT(email) AS non_null_emails\nFROM src_customers\nUNION ALL\nSELECT 'target', COUNT(*), SUM(balance), COUNT(email)\nFROM tgt_customers\nORDER BY side;",
+          "tsql": "SELECT 'source' AS side, COUNT(*) AS row_count, SUM(balance) AS total_balance, COUNT(email) AS non_null_emails\nFROM src_customers\nUNION ALL\nSELECT 'target', COUNT(*), SUM(balance), COUNT(email)\nFROM tgt_customers\nORDER BY side;",
+          "expected": {
+            "columns": [
+              "side",
+              "row_count",
+              "total_balance",
+              "non_null_emails"
+            ],
+            "rows": [
+              [
+                "source",
+                "5",
+                "250.00",
+                "3"
+              ],
+              [
+                "target",
+                "5",
+                "245.00",
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "missing-in-target",
+          "title": "Missing in target: anti-join from the source side",
+          "explain_md": "LEFT JOIN source to target and keep rows where the target key is NULL. Test the **key** column for NULL, not a nullable data column like `email` (that would also fire for matched rows with a NULL email).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "src_customers",
+              "description_md": "Source system extract. Customer 3 and 6 have NULL email.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  50.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  4,
+                  "Di",
+                  "d@x.com",
+                  20.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  null,
+                  5.0
+                ]
+              ]
+            },
+            {
+              "name": "tgt_customers",
+              "description_md": "Warehouse copy. Missing id 4; has extra id 5; id 2 has a different balance; id 6 has an email where the source has NULL.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  55.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  5,
+                  "Ed",
+                  "e@x.com",
+                  10.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  "f@x.com",
+                  5.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT s.id, s.name\nFROM src_customers s\nLEFT JOIN tgt_customers t ON t.id = s.id\nWHERE t.id IS NULL\nORDER BY s.id;",
+          "tsql": "SELECT s.id, s.name\nFROM src_customers s\nLEFT JOIN tgt_customers t ON t.id = s.id\nWHERE t.id IS NULL\nORDER BY s.id;",
+          "expected": {
+            "columns": [
+              "id",
+              "name"
+            ],
+            "rows": [
+              [
+                "4",
+                "Di"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "extra-in-target",
+          "title": "Extra in target: the same anti-join, sides swapped",
+          "explain_md": "Rows that exist only in the target: stale deletes, test data, or a bad join upstream.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "src_customers",
+              "description_md": "Source system extract. Customer 3 and 6 have NULL email.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  50.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  4,
+                  "Di",
+                  "d@x.com",
+                  20.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  null,
+                  5.0
+                ]
+              ]
+            },
+            {
+              "name": "tgt_customers",
+              "description_md": "Warehouse copy. Missing id 4; has extra id 5; id 2 has a different balance; id 6 has an email where the source has NULL.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  55.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  5,
+                  "Ed",
+                  "e@x.com",
+                  10.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  "f@x.com",
+                  5.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT t.id, t.name\nFROM tgt_customers t\nLEFT JOIN src_customers s ON s.id = t.id\nWHERE s.id IS NULL\nORDER BY t.id;",
+          "tsql": "SELECT t.id, t.name\nFROM tgt_customers t\nLEFT JOIN src_customers s ON s.id = t.id\nWHERE s.id IS NULL\nORDER BY t.id;",
+          "expected": {
+            "columns": [
+              "id",
+              "name"
+            ],
+            "rows": [
+              [
+                "5",
+                "Ed"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Equal counts do not prove equal data; missing and extra rows can cancel out.",
+        "Anti-join the key column. NULL-testing a data column gives false positives.",
+        "`NOT IN (subquery)` returns nothing if the subquery contains a NULL; prefer LEFT JOIN ... IS NULL or `NOT EXISTS`."
+      ]
+    },
+    {
+      "id": "recon-values",
+      "heading": "Value mismatches and the one-pass reconciliation",
+      "body_md": "**Cue:** \"find rows whose values differ\", \"which columns changed\", \"full diff of two tables\".\n\n**Shape:**\n- INNER JOIN on the key, keep rows where any compared column is **null-safe unequal**.\n- For one status per key, FULL OUTER JOIN (SQL Server) or LEFT JOIN + `UNION ALL` anti-join (MySQL).\n- To find *which* column differs, emit one `CASE WHEN NOT null_safe_equal THEN 1 ELSE 0 END` flag per column.",
+      "syntax": {
+        "mysql": "NOT (a <=> b)            -- null-safe 'not equal'\nLEFT JOIN ... UNION ALL <target-only anti-join>",
+        "tsql": "a <> b OR (a IS NULL AND b IS NOT NULL) OR (a IS NOT NULL AND b IS NULL)\nFULL OUTER JOIN"
+      },
+      "args": [
+        {
+          "name": "a, b",
+          "meaning": "The two values to compare (e.g. source column and target column)."
+        },
+        {
+          "name": "<=>",
+          "meaning": "MySQL null-safe equal: true when both are NULL, false when exactly one is NULL, otherwise ordinary `=`."
+        },
+        {
+          "name": "UNION ALL",
+          "meaning": "Appends the target-only rows; the halves are disjoint so no dedupe is needed."
+        }
+      ],
+      "examples": [
+        {
+          "id": "naive-compare-trap",
+          "title": "Trap: `<>` is blind to NULL",
+          "explain_md": "Only id 2 is reported. Id 6 (source NULL vs target 'f@x.com') is a real mismatch but `NULL <> 'f@x.com'` is NULL, not true, so the row is filtered out.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "src_customers",
+              "description_md": "Source system extract. Customer 3 and 6 have NULL email.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  50.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  4,
+                  "Di",
+                  "d@x.com",
+                  20.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  null,
+                  5.0
+                ]
+              ]
+            },
+            {
+              "name": "tgt_customers",
+              "description_md": "Warehouse copy. Missing id 4; has extra id 5; id 2 has a different balance; id 6 has an email where the source has NULL.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  55.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  5,
+                  "Ed",
+                  "e@x.com",
+                  10.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  "f@x.com",
+                  5.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT s.id, s.email AS src_email, t.email AS tgt_email, s.balance AS src_balance, t.balance AS tgt_balance\nFROM src_customers s\nJOIN tgt_customers t ON t.id = s.id\nWHERE s.email <> t.email OR s.balance <> t.balance\nORDER BY s.id;",
+          "tsql": "SELECT s.id, s.email AS src_email, t.email AS tgt_email, s.balance AS src_balance, t.balance AS tgt_balance\nFROM src_customers s\nJOIN tgt_customers t ON t.id = s.id\nWHERE s.email <> t.email OR s.balance <> t.balance\nORDER BY s.id;",
+          "expected": {
+            "columns": [
+              "id",
+              "src_email",
+              "tgt_email",
+              "src_balance",
+              "tgt_balance"
+            ],
+            "rows": [
+              [
+                "2",
+                "b@x.com",
+                "b@x.com",
+                "50.00",
+                "55.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "null-safe-compare",
+          "title": "Null-safe compare finds ids 2 and 6",
+          "explain_md": "Id 3 (NULL vs NULL) is correctly treated as equal. MySQL has the null-safe equality operator `<=>`; SQL Server needs the explicit three-way expansion (or `EXISTS (SELECT s.col1, s.col2 EXCEPT SELECT t.col1, t.col2)`, since set operators treat NULLs as equal).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "src_customers",
+              "description_md": "Source system extract. Customer 3 and 6 have NULL email.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  50.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  4,
+                  "Di",
+                  "d@x.com",
+                  20.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  null,
+                  5.0
+                ]
+              ]
+            },
+            {
+              "name": "tgt_customers",
+              "description_md": "Warehouse copy. Missing id 4; has extra id 5; id 2 has a different balance; id 6 has an email where the source has NULL.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  55.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  5,
+                  "Ed",
+                  "e@x.com",
+                  10.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  "f@x.com",
+                  5.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT s.id, s.email AS src_email, t.email AS tgt_email, s.balance AS src_balance, t.balance AS tgt_balance\nFROM src_customers s\nJOIN tgt_customers t ON t.id = s.id\nWHERE NOT (s.email <=> t.email) OR NOT (s.balance <=> t.balance)\nORDER BY s.id;",
+          "tsql": "SELECT s.id, s.email AS src_email, t.email AS tgt_email, s.balance AS src_balance, t.balance AS tgt_balance\nFROM src_customers s\nJOIN tgt_customers t ON t.id = s.id\nWHERE s.email <> t.email OR (s.email IS NULL AND t.email IS NOT NULL) OR (s.email IS NOT NULL AND t.email IS NULL)\n   OR s.balance <> t.balance OR (s.balance IS NULL AND t.balance IS NOT NULL) OR (s.balance IS NOT NULL AND t.balance IS NULL)\nORDER BY s.id;",
+          "dialect_note_md": "SQL Server has no `<=>`. Spell out `a <> b OR (a IS NULL AND b IS NOT NULL) OR (a IS NOT NULL AND b IS NULL)`, or use the `EXISTS (SELECT a EXCEPT SELECT b)` trick. `IS DISTINCT FROM` exists in SQL Server 2022+ only.",
+          "expected": {
+            "columns": [
+              "id",
+              "src_email",
+              "tgt_email",
+              "src_balance",
+              "tgt_balance"
+            ],
+            "rows": [
+              [
+                "2",
+                "b@x.com",
+                "b@x.com",
+                "50.00",
+                "55.00"
+              ],
+              [
+                "6",
+                null,
+                "f@x.com",
+                "5.00",
+                "5.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "full-recon",
+          "title": "One pass: status for every key",
+          "explain_md": "SQL Server does it with one `FULL OUTER JOIN`. MySQL has no FULL JOIN: take the LEFT JOIN half, then `UNION ALL` the target-only rows (an anti-join). Use `UNION ALL`, not `UNION`, so the two halves never need de-duplicating (they are disjoint by construction).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "src_customers",
+              "description_md": "Source system extract. Customer 3 and 6 have NULL email.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  50.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  4,
+                  "Di",
+                  "d@x.com",
+                  20.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  null,
+                  5.0
+                ]
+              ]
+            },
+            {
+              "name": "tgt_customers",
+              "description_md": "Warehouse copy. Missing id 4; has extra id 5; id 2 has a different balance; id 6 has an email where the source has NULL.",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "email",
+                  "type": "VARCHAR(30)"
+                },
+                {
+                  "name": "balance",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana",
+                  "a@x.com",
+                  100.0
+                ],
+                [
+                  2,
+                  "Bo",
+                  "b@x.com",
+                  55.0
+                ],
+                [
+                  3,
+                  "Cy",
+                  null,
+                  75.0
+                ],
+                [
+                  5,
+                  "Ed",
+                  "e@x.com",
+                  10.0
+                ],
+                [
+                  6,
+                  "Flo",
+                  "f@x.com",
+                  5.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT id, status\nFROM (\n  SELECT s.id,\n         CASE WHEN t.id IS NULL THEN 'missing_in_target'\n              WHEN NOT (s.email <=> t.email) OR NOT (s.balance <=> t.balance) THEN 'mismatch'\n              ELSE 'match' END AS status\n  FROM src_customers s\n  LEFT JOIN tgt_customers t ON t.id = s.id\n  UNION ALL\n  SELECT t.id, 'extra_in_target'\n  FROM tgt_customers t\n  LEFT JOIN src_customers s ON s.id = t.id\n  WHERE s.id IS NULL\n) x\nORDER BY id;",
+          "tsql": "SELECT COALESCE(s.id, t.id) AS id,\n       CASE WHEN t.id IS NULL THEN 'missing_in_target'\n            WHEN s.id IS NULL THEN 'extra_in_target'\n            WHEN s.email <> t.email OR (s.email IS NULL AND t.email IS NOT NULL) OR (s.email IS NOT NULL AND t.email IS NULL)\n              OR s.balance <> t.balance OR (s.balance IS NULL AND t.balance IS NOT NULL) OR (s.balance IS NOT NULL AND t.balance IS NULL)\n              THEN 'mismatch'\n            ELSE 'match' END AS status\nFROM src_customers s\nFULL OUTER JOIN tgt_customers t ON t.id = s.id\nORDER BY id;",
+          "dialect_note_md": "MySQL does not support FULL OUTER JOIN. The portable emulation is `LEFT JOIN ... UNION ALL (right-only rows via anti-join)`. The older `LEFT JOIN UNION RIGHT JOIN` form also works but needs UNION (dedupe).",
+          "expected": {
+            "columns": [
+              "id",
+              "status"
+            ],
+            "rows": [
+              [
+                "1",
+                "match"
+              ],
+              [
+                "2",
+                "mismatch"
+              ],
+              [
+                "3",
+                "match"
+              ],
+              [
+                "4",
+                "missing_in_target"
+              ],
+              [
+                "5",
+                "extra_in_target"
+              ],
+              [
+                "6",
+                "mismatch"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Compare after normalising: trailing spaces, case, timestamp precision, DECIMAL scale.",
+        "Floating-point columns: compare with a tolerance (`ABS(a - b) > 0.0001`), not equality.",
+        "Joining on a non-unique key multiplies mismatches; dedupe or include more key columns."
+      ]
+    },
+    {
+      "id": "data-quality",
+      "heading": "Data-quality checks",
+      "body_md": "**Cue:** \"validate the table\", \"write checks for\", \"find bad records\", \"what could be wrong with this data\".\n\n**Checklist to say out loud:**\n- **Referential integrity:** child LEFT JOIN parent, parent key IS NULL, child key IS NOT NULL.\n- **NULLs:** per-column NULL counts for columns that must be populated.\n- **Uniqueness:** `GROUP BY key HAVING COUNT(*) > 1` (or the window count to see rows).\n- **Ranges:** overlap = `a.from < b.to AND b.from < a.to`. Gap = `LEAD(valid_from) > valid_to` per entity. Exactly one open-ended (`9999-12-31`) row per entity.\n- **Domains and freshness:** values in the allowed set, `MAX(loaded_at)` recent, row counts within expected bounds.",
+      "examples": [
+        {
+          "id": "orphan-foreign-keys",
+          "title": "Orphan foreign keys",
+          "explain_md": "Order 3 references customer 9, which does not exist. Order 4 has a NULL customer_id: that is a missing value, not an orphan, so it is excluded here and caught by the NULL profile instead.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "dq_customers",
+              "description_md": "Customer dimension.",
+              "columns": [
+                {
+                  "name": "customer_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ana"
+                ],
+                [
+                  2,
+                  "Bo"
+                ],
+                [
+                  3,
+                  "Cy"
+                ]
+              ]
+            },
+            {
+              "name": "dq_orders",
+              "description_md": "Orders with planted problems: order 3 points to missing customer 9; order 4 has a NULL customer_id; order 5 appears twice (one copy has a NULL status); order 6 has a NULL amount.",
+              "columns": [
+                {
+                  "name": "order_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "customer_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "status",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "amount",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "paid",
+                  10.0
+                ],
+                [
+                  2,
+                  2,
+                  "paid",
+                  20.0
+                ],
+                [
+                  3,
+                  9,
+                  "paid",
+                  30.0
+                ],
+                [
+                  4,
+                  null,
+                  "paid",
+                  15.0
+                ],
+                [
+                  5,
+                  3,
+                  null,
+                  5.0
+                ],
+                [
+                  5,
+                  3,
+                  "paid",
+                  5.0
+                ],
+                [
+                  6,
+                  2,
+                  "paid",
+                  null
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT o.order_id, o.customer_id AS dangling_customer_id\nFROM dq_orders o\nLEFT JOIN dq_customers c ON c.customer_id = o.customer_id\nWHERE c.customer_id IS NULL\n  AND o.customer_id IS NOT NULL\nORDER BY o.order_id;",
+          "tsql": "SELECT o.order_id, o.customer_id AS dangling_customer_id\nFROM dq_orders o\nLEFT JOIN dq_customers c ON c.customer_id = o.customer_id\nWHERE c.customer_id IS NULL\n  AND o.customer_id IS NOT NULL\nORDER BY o.order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "dangling_customer_id"
+            ],
+            "rows": [
+              [
+                "3",
+                "9"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "null-profile",
+          "title": "NULL profile of the columns that must not be NULL",
+          "explain_md": "One scan counts NULLs per column. Equivalent shortcut: `COUNT(*) - COUNT(col)`. Turn each count into an assertion (`= 0`) in a pipeline.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "dq_orders",
+              "description_md": "Orders with planted problems: order 3 points to missing customer 9; order 4 has a NULL customer_id; order 5 appears twice (one copy has a NULL status); order 6 has a NULL amount.",
+              "columns": [
+                {
+                  "name": "order_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "customer_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "status",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "amount",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "paid",
+                  10.0
+                ],
+                [
+                  2,
+                  2,
+                  "paid",
+                  20.0
+                ],
+                [
+                  3,
+                  9,
+                  "paid",
+                  30.0
+                ],
+                [
+                  4,
+                  null,
+                  "paid",
+                  15.0
+                ],
+                [
+                  5,
+                  3,
+                  null,
+                  5.0
+                ],
+                [
+                  5,
+                  3,
+                  "paid",
+                  5.0
+                ],
+                [
+                  6,
+                  2,
+                  "paid",
+                  null
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT COUNT(*) AS total_rows,\n       SUM(CASE WHEN customer_id IS NULL THEN 1 ELSE 0 END) AS null_customer_id,\n       SUM(CASE WHEN status IS NULL THEN 1 ELSE 0 END) AS null_status,\n       SUM(CASE WHEN amount IS NULL THEN 1 ELSE 0 END) AS null_amount\nFROM dq_orders;",
+          "tsql": "SELECT COUNT(*) AS total_rows,\n       SUM(CASE WHEN customer_id IS NULL THEN 1 ELSE 0 END) AS null_customer_id,\n       SUM(CASE WHEN status IS NULL THEN 1 ELSE 0 END) AS null_status,\n       SUM(CASE WHEN amount IS NULL THEN 1 ELSE 0 END) AS null_amount\nFROM dq_orders;",
+          "expected": {
+            "columns": [
+              "total_rows",
+              "null_customer_id",
+              "null_status",
+              "null_amount"
+            ],
+            "rows": [
+              [
+                "7",
+                "1",
+                "1",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "duplicate-keys",
+          "title": "Duplicate keys, with the offending rows visible",
+          "explain_md": "`GROUP BY order_id HAVING COUNT(*) > 1` tells you *which* key; the window `COUNT(*) OVER (PARTITION BY key)` also shows the full rows so you can pick which copy to keep. Here the NULL status copy is the bad one.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "dq_orders",
+              "description_md": "Orders with planted problems: order 3 points to missing customer 9; order 4 has a NULL customer_id; order 5 appears twice (one copy has a NULL status); order 6 has a NULL amount.",
+              "columns": [
+                {
+                  "name": "order_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "customer_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "status",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "amount",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "paid",
+                  10.0
+                ],
+                [
+                  2,
+                  2,
+                  "paid",
+                  20.0
+                ],
+                [
+                  3,
+                  9,
+                  "paid",
+                  30.0
+                ],
+                [
+                  4,
+                  null,
+                  "paid",
+                  15.0
+                ],
+                [
+                  5,
+                  3,
+                  null,
+                  5.0
+                ],
+                [
+                  5,
+                  3,
+                  "paid",
+                  5.0
+                ],
+                [
+                  6,
+                  2,
+                  "paid",
+                  null
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT order_id, status, amount, copies\nFROM (\n  SELECT order_id, status, amount,\n         COUNT(*) OVER (PARTITION BY order_id) AS copies\n  FROM dq_orders\n) x\nWHERE copies > 1\nORDER BY order_id, status;",
+          "tsql": "SELECT order_id, status, amount, copies\nFROM (\n  SELECT order_id, status, amount,\n         COUNT(*) OVER (PARTITION BY order_id) AS copies\n  FROM dq_orders\n) x\nWHERE copies > 1\nORDER BY order_id, status;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "status",
+              "amount",
+              "copies"
+            ],
+            "rows": [
+              [
+                "5",
+                null,
+                "5.00",
+                "2"
+              ],
+              [
+                "5",
+                "paid",
+                "5.00",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "overlapping-ranges",
+          "title": "Overlapping effective-date ranges",
+          "explain_md": "Two half-open ranges overlap when each starts before the other ends. Prices 1 and 2 touch at 02-01 (`valid_to = valid_from`) and correctly do not match; prices 2 and 3 overlap on 02-20..03-01. `a.price_id < b.price_id` lists each pair once.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "price_periods",
+              "description_md": "Price history per product with half-open validity [valid_from, valid_to). Product 1's rows 2 and 3 overlap; product 2 has a hole from 02-01 to 03-01; 9999-12-31 means still current.",
+              "columns": [
+                {
+                  "name": "price_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "product_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "valid_from",
+                  "type": "DATE"
+                },
+                {
+                  "name": "valid_to",
+                  "type": "DATE"
+                },
+                {
+                  "name": "price",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "2024-01-01",
+                  "2024-02-01",
+                  10.0
+                ],
+                [
+                  2,
+                  1,
+                  "2024-02-01",
+                  "2024-03-01",
+                  12.0
+                ],
+                [
+                  3,
+                  1,
+                  "2024-02-20",
+                  "2024-04-01",
+                  11.0
+                ],
+                [
+                  4,
+                  2,
+                  "2024-01-01",
+                  "2024-02-01",
+                  5.0
+                ],
+                [
+                  5,
+                  2,
+                  "2024-03-01",
+                  "9999-12-31",
+                  6.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT a.product_id, a.price_id AS price_id_a, b.price_id AS price_id_b\nFROM price_periods a\nJOIN price_periods b\n  ON b.product_id = a.product_id\n AND a.price_id < b.price_id\n AND a.valid_from < b.valid_to\n AND b.valid_from < a.valid_to\nORDER BY a.product_id, a.price_id, b.price_id;",
+          "tsql": "SELECT a.product_id, a.price_id AS price_id_a, b.price_id AS price_id_b\nFROM price_periods a\nJOIN price_periods b\n  ON b.product_id = a.product_id\n AND a.price_id < b.price_id\n AND a.valid_from < b.valid_to\n AND b.valid_from < a.valid_to\nORDER BY a.product_id, a.price_id, b.price_id;",
+          "expected": {
+            "columns": [
+              "product_id",
+              "price_id_a",
+              "price_id_b"
+            ],
+            "rows": [
+              [
+                "1",
+                "2",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Orphan check must exclude NULL foreign keys (a different defect).",
+        "Use half-open ranges `[from, to)` so adjacent periods do not overlap.",
+        "Aggregations over NULL amounts silently ignore them: profile NULLs before trusting sums."
+      ]
+    },
+    {
+      "id": "scd2-lookup",
+      "heading": "SCD Type 2 and point-in-time lookups",
+      "body_md": "**Cue:** \"what was the customer's tier when they bought\", \"as-of join\", \"history table\", \"slowly changing dimension\".\n\n**Shape:**\n- Dimension rows carry `valid_from` (inclusive) and `valid_to` (exclusive); current row has a far-future `valid_to`.\n- Join fact to dimension on the business key **and** `valid_from <= fact_ts AND fact_ts < valid_to`.\n- LEFT JOIN so facts with no matching version survive.\n\n**Loading a new version (concept):** close the current row (`valid_to = change_ts`), insert a new row (`valid_from = change_ts`, `valid_to = '9999-12-31'`). Same instant on both sides keeps ranges adjacent with no gap or overlap.",
+      "examples": [
+        {
+          "id": "point-in-time-join",
+          "title": "Point-in-time join: valid_from <= ts < valid_to",
+          "explain_md": "Each sale gets the tier that was valid **when it happened**. Sale 2 at 2024-03-01 00:00:00 gets silver (inclusive start, exclusive end). Sale 5 predates the first version so the LEFT JOIN keeps it with NULL tier; an INNER JOIN would silently drop it.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "dim_customer",
+              "description_md": "SCD Type 2 history. One row per version; `valid_to` is exclusive; 9999-12-31 marks the current row.",
+              "columns": [
+                {
+                  "name": "customer_key",
+                  "type": "INT"
+                },
+                {
+                  "name": "customer_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "tier",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "valid_from",
+                  "type": "DATE"
+                },
+                {
+                  "name": "valid_to",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "bronze",
+                  "2024-01-01",
+                  "2024-03-01"
+                ],
+                [
+                  2,
+                  1,
+                  "silver",
+                  "2024-03-01",
+                  "2024-06-01"
+                ],
+                [
+                  3,
+                  1,
+                  "gold",
+                  "2024-06-01",
+                  "9999-12-31"
+                ],
+                [
+                  4,
+                  2,
+                  "bronze",
+                  "2024-02-01",
+                  "9999-12-31"
+                ]
+              ]
+            },
+            {
+              "name": "fact_sales",
+              "description_md": "Sales facts. Sale 2 happens at exactly the instant tier changed to silver. Sale 5 predates customer 2's first dimension row.",
+              "columns": [
+                {
+                  "name": "sale_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "customer_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "sale_ts",
+                  "type": "DATETIME"
+                },
+                {
+                  "name": "amount",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "2024-02-28 10:00:00",
+                  10.0
+                ],
+                [
+                  2,
+                  1,
+                  "2024-03-01 00:00:00",
+                  20.0
+                ],
+                [
+                  3,
+                  1,
+                  "2024-06-15 12:00:00",
+                  30.0
+                ],
+                [
+                  4,
+                  2,
+                  "2024-02-15 09:00:00",
+                  5.0
+                ],
+                [
+                  5,
+                  2,
+                  "2024-01-15 09:00:00",
+                  7.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT f.sale_id, f.sale_ts, d.tier\nFROM fact_sales f\nLEFT JOIN dim_customer d\n  ON d.customer_id = f.customer_id\n AND d.valid_from <= f.sale_ts\n AND f.sale_ts < d.valid_to\nORDER BY f.sale_id;",
+          "tsql": "SELECT f.sale_id, f.sale_ts, d.tier\nFROM fact_sales f\nLEFT JOIN dim_customer d\n  ON d.customer_id = f.customer_id\n AND d.valid_from <= f.sale_ts\n AND f.sale_ts < d.valid_to\nORDER BY f.sale_id;",
+          "expected": {
+            "columns": [
+              "sale_id",
+              "sale_ts",
+              "tier"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-02-28 10:00:00",
+                "bronze"
+              ],
+              [
+                "2",
+                "2024-03-01 00:00:00",
+                "silver"
+              ],
+              [
+                "3",
+                "2024-06-15 12:00:00",
+                "gold"
+              ],
+              [
+                "4",
+                "2024-02-15 09:00:00",
+                "bronze"
+              ],
+              [
+                "5",
+                "2024-01-15 09:00:00",
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "between-trap",
+          "title": "Trap: BETWEEN is inclusive at both ends",
+          "explain_md": "Sale 2 appears twice (bronze and silver) because `valid_to` of one version equals `valid_from` of the next and BETWEEN includes both. The fact grows, and every SUM is double counted for it. Use `>=` and `<`.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "dim_customer",
+              "description_md": "SCD Type 2 history. One row per version; `valid_to` is exclusive; 9999-12-31 marks the current row.",
+              "columns": [
+                {
+                  "name": "customer_key",
+                  "type": "INT"
+                },
+                {
+                  "name": "customer_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "tier",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "valid_from",
+                  "type": "DATE"
+                },
+                {
+                  "name": "valid_to",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "bronze",
+                  "2024-01-01",
+                  "2024-03-01"
+                ],
+                [
+                  2,
+                  1,
+                  "silver",
+                  "2024-03-01",
+                  "2024-06-01"
+                ],
+                [
+                  3,
+                  1,
+                  "gold",
+                  "2024-06-01",
+                  "9999-12-31"
+                ],
+                [
+                  4,
+                  2,
+                  "bronze",
+                  "2024-02-01",
+                  "9999-12-31"
+                ]
+              ]
+            },
+            {
+              "name": "fact_sales",
+              "description_md": "Sales facts. Sale 2 happens at exactly the instant tier changed to silver. Sale 5 predates customer 2's first dimension row.",
+              "columns": [
+                {
+                  "name": "sale_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "customer_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "sale_ts",
+                  "type": "DATETIME"
+                },
+                {
+                  "name": "amount",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "2024-02-28 10:00:00",
+                  10.0
+                ],
+                [
+                  2,
+                  1,
+                  "2024-03-01 00:00:00",
+                  20.0
+                ],
+                [
+                  3,
+                  1,
+                  "2024-06-15 12:00:00",
+                  30.0
+                ],
+                [
+                  4,
+                  2,
+                  "2024-02-15 09:00:00",
+                  5.0
+                ],
+                [
+                  5,
+                  2,
+                  "2024-01-15 09:00:00",
+                  7.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT f.sale_id, d.tier\nFROM fact_sales f\nJOIN dim_customer d\n  ON d.customer_id = f.customer_id\n AND f.sale_ts BETWEEN d.valid_from AND d.valid_to\nORDER BY f.sale_id, d.tier;",
+          "tsql": "SELECT f.sale_id, d.tier\nFROM fact_sales f\nJOIN dim_customer d\n  ON d.customer_id = f.customer_id\n AND f.sale_ts BETWEEN d.valid_from AND d.valid_to\nORDER BY f.sale_id, d.tier;",
+          "expected": {
+            "columns": [
+              "sale_id",
+              "tier"
+            ],
+            "rows": [
+              [
+                "1",
+                "bronze"
+              ],
+              [
+                "2",
+                "bronze"
+              ],
+              [
+                "2",
+                "silver"
+              ],
+              [
+                "3",
+                "gold"
+              ],
+              [
+                "4",
+                "bronze"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "revenue-by-tier-at-time",
+          "title": "Aggregate by the attribute as it was then",
+          "explain_md": "Revenue by the customer's tier **at purchase time**. Joining to only the current row would put all of customer 1's sales under gold. Unmatched sales are bucketed as 'unknown' rather than lost.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "dim_customer",
+              "description_md": "SCD Type 2 history. One row per version; `valid_to` is exclusive; 9999-12-31 marks the current row.",
+              "columns": [
+                {
+                  "name": "customer_key",
+                  "type": "INT"
+                },
+                {
+                  "name": "customer_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "tier",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "valid_from",
+                  "type": "DATE"
+                },
+                {
+                  "name": "valid_to",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "bronze",
+                  "2024-01-01",
+                  "2024-03-01"
+                ],
+                [
+                  2,
+                  1,
+                  "silver",
+                  "2024-03-01",
+                  "2024-06-01"
+                ],
+                [
+                  3,
+                  1,
+                  "gold",
+                  "2024-06-01",
+                  "9999-12-31"
+                ],
+                [
+                  4,
+                  2,
+                  "bronze",
+                  "2024-02-01",
+                  "9999-12-31"
+                ]
+              ]
+            },
+            {
+              "name": "fact_sales",
+              "description_md": "Sales facts. Sale 2 happens at exactly the instant tier changed to silver. Sale 5 predates customer 2's first dimension row.",
+              "columns": [
+                {
+                  "name": "sale_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "customer_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "sale_ts",
+                  "type": "DATETIME"
+                },
+                {
+                  "name": "amount",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "2024-02-28 10:00:00",
+                  10.0
+                ],
+                [
+                  2,
+                  1,
+                  "2024-03-01 00:00:00",
+                  20.0
+                ],
+                [
+                  3,
+                  1,
+                  "2024-06-15 12:00:00",
+                  30.0
+                ],
+                [
+                  4,
+                  2,
+                  "2024-02-15 09:00:00",
+                  5.0
+                ],
+                [
+                  5,
+                  2,
+                  "2024-01-15 09:00:00",
+                  7.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT COALESCE(d.tier, 'unknown') AS tier_at_sale, COUNT(*) AS sales, SUM(f.amount) AS revenue\nFROM fact_sales f\nLEFT JOIN dim_customer d\n  ON d.customer_id = f.customer_id\n AND d.valid_from <= f.sale_ts\n AND f.sale_ts < d.valid_to\nGROUP BY COALESCE(d.tier, 'unknown')\nORDER BY tier_at_sale;",
+          "tsql": "SELECT COALESCE(d.tier, 'unknown') AS tier_at_sale, COUNT(*) AS sales, SUM(f.amount) AS revenue\nFROM fact_sales f\nLEFT JOIN dim_customer d\n  ON d.customer_id = f.customer_id\n AND d.valid_from <= f.sale_ts\n AND f.sale_ts < d.valid_to\nGROUP BY COALESCE(d.tier, 'unknown')\nORDER BY tier_at_sale;",
+          "expected": {
+            "columns": [
+              "tier_at_sale",
+              "sales",
+              "revenue"
+            ],
+            "rows": [
+              [
+                "bronze",
+                "2",
+                "15.00"
+              ],
+              [
+                "gold",
+                "1",
+                "30.00"
+              ],
+              [
+                "silver",
+                "1",
+                "20.00"
+              ],
+              [
+                "unknown",
+                "1",
+                "7.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "current-version",
+          "title": "Current version only",
+          "explain_md": "The open-ended row is the current one. Some models keep an `is_current` flag instead; both must agree, which is itself a data-quality check.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "dim_customer",
+              "description_md": "SCD Type 2 history. One row per version; `valid_to` is exclusive; 9999-12-31 marks the current row.",
+              "columns": [
+                {
+                  "name": "customer_key",
+                  "type": "INT"
+                },
+                {
+                  "name": "customer_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "tier",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "valid_from",
+                  "type": "DATE"
+                },
+                {
+                  "name": "valid_to",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "bronze",
+                  "2024-01-01",
+                  "2024-03-01"
+                ],
+                [
+                  2,
+                  1,
+                  "silver",
+                  "2024-03-01",
+                  "2024-06-01"
+                ],
+                [
+                  3,
+                  1,
+                  "gold",
+                  "2024-06-01",
+                  "9999-12-31"
+                ],
+                [
+                  4,
+                  2,
+                  "bronze",
+                  "2024-02-01",
+                  "9999-12-31"
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT customer_id, tier AS current_tier\nFROM dim_customer\nWHERE valid_to = CAST('9999-12-31' AS DATE)\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id, tier AS current_tier\nFROM dim_customer\nWHERE valid_to = CAST('9999-12-31' AS DATE)\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "current_tier"
+            ],
+            "rows": [
+              [
+                "1",
+                "gold"
+              ],
+              [
+                "2",
+                "bronze"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "BETWEEN double counts at the boundary; use half-open comparisons.",
+        "If the dimension stores only DATE and the fact has a timestamp, `valid_to` compares as midnight: be explicit about the cast.",
+        "Overlapping versions for the same key duplicate facts; run the overlap check from the data-quality section."
+      ]
+    },
+    {
+      "id": "latest-and-incremental",
+      "heading": "Latest state from history and incremental loads",
+      "body_md": "**Cue:** \"current status of each account from the change log\", \"only load new or changed rows\", \"process incrementally\".\n\n**Latest state:** `ROW_NUMBER() OVER (PARTITION BY key ORDER BY updated_at DESC, tie_id DESC) = 1`, or a `NOT EXISTS` newer-row anti-join.\n\n**Incremental load shape:**\n- Read the stored watermark.\n- Extract `updated_at >= watermark` (overlap, not `>`).\n- Upsert into the target (idempotent), dedupe the batch to latest per key first.\n- Advance the watermark to `MAX(updated_at)` of what was read, in the same transaction as the load.",
+      "examples": [
+        {
+          "id": "latest-row-number",
+          "title": "Latest state per key with ROW_NUMBER",
+          "explain_md": "Newest first, with `event_id DESC` as the deterministic tie-breaker. Account 2's tie at 12:00 resolves to the higher event id: paused. Without the tie-breaker the result is arbitrary.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "acct_history",
+              "description_md": "Append-only status changes per account. Account 2 has two changes with the same timestamp (event ids 5 and 6).",
+              "columns": [
+                {
+                  "name": "event_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "account_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "status",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "updated_at",
+                  "type": "DATETIME"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "trial",
+                  "2024-05-01 08:00:00"
+                ],
+                [
+                  2,
+                  1,
+                  "active",
+                  "2024-05-03 09:00:00"
+                ],
+                [
+                  3,
+                  2,
+                  "trial",
+                  "2024-05-02 10:00:00"
+                ],
+                [
+                  4,
+                  1,
+                  "cancelled",
+                  "2024-05-09 12:00:00"
+                ],
+                [
+                  5,
+                  2,
+                  "active",
+                  "2024-05-09 12:00:00"
+                ],
+                [
+                  6,
+                  2,
+                  "paused",
+                  "2024-05-09 12:00:00"
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT account_id, status, updated_at\nFROM (\n  SELECT account_id, status, updated_at,\n         ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY updated_at DESC, event_id DESC) AS rn\n  FROM acct_history\n) x\nWHERE rn = 1\nORDER BY account_id;",
+          "tsql": "SELECT account_id, status, updated_at\nFROM (\n  SELECT account_id, status, updated_at,\n         ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY updated_at DESC, event_id DESC) AS rn\n  FROM acct_history\n) x\nWHERE rn = 1\nORDER BY account_id;",
+          "expected": {
+            "columns": [
+              "account_id",
+              "status",
+              "updated_at"
+            ],
+            "rows": [
+              [
+                "1",
+                "cancelled",
+                "2024-05-09 12:00:00"
+              ],
+              [
+                "2",
+                "paused",
+                "2024-05-09 12:00:00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "latest-not-exists",
+          "title": "Same result with an anti-join",
+          "explain_md": "Keep a row only if no newer row exists for the key. Same answer, no window function; the explicit tie-break mirrors the ORDER BY above.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "acct_history",
+              "description_md": "Append-only status changes per account. Account 2 has two changes with the same timestamp (event ids 5 and 6).",
+              "columns": [
+                {
+                  "name": "event_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "account_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "status",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "updated_at",
+                  "type": "DATETIME"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  "trial",
+                  "2024-05-01 08:00:00"
+                ],
+                [
+                  2,
+                  1,
+                  "active",
+                  "2024-05-03 09:00:00"
+                ],
+                [
+                  3,
+                  2,
+                  "trial",
+                  "2024-05-02 10:00:00"
+                ],
+                [
+                  4,
+                  1,
+                  "cancelled",
+                  "2024-05-09 12:00:00"
+                ],
+                [
+                  5,
+                  2,
+                  "active",
+                  "2024-05-09 12:00:00"
+                ],
+                [
+                  6,
+                  2,
+                  "paused",
+                  "2024-05-09 12:00:00"
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT a.account_id, a.status, a.updated_at\nFROM acct_history a\nWHERE NOT EXISTS (\n  SELECT 1 FROM acct_history b\n  WHERE b.account_id = a.account_id\n    AND (b.updated_at > a.updated_at\n         OR (b.updated_at = a.updated_at AND b.event_id > a.event_id))\n)\nORDER BY a.account_id;",
+          "tsql": "SELECT a.account_id, a.status, a.updated_at\nFROM acct_history a\nWHERE NOT EXISTS (\n  SELECT 1 FROM acct_history b\n  WHERE b.account_id = a.account_id\n    AND (b.updated_at > a.updated_at\n         OR (b.updated_at = a.updated_at AND b.event_id > a.event_id))\n)\nORDER BY a.account_id;",
+          "expected": {
+            "columns": [
+              "account_id",
+              "status",
+              "updated_at"
+            ],
+            "rows": [
+              [
+                "1",
+                "cancelled",
+                "2024-05-09 12:00:00"
+              ],
+              [
+                "2",
+                "paused",
+                "2024-05-09 12:00:00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "delta-strict-vs-overlap",
+          "title": "Extracting the delta: `>` vs `>=` the watermark",
+          "explain_md": "Strict `>` skips order 3, which carries exactly the watermark time but may have committed after the last extract: a silent loss. `>=` re-reads orders 2 and 3; that is safe only if the load is an idempotent upsert. Common practice: overlap by a safety margin and upsert.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "src_orders",
+              "description_md": "Source table with an updated_at column. Orders 2 and 3 share the watermark timestamp 12:00:00.",
+              "columns": [
+                {
+                  "name": "order_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "status",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "updated_at",
+                  "type": "DATETIME"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "new",
+                  "2024-06-01 10:00:00"
+                ],
+                [
+                  2,
+                  "new",
+                  "2024-06-01 12:00:00"
+                ],
+                [
+                  3,
+                  "new",
+                  "2024-06-01 12:00:00"
+                ],
+                [
+                  4,
+                  "shipped",
+                  "2024-06-02 09:00:00"
+                ],
+                [
+                  5,
+                  "new",
+                  "2024-06-02 11:00:00"
+                ]
+              ]
+            },
+            {
+              "name": "etl_watermark",
+              "description_md": "High-water mark from the previous run: everything up to this instant is assumed loaded.",
+              "columns": [
+                {
+                  "name": "table_name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "last_loaded_at",
+                  "type": "DATETIME"
+                }
+              ],
+              "rows": [
+                [
+                  "src_orders",
+                  "2024-06-01 12:00:00"
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT s.order_id, s.updated_at,\n       CASE WHEN s.updated_at > w.last_loaded_at THEN 1 ELSE 0 END AS picked_strict,\n       CASE WHEN s.updated_at >= w.last_loaded_at THEN 1 ELSE 0 END AS picked_overlap\nFROM src_orders s\nJOIN etl_watermark w ON w.table_name = 'src_orders'\nORDER BY s.order_id;",
+          "tsql": "SELECT s.order_id, s.updated_at,\n       CASE WHEN s.updated_at > w.last_loaded_at THEN 1 ELSE 0 END AS picked_strict,\n       CASE WHEN s.updated_at >= w.last_loaded_at THEN 1 ELSE 0 END AS picked_overlap\nFROM src_orders s\nJOIN etl_watermark w ON w.table_name = 'src_orders'\nORDER BY s.order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "updated_at",
+              "picked_strict",
+              "picked_overlap"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-06-01 10:00:00",
+                "0",
+                "0"
+              ],
+              [
+                "2",
+                "2024-06-01 12:00:00",
+                "0",
+                "1"
+              ],
+              [
+                "3",
+                "2024-06-01 12:00:00",
+                "0",
+                "1"
+              ],
+              [
+                "4",
+                "2024-06-02 09:00:00",
+                "1",
+                "1"
+              ],
+              [
+                "5",
+                "2024-06-02 11:00:00",
+                "1",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "new-watermark",
+          "title": "Advance the watermark from the batch you actually read",
+          "explain_md": "New watermark = `MAX(updated_at)` of the extracted rows, falling back to the old one when the batch is empty (`MAX` of nothing is NULL). Never use the wall clock at job start: rows committed during the run would be skipped.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "src_orders",
+              "description_md": "Source table with an updated_at column. Orders 2 and 3 share the watermark timestamp 12:00:00.",
+              "columns": [
+                {
+                  "name": "order_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "status",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "updated_at",
+                  "type": "DATETIME"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "new",
+                  "2024-06-01 10:00:00"
+                ],
+                [
+                  2,
+                  "new",
+                  "2024-06-01 12:00:00"
+                ],
+                [
+                  3,
+                  "new",
+                  "2024-06-01 12:00:00"
+                ],
+                [
+                  4,
+                  "shipped",
+                  "2024-06-02 09:00:00"
+                ],
+                [
+                  5,
+                  "new",
+                  "2024-06-02 11:00:00"
+                ]
+              ]
+            },
+            {
+              "name": "etl_watermark",
+              "description_md": "High-water mark from the previous run: everything up to this instant is assumed loaded.",
+              "columns": [
+                {
+                  "name": "table_name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "last_loaded_at",
+                  "type": "DATETIME"
+                }
+              ],
+              "rows": [
+                [
+                  "src_orders",
+                  "2024-06-01 12:00:00"
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT w.table_name,\n       COALESCE(MAX(s.updated_at), w.last_loaded_at) AS new_watermark\nFROM etl_watermark w\nLEFT JOIN src_orders s ON s.updated_at >= w.last_loaded_at\nWHERE w.table_name = 'src_orders'\nGROUP BY w.table_name, w.last_loaded_at;",
+          "tsql": "SELECT w.table_name,\n       COALESCE(MAX(s.updated_at), w.last_loaded_at) AS new_watermark\nFROM etl_watermark w\nLEFT JOIN src_orders s ON s.updated_at >= w.last_loaded_at\nWHERE w.table_name = 'src_orders'\nGROUP BY w.table_name, w.last_loaded_at;",
+          "expected": {
+            "columns": [
+              "table_name",
+              "new_watermark"
+            ],
+            "rows": [
+              [
+                "src_orders",
+                "2024-06-02 11:00:00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Ties on the timestamp need a unique tie-breaker (event id).",
+        "Source `updated_at` not maintained (or set to date-only) breaks watermarking; fall back to full-table compare.",
+        "Hard deletes in the source are invisible to a watermark; use soft deletes or a periodic full reconcile."
+      ]
+    },
+    {
+      "id": "upserts-idempotent",
+      "heading": "Upserts and idempotent reruns",
+      "body_md": "**Cue:** \"load without duplicates\", \"what if the job runs twice\", \"insert or update\", \"merge staging into target\".\n\n**Principles:**\n- Key the target (PRIMARY KEY / UNIQUE) so the engine can detect an existing row.\n- Dedupe the staging batch to one row per key before upserting.\n- Update only when a value actually changed (`WHEN MATCHED AND ...`).\n- Alternative for partitioned loads: in one transaction, `DELETE` the partition then `INSERT` it. Re-running replaces, never appends.\n- Advance watermarks only after a successful commit.\n\nThe runnable examples below are SELECTs that compute what the statement would insert/update; the DML itself is shown in the syntax block.",
+      "syntax": {
+        "mysql": "INSERT INTO tgt_prod (product_id, name, price)\nSELECT product_id, name, price FROM stg_latest\nON DUPLICATE KEY UPDATE name = VALUES(name), price = VALUES(price);",
+        "tsql": "MERGE INTO tgt_prod AS t\nUSING stg_latest AS s\n   ON t.product_id = s.product_id\nWHEN MATCHED AND (t.name <> s.name OR t.price <> s.price) THEN\n  UPDATE SET t.name = s.name, t.price = s.price\nWHEN NOT MATCHED BY TARGET THEN\n  INSERT (product_id, name, price) VALUES (s.product_id, s.name, s.price);"
+      },
+      "args": [
+        {
+          "name": "INSERT INTO tgt (cols) SELECT ...",
+          "meaning": "The rows to insert; their column order matches the column list."
+        },
+        {
+          "name": "ON DUPLICATE KEY UPDATE",
+          "meaning": "MySQL: if the insert violates a PRIMARY KEY or UNIQUE index, update the existing row instead. The target must have such a key."
+        },
+        {
+          "name": "VALUES(col)",
+          "meaning": "MySQL: the value that would have been inserted for `col`. Deprecated since 8.0.20 but still works; newer syntax aliases the row."
+        },
+        {
+          "name": "MERGE INTO t USING s ON cond",
+          "meaning": "SQL Server: t is the target, s the source, cond the match condition. Each target row may match at most one source row."
+        },
+        {
+          "name": "WHEN MATCHED AND (...) THEN UPDATE",
+          "meaning": "Runs for key matches; the extra AND filter skips unchanged rows."
+        },
+        {
+          "name": "WHEN NOT MATCHED BY TARGET THEN INSERT",
+          "meaning": "Source rows with no target match are inserted. (`BY SOURCE` handles target-only rows, e.g. delete.)"
+        }
+      ],
+      "examples": [
+        {
+          "id": "dedupe-staging",
+          "title": "Step 1: one row per key in the staging batch",
+          "explain_md": "Latest version per key wins (load_seq 4 beats 3 for product 4). SQL Server's `MERGE` raises an error if two source rows match the same target row; MySQL's `ON DUPLICATE KEY UPDATE` would apply them in order. Dedupe first in both.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "stg_prod",
+              "description_md": "Staging batch. Product 2 has a new price; product 3 is unchanged; product 4 is new and arrived twice (load_seq 3 then 4).",
+              "columns": [
+                {
+                  "name": "load_seq",
+                  "type": "INT"
+                },
+                {
+                  "name": "product_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "price",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  2,
+                  "Gadget",
+                  22.0
+                ],
+                [
+                  2,
+                  3,
+                  "Gizmo",
+                  30.0
+                ],
+                [
+                  3,
+                  4,
+                  "Doohickey",
+                  40.0
+                ],
+                [
+                  4,
+                  4,
+                  "Doohickey",
+                  45.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH latest AS (\n  SELECT product_id, name, price\n  FROM (\n    SELECT product_id, name, price,\n           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY load_seq DESC) AS rn\n    FROM stg_prod\n  ) x\n  WHERE rn = 1\n)\nSELECT product_id, name, price FROM latest ORDER BY product_id;",
+          "tsql": "WITH latest AS (\n  SELECT product_id, name, price\n  FROM (\n    SELECT product_id, name, price,\n           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY load_seq DESC) AS rn\n    FROM stg_prod\n  ) x\n  WHERE rn = 1\n)\nSELECT product_id, name, price FROM latest ORDER BY product_id;",
+          "expected": {
+            "columns": [
+              "product_id",
+              "name",
+              "price"
+            ],
+            "rows": [
+              [
+                "2",
+                "Gadget",
+                "22.00"
+              ],
+              [
+                "3",
+                "Gizmo",
+                "30.00"
+              ],
+              [
+                "4",
+                "Doohickey",
+                "45.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "classify-actions",
+          "title": "Step 2: what the upsert would do to each key",
+          "explain_md": "Dry-run before writing: product 4 is an insert, product 2 an update, product 3 a no-op (skipping no-op updates avoids pointless writes and trigger/CDC noise). Product 1 is not in the batch so it is untouched.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "tgt_prod",
+              "description_md": "Target dimension keyed by product_id.",
+              "columns": [
+                {
+                  "name": "product_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "price",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Widget",
+                  10.0
+                ],
+                [
+                  2,
+                  "Gadget",
+                  20.0
+                ],
+                [
+                  3,
+                  "Gizmo",
+                  30.0
+                ]
+              ]
+            },
+            {
+              "name": "stg_prod",
+              "description_md": "Staging batch. Product 2 has a new price; product 3 is unchanged; product 4 is new and arrived twice (load_seq 3 then 4).",
+              "columns": [
+                {
+                  "name": "load_seq",
+                  "type": "INT"
+                },
+                {
+                  "name": "product_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "price",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  2,
+                  "Gadget",
+                  22.0
+                ],
+                [
+                  2,
+                  3,
+                  "Gizmo",
+                  30.0
+                ],
+                [
+                  3,
+                  4,
+                  "Doohickey",
+                  40.0
+                ],
+                [
+                  4,
+                  4,
+                  "Doohickey",
+                  45.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH latest AS (\n  SELECT product_id, name, price\n  FROM (\n    SELECT product_id, name, price,\n           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY load_seq DESC) AS rn\n    FROM stg_prod\n  ) x\n  WHERE rn = 1\n)\nSELECT l.product_id,\n       CASE WHEN t.product_id IS NULL THEN 'insert'\n            WHEN NOT (l.name <=> t.name) OR NOT (l.price <=> t.price) THEN 'update'\n            ELSE 'noop' END AS action\nFROM latest l\nLEFT JOIN tgt_prod t ON t.product_id = l.product_id\nORDER BY l.product_id;",
+          "tsql": "WITH latest AS (\n  SELECT product_id, name, price\n  FROM (\n    SELECT product_id, name, price,\n           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY load_seq DESC) AS rn\n    FROM stg_prod\n  ) x\n  WHERE rn = 1\n)\nSELECT l.product_id,\n       CASE WHEN t.product_id IS NULL THEN 'insert'\n            WHEN l.name <> t.name OR l.price <> t.price\n              OR (l.name IS NULL AND t.name IS NOT NULL) OR (l.name IS NOT NULL AND t.name IS NULL)\n              OR (l.price IS NULL AND t.price IS NOT NULL) OR (l.price IS NOT NULL AND t.price IS NULL)\n              THEN 'update'\n            ELSE 'noop' END AS action\nFROM latest l\nLEFT JOIN tgt_prod t ON t.product_id = l.product_id\nORDER BY l.product_id;",
+          "expected": {
+            "columns": [
+              "product_id",
+              "action"
+            ],
+            "rows": [
+              [
+                "2",
+                "update"
+              ],
+              [
+                "3",
+                "noop"
+              ],
+              [
+                "4",
+                "insert"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "post-upsert-state",
+          "title": "Step 3: the table as it would look after the upsert",
+          "explain_md": "Batch rows win; untouched target rows are carried over. This SELECT is the executable definition of the upsert's result and works in both dialects.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "tgt_prod",
+              "description_md": "Target dimension keyed by product_id.",
+              "columns": [
+                {
+                  "name": "product_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "price",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Widget",
+                  10.0
+                ],
+                [
+                  2,
+                  "Gadget",
+                  20.0
+                ],
+                [
+                  3,
+                  "Gizmo",
+                  30.0
+                ]
+              ]
+            },
+            {
+              "name": "stg_prod",
+              "description_md": "Staging batch. Product 2 has a new price; product 3 is unchanged; product 4 is new and arrived twice (load_seq 3 then 4).",
+              "columns": [
+                {
+                  "name": "load_seq",
+                  "type": "INT"
+                },
+                {
+                  "name": "product_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "price",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  2,
+                  "Gadget",
+                  22.0
+                ],
+                [
+                  2,
+                  3,
+                  "Gizmo",
+                  30.0
+                ],
+                [
+                  3,
+                  4,
+                  "Doohickey",
+                  40.0
+                ],
+                [
+                  4,
+                  4,
+                  "Doohickey",
+                  45.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH latest AS (\n  SELECT product_id, name, price\n  FROM (\n    SELECT product_id, name, price,\n           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY load_seq DESC) AS rn\n    FROM stg_prod\n  ) x\n  WHERE rn = 1\n)\nSELECT product_id, name, price FROM latest\nUNION ALL\nSELECT t.product_id, t.name, t.price\nFROM tgt_prod t\nWHERE NOT EXISTS (SELECT 1 FROM latest l WHERE l.product_id = t.product_id)\nORDER BY product_id;",
+          "tsql": "WITH latest AS (\n  SELECT product_id, name, price\n  FROM (\n    SELECT product_id, name, price,\n           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY load_seq DESC) AS rn\n    FROM stg_prod\n  ) x\n  WHERE rn = 1\n)\nSELECT product_id, name, price FROM latest\nUNION ALL\nSELECT t.product_id, t.name, t.price\nFROM tgt_prod t\nWHERE NOT EXISTS (SELECT 1 FROM latest l WHERE l.product_id = t.product_id)\nORDER BY product_id;",
+          "expected": {
+            "columns": [
+              "product_id",
+              "name",
+              "price"
+            ],
+            "rows": [
+              [
+                "1",
+                "Widget",
+                "10.00"
+              ],
+              [
+                "2",
+                "Gadget",
+                "22.00"
+              ],
+              [
+                "3",
+                "Gizmo",
+                "30.00"
+              ],
+              [
+                "4",
+                "Doohickey",
+                "45.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "idempotent-rerun",
+          "title": "Idempotence check: replay the same batch on the new state",
+          "explain_md": "Run the classification again with the post-upsert table as the target: every key is a no-op. If a rerun still shows inserts or updates, the load is not idempotent (usually a missing business key, an append-only insert, or a nondeterministic dedupe).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "tgt_prod",
+              "description_md": "Target dimension keyed by product_id.",
+              "columns": [
+                {
+                  "name": "product_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "price",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Widget",
+                  10.0
+                ],
+                [
+                  2,
+                  "Gadget",
+                  20.0
+                ],
+                [
+                  3,
+                  "Gizmo",
+                  30.0
+                ]
+              ]
+            },
+            {
+              "name": "stg_prod",
+              "description_md": "Staging batch. Product 2 has a new price; product 3 is unchanged; product 4 is new and arrived twice (load_seq 3 then 4).",
+              "columns": [
+                {
+                  "name": "load_seq",
+                  "type": "INT"
+                },
+                {
+                  "name": "product_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(20)"
+                },
+                {
+                  "name": "price",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  2,
+                  "Gadget",
+                  22.0
+                ],
+                [
+                  2,
+                  3,
+                  "Gizmo",
+                  30.0
+                ],
+                [
+                  3,
+                  4,
+                  "Doohickey",
+                  40.0
+                ],
+                [
+                  4,
+                  4,
+                  "Doohickey",
+                  45.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH latest AS (\n  SELECT product_id, name, price\n  FROM (\n    SELECT product_id, name, price,\n           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY load_seq DESC) AS rn\n    FROM stg_prod\n  ) x\n  WHERE rn = 1\n), post_state AS (\n  SELECT product_id, name, price FROM latest\n  UNION ALL\n  SELECT t.product_id, t.name, t.price\n  FROM tgt_prod t\n  WHERE NOT EXISTS (SELECT 1 FROM latest l WHERE l.product_id = t.product_id)\n)\nSELECT CASE WHEN a.product_id IS NULL THEN 'insert'\n            WHEN NOT (l.name <=> a.name) OR NOT (l.price <=> a.price) THEN 'update'\n            ELSE 'noop' END AS action_on_rerun,\n       COUNT(*) AS key_count\nFROM latest l\nLEFT JOIN post_state a ON a.product_id = l.product_id\nGROUP BY CASE WHEN a.product_id IS NULL THEN 'insert'\n              WHEN NOT (l.name <=> a.name) OR NOT (l.price <=> a.price) THEN 'update'\n              ELSE 'noop' END\nORDER BY action_on_rerun;",
+          "tsql": "WITH latest AS (\n  SELECT product_id, name, price\n  FROM (\n    SELECT product_id, name, price,\n           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY load_seq DESC) AS rn\n    FROM stg_prod\n  ) x\n  WHERE rn = 1\n), post_state AS (\n  SELECT product_id, name, price FROM latest\n  UNION ALL\n  SELECT t.product_id, t.name, t.price\n  FROM tgt_prod t\n  WHERE NOT EXISTS (SELECT 1 FROM latest l WHERE l.product_id = t.product_id)\n)\nSELECT CASE WHEN a.product_id IS NULL THEN 'insert'\n            WHEN l.name <> a.name OR l.price <> a.price THEN 'update'\n            ELSE 'noop' END AS action_on_rerun,\n       COUNT(*) AS key_count\nFROM latest l\nLEFT JOIN post_state a ON a.product_id = l.product_id\nGROUP BY CASE WHEN a.product_id IS NULL THEN 'insert'\n              WHEN l.name <> a.name OR l.price <> a.price THEN 'update'\n              ELSE 'noop' END\nORDER BY action_on_rerun;",
+          "dialect_note_md": "The T-SQL comparison here omits the NULL branches for brevity because name and price are never NULL in this data; in real loads use the full null-safe form shown in the previous example.",
+          "expected": {
+            "columns": [
+              "action_on_rerun",
+              "key_count"
+            ],
+            "rows": [
+              [
+                "noop",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "SQL Server `MERGE` must end with a semicolon and fails if two source rows hit one target row (dedupe the source).",
+        "MySQL `ON DUPLICATE KEY UPDATE` fires on any unique index, not only the primary key; with several unique keys the wrong row can be updated.",
+        "A plain INSERT in a retried job duplicates data: always upsert or replace by key/partition."
+      ]
+    }
+  ]
+}

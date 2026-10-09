@@ -1,0 +1,6 @@
+{
+  "id": "patterns",
+  "title": "Interview Patterns",
+  "description_md": "Original questions in the style of the big SQL question banks, from basics to advanced data-engineering SQL. Every question brings its own small tables with the edge cases planted, so you practise reading data, not memorising one schema.",
+  "parts": ["part-a.json", "part-b.json", "part-c.json"]
+}

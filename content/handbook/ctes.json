@@ -1,0 +1,522 @@
+{
+  "id": "ctes",
+  "title": "Common table expressions",
+  "group": "Query structure",
+  "order": 2,
+  "summary_md": "Name a subquery with WITH, chain several, reuse one twice, and stage an answer as grain, aggregate, rank, filter.",
+  "sections": [
+    {
+      "id": "with-syntax",
+      "heading": "WITH syntax",
+      "body_md": "- A CTE is a **named subquery that lives for one statement**. Define it up front, then use it like a table.\n- Optional column list renames the output columns; otherwise the select-list aliases are used.\n- Works in MySQL 8.0+ and every SQL Server version since 2005.",
+      "syntax": {
+        "mysql": "WITH cte_name [(col1, col2, ...)] AS (\n  SELECT ...\n)\nSELECT ... FROM cte_name;",
+        "tsql": "WITH cte_name [(col1, col2, ...)] AS (\n  SELECT ...\n)\nSELECT ... FROM cte_name;"
+      },
+      "args": [
+        {
+          "name": "cte_name",
+          "meaning": "Name usable as a table in the statement that follows."
+        },
+        {
+          "name": "(col1, col2, ...)",
+          "meaning": "Optional output column names; count must match the inner select list."
+        },
+        {
+          "name": "AS ( SELECT ... )",
+          "meaning": "The defining query. SQL Server forbids a bare ORDER BY here."
+        },
+        {
+          "name": "final statement",
+          "meaning": "SELECT, or INSERT / UPDATE / DELETE that uses the CTE."
+        }
+      ],
+      "examples": [
+        {
+          "id": "basic-cte",
+          "title": "Department payroll",
+          "explain_md": "Define the roll-up once, then filter it in the outer query.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH dept_pay AS (\n  SELECT dept, SUM(salary) AS payroll, COUNT(*) AS headcount\n  FROM employees\n  GROUP BY dept\n)\nSELECT dept, payroll, headcount\nFROM dept_pay\nWHERE payroll > 100000\nORDER BY dept;",
+          "tsql": "WITH dept_pay AS (\n  SELECT dept, SUM(salary) AS payroll, COUNT(*) AS headcount\n  FROM employees\n  GROUP BY dept\n)\nSELECT dept, payroll, headcount\nFROM dept_pay\nWHERE payroll > 100000\nORDER BY dept;",
+          "expected": {
+            "columns": [
+              "dept",
+              "payroll",
+              "headcount"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "515000",
+                "4"
+              ],
+              [
+                "Exec",
+                "250000",
+                "1"
+              ],
+              [
+                "Sales",
+                "270000",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cte-column-list",
+          "title": "Column list instead of aliases",
+          "explain_md": "The list in parentheses names the CTE's columns, so the inner query can leave expressions unaliased.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH spend (customer_id, total_spend) AS (\n  SELECT customer_id, SUM(amount)\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY customer_id\n)\nSELECT c.name, s.total_spend\nFROM customers c\nJOIN spend s ON s.customer_id = c.customer_id\nORDER BY s.total_spend DESC, c.customer_id;",
+          "tsql": "WITH spend (customer_id, total_spend) AS (\n  SELECT customer_id, SUM(amount)\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY customer_id\n)\nSELECT c.name, s.total_spend\nFROM customers c\nJOIN spend s ON s.customer_id = c.customer_id\nORDER BY s.total_spend DESC, c.customer_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "total_spend"
+            ],
+            "rows": [
+              [
+                "Maya Lopez",
+                "305.00"
+              ],
+              [
+                "Quinn Lee",
+                "300.00"
+              ],
+              [
+                "Olga Petrova",
+                "250.00"
+              ],
+              [
+                "Noah Kim",
+                "150.50"
+              ],
+              [
+                "Pablo Diaz",
+                "110.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "chained-ctes",
+      "heading": "Multiple CTEs, chained",
+      "body_md": "- Separate CTEs with a **comma**, one `WITH` only: `WITH a AS (...), b AS (...) SELECT ...`.\n- A later CTE can read earlier ones; an earlier CTE cannot see later ones.\n- Each step should do one thing, so you can run it alone while debugging.",
+      "examples": [
+        {
+          "id": "chain-avg",
+          "title": "Customers above the average customer",
+          "explain_md": "`spend` is the per-customer total, `avg_spend` is built from it, and the final query compares the two (average is 223.10).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH spend AS (\n  SELECT customer_id, SUM(amount) AS total\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY customer_id\n),\navg_spend AS (\n  SELECT AVG(total) AS avg_total FROM spend\n)\nSELECT s.customer_id, s.total\nFROM spend s\nCROSS JOIN avg_spend a\nWHERE s.total > a.avg_total\nORDER BY s.customer_id;",
+          "tsql": "WITH spend AS (\n  SELECT customer_id, SUM(amount) AS total\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY customer_id\n),\navg_spend AS (\n  SELECT AVG(total) AS avg_total FROM spend\n)\nSELECT s.customer_id, s.total\nFROM spend s\nCROSS JOIN avg_spend a\nWHERE s.total > a.avg_total\nORDER BY s.customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "total"
+            ],
+            "rows": [
+              [
+                "1",
+                "305.00"
+              ],
+              [
+                "3",
+                "250.00"
+              ],
+              [
+                "5",
+                "300.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "chain-window-filter",
+          "title": "Months where revenue rose",
+          "explain_md": "The window result (`LAG`) is computed in one CTE and filtered in the final query, which a plain WHERE cannot do.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH h1 AS (\n  SELECT month_start, revenue\n  FROM monthly_revenue\n  WHERE month_start >= '2024-01-01' AND month_start < '2024-07-01'\n),\nchg AS (\n  SELECT month_start, revenue,\n         revenue - LAG(revenue) OVER (ORDER BY month_start) AS mom_change\n  FROM h1\n)\nSELECT month_start, revenue, mom_change\nFROM chg\nWHERE mom_change > 0\nORDER BY month_start;",
+          "tsql": "WITH h1 AS (\n  SELECT month_start, revenue\n  FROM monthly_revenue\n  WHERE month_start >= '2024-01-01' AND month_start < '2024-07-01'\n),\nchg AS (\n  SELECT month_start, revenue,\n         revenue - LAG(revenue) OVER (ORDER BY month_start) AS mom_change\n  FROM h1\n)\nSELECT month_start, revenue, mom_change\nFROM chg\nWHERE mom_change > 0\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "mom_change"
+            ],
+            "rows": [
+              [
+                "2024-02-01",
+                "12100.00",
+                "100.00"
+              ],
+              [
+                "2024-03-01",
+                "13650.00",
+                "1550.00"
+              ],
+              [
+                "2024-05-01",
+                "15000.00",
+                "1800.00"
+              ],
+              [
+                "2024-06-01",
+                "15600.00",
+                "600.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "reuse-twice",
+      "heading": "Referencing a CTE twice",
+      "body_md": "- One definition, many references: a self-join, or a main query plus a scalar subquery on the same CTE.\n- **MySQL 8** materialises a CTE once when it is referenced more than once. **SQL Server** inlines it at every reference, so an expensive CTE used twice runs twice; stage it in a `#temp` table if that hurts.\n- Non-deterministic expressions (`RAND()`, `NEWID()`) inside the CTE may give different values per reference.",
+      "examples": [
+        {
+          "id": "share-of-total",
+          "title": "Share of total",
+          "explain_md": "`t` is referenced in the FROM clause and again in the scalar subquery for the grand total.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH t AS (\n  SELECT customer_id, SUM(amount) AS total\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY customer_id\n)\nSELECT customer_id, total,\n       ROUND(100.0 * total / (SELECT SUM(total) FROM t), 1) AS pct_of_total\nFROM t\nORDER BY customer_id;",
+          "tsql": "WITH t AS (\n  SELECT customer_id, SUM(amount) AS total\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY customer_id\n)\nSELECT customer_id, total,\n       ROUND(100.0 * total / (SELECT SUM(total) FROM t), 1) AS pct_of_total\nFROM t\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "total",
+              "pct_of_total"
+            ],
+            "rows": [
+              [
+                "1",
+                "305.00",
+                "27.3"
+              ],
+              [
+                "2",
+                "150.50",
+                "13.5"
+              ],
+              [
+                "3",
+                "250.00",
+                "22.4"
+              ],
+              [
+                "4",
+                "110.00",
+                "9.9"
+              ],
+              [
+                "5",
+                "300.00",
+                "26.9"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "yoy-self-join",
+          "title": "Year-over-year with a self-join",
+          "explain_md": "Join the CTE to itself, matching each month to the same month one year earlier.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH m AS (\n  SELECT month_start, revenue FROM monthly_revenue\n)\nSELECT cur.month_start, cur.revenue, prev.revenue AS prev_year_revenue,\n       cur.revenue - prev.revenue AS yoy_change\nFROM m cur\nJOIN m prev ON prev.month_start = DATE_SUB(cur.month_start, INTERVAL 1 YEAR)\nWHERE cur.month_start < '2024-04-01'\nORDER BY cur.month_start;",
+          "tsql": "WITH m AS (\n  SELECT month_start, revenue FROM monthly_revenue\n)\nSELECT cur.month_start, cur.revenue, prev.revenue AS prev_year_revenue,\n       cur.revenue - prev.revenue AS yoy_change\nFROM m cur\nJOIN m prev ON prev.month_start = DATEADD(year, -1, cur.month_start)\nWHERE cur.month_start < '2024-04-01'\nORDER BY cur.month_start;",
+          "dialect_note_md": "Date arithmetic differs: `DATE_SUB(d, INTERVAL 1 YEAR)` in MySQL, `DATEADD(year, -1, d)` in SQL Server.",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "prev_year_revenue",
+              "yoy_change"
+            ],
+            "rows": [
+              [
+                "2024-01-01",
+                "12000.00",
+                "10000.00",
+                "2000.00"
+              ],
+              [
+                "2024-02-01",
+                "12100.00",
+                "11000.00",
+                "1100.00"
+              ],
+              [
+                "2024-03-01",
+                "13650.00",
+                "10500.00",
+                "3150.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "cte-vs-others",
+      "heading": "CTE vs derived table vs temp table",
+      "body_md": "- **CTE**: readability and reuse within one statement. No performance guarantee; not stored.\n- **Derived table**: same engine behaviour as an inline CTE, but nested and not reusable. Prefer a CTE once you nest two levels.\n- **Temp table**: physically stored for the session, can be indexed and reused across statements. Use for big intermediate results or when the same result feeds several queries.\n- **View**: a saved CTE with a name; survives sessions.\n- SQL Server does **not** allow `WITH` inside a derived table or subquery; MySQL 8 does.",
+      "syntax": {
+        "mysql": "CREATE TEMPORARY TABLE tmp_pay AS\nSELECT dept, SUM(salary) AS payroll FROM employees GROUP BY dept;\nSELECT * FROM tmp_pay;",
+        "tsql": "SELECT dept, SUM(salary) AS payroll\nINTO #tmp_pay\nFROM employees GROUP BY dept;\nSELECT * FROM #tmp_pay;"
+      },
+      "args": [
+        {
+          "name": "TEMPORARY / #",
+          "meaning": "MySQL: `TEMPORARY` keyword, dropped at session end. SQL Server: a `#` prefix makes a session-scoped temp table; `##` is global."
+        },
+        {
+          "name": "CREATE ... AS / INTO",
+          "meaning": "MySQL builds it with `CREATE TABLE ... AS SELECT`; SQL Server with `SELECT ... INTO`."
+        }
+      ],
+      "examples": [
+        {
+          "id": "derived-equivalent",
+          "title": "The same answer as a derived table",
+          "explain_md": "Identical result to the Department payroll CTE; the logic is just nested instead of named.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT d.dept, d.payroll, d.headcount\nFROM (SELECT dept, SUM(salary) AS payroll, COUNT(*) AS headcount\n      FROM employees\n      GROUP BY dept) AS d\nWHERE d.payroll > 100000\nORDER BY d.dept;",
+          "tsql": "SELECT d.dept, d.payroll, d.headcount\nFROM (SELECT dept, SUM(salary) AS payroll, COUNT(*) AS headcount\n      FROM employees\n      GROUP BY dept) AS d\nWHERE d.payroll > 100000\nORDER BY d.dept;",
+          "expected": {
+            "columns": [
+              "dept",
+              "payroll",
+              "headcount"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "515000",
+                "4"
+              ],
+              [
+                "Exec",
+                "250000",
+                "1"
+              ],
+              [
+                "Sales",
+                "270000",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "A CTE is not a cache: a CTE referenced twice may be evaluated twice in SQL Server."
+      ]
+    },
+    {
+      "id": "staging",
+      "heading": "Staging a multi-step answer",
+      "body_md": "Most interview answers fit one pipeline. Name each stage:\n1. **Grain**: filter to the rows that count (one row per what?).\n2. **Aggregate**: collapse to the grain you will rank or compare.\n3. **Rank / window**: `ROW_NUMBER`, `RANK`, `LAG` over that grain.\n4. **Filter**: keep `rnk <= n`, join names, format.\n\nSay the grain of each CTE out loud; most wrong answers come from the wrong grain.",
+      "examples": [
+        {
+          "id": "grain-aggregate-rank",
+          "title": "Top 3 customers by completed spend",
+          "explain_md": "Four CTE stages. `DENSE_RANK` keeps ties together; here customers 1, 5, 3 take ranks 1 to 3.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH completed AS (            -- grain: one row per completed order\n  SELECT customer_id, amount\n  FROM orders\n  WHERE status = 'completed'\n),\nper_customer AS (               -- grain: one row per customer\n  SELECT customer_id, SUM(amount) AS total\n  FROM completed\n  GROUP BY customer_id\n),\nranked AS (\n  SELECT customer_id, total,\n         DENSE_RANK() OVER (ORDER BY total DESC) AS rnk\n  FROM per_customer\n)\nSELECT c.name, r.total, r.rnk\nFROM ranked r\nJOIN customers c ON c.customer_id = r.customer_id\nWHERE r.rnk <= 3\nORDER BY r.rnk, c.customer_id;",
+          "tsql": "WITH completed AS (            -- grain: one row per completed order\n  SELECT customer_id, amount\n  FROM orders\n  WHERE status = 'completed'\n),\nper_customer AS (               -- grain: one row per customer\n  SELECT customer_id, SUM(amount) AS total\n  FROM completed\n  GROUP BY customer_id\n),\nranked AS (\n  SELECT customer_id, total,\n         DENSE_RANK() OVER (ORDER BY total DESC) AS rnk\n  FROM per_customer\n)\nSELECT c.name, r.total, r.rnk\nFROM ranked r\nJOIN customers c ON c.customer_id = r.customer_id\nWHERE r.rnk <= 3\nORDER BY r.rnk, c.customer_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "total",
+              "rnk"
+            ],
+            "rows": [
+              [
+                "Maya Lopez",
+                "305.00",
+                "1"
+              ],
+              [
+                "Quinn Lee",
+                "300.00",
+                "2"
+              ],
+              [
+                "Olga Petrova",
+                "250.00",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "top-per-group-ties",
+          "title": "Top earner per department, ties kept",
+          "explain_md": "`RANK() = 1` returns both Ben and Cara for Engineering. Jon's NULL salary sorts last in a descending order.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH ranked AS (\n  SELECT dept, name, salary,\n         RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS rnk\n  FROM employees\n)\nSELECT dept, name, salary\nFROM ranked\nWHERE rnk = 1\nORDER BY dept, name;",
+          "tsql": "WITH ranked AS (\n  SELECT dept, name, salary,\n         RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS rnk\n  FROM employees\n)\nSELECT dept, name, salary\nFROM ranked\nWHERE rnk = 1\nORDER BY dept, name;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "150000"
+              ],
+              [
+                "Engineering",
+                "Cara",
+                "150000"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "110000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "second-order",
+          "title": "Customers' second order",
+          "explain_md": "`ROW_NUMBER` with a tie-breaker (`order_id`) numbers each customer's orders; keep number 2.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH numbered AS (\n  SELECT order_id, customer_id, order_date, amount,\n         ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date, order_id) AS rn\n  FROM orders\n)\nSELECT order_id, customer_id, order_date, amount\nFROM numbered\nWHERE rn = 2\nORDER BY customer_id;",
+          "tsql": "WITH numbered AS (\n  SELECT order_id, customer_id, order_date, amount,\n         ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date, order_id) AS rn\n  FROM orders\n)\nSELECT order_id, customer_id, order_date, amount\nFROM numbered\nWHERE rn = 2\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "customer_id",
+              "order_date",
+              "amount"
+            ],
+            "rows": [
+              [
+                "103",
+                "1",
+                "2024-02-02",
+                "80.00"
+              ],
+              [
+                "104",
+                "2",
+                "2024-02-03",
+                "60.00"
+              ],
+              [
+                "110",
+                "3",
+                "2024-04-01",
+                "50.00"
+              ],
+              [
+                "113",
+                "4",
+                "2024-06-11",
+                "110.00"
+              ],
+              [
+                "111",
+                "5",
+                "2024-04-20",
+                "90.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "gotchas",
+      "heading": "SQL Server gotchas: the leading semicolon",
+      "body_md": "- In SQL Server, `WITH` must be the **first statement in a batch** or the previous statement must end with `;`. Hence the habit of writing `;WITH ...`. Without it you get `Incorrect syntax near the keyword 'WITH'`.\n- Best fix: terminate every statement with `;` and the leading one becomes unnecessary.\n- A CTE is visible only to the **single statement** right after it. A second statement needs its own `WITH`.\n- `ORDER BY` inside a CTE is an error in SQL Server (unless `TOP` / `OFFSET` is present); order in the final SELECT. MySQL allows it but ignores it.\n- Duplicate or unnamed output columns in the CTE are errors.",
+      "syntax": {
+        "mysql": "WITH x AS (...) SELECT ...;   -- no leading semicolon needed",
+        "tsql": ";WITH x AS (...) SELECT ...;   -- defensive leading semicolon"
+      },
+      "examples": [
+        {
+          "id": "semicolon-with",
+          "title": "Direct reports per manager",
+          "explain_md": "SQL Server version starts with `;WITH` to be safe after an unterminated statement; MySQL does not need it.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH team AS (\n  SELECT manager_id, COUNT(*) AS direct_reports\n  FROM employees\n  WHERE manager_id IS NOT NULL\n  GROUP BY manager_id\n)\nSELECT e.name, t.direct_reports\nFROM team t\nJOIN employees e ON e.emp_id = t.manager_id\nORDER BY e.emp_id;",
+          "tsql": ";WITH team AS (\n  SELECT manager_id, COUNT(*) AS direct_reports\n  FROM employees\n  WHERE manager_id IS NOT NULL\n  GROUP BY manager_id\n)\nSELECT e.name, t.direct_reports\nFROM team t\nJOIN employees e ON e.emp_id = t.manager_id\nORDER BY e.emp_id;",
+          "dialect_note_md": "The leading `;` is harmless if the previous statement is already terminated and required if it is not.",
+          "expected": {
+            "columns": [
+              "name",
+              "direct_reports"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "3"
+              ],
+              [
+                "Ben",
+                "2"
+              ],
+              [
+                "Cara",
+                "1"
+              ],
+              [
+                "Fay",
+                "2"
+              ],
+              [
+                "Ivy",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Putting two statements after one `WITH` and expecting the CTE in both: it only lives for the first."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,627 @@
+{
+  "id": "numeric-functions",
+  "title": "Numeric functions and calculations",
+  "group": "Functions",
+  "order": 2,
+  "summary_md": "Rounding, truncation, modulo, integer vs decimal division, percentages, casting and GREATEST/LEAST, with the MySQL and SQL Server differences interviewers like.",
+  "sections": [
+    {
+      "id": "round",
+      "heading": "ROUND(x, d)",
+      "body_md": "- Position 1 = the number, position 2 = digits to keep. `d > 0` keeps decimals, `d = 0` rounds to a whole number, `d < 0` rounds to tens/hundreds (`ROUND(1234.5678, -2)` = 1200).\n- Exact numbers (DECIMAL/NUMERIC/INT) round **half away from zero**: 2.5 becomes 3 and -2.5 becomes -3. SQL Server rounds FLOAT the same way.\n- MySQL FLOAT/DOUBLE depend on the C library and often round half to even; keep money in DECIMAL.\n- Result keeps the input scale: `ROUND(2.5, 0)` shows `3` in MySQL and `3.0` in SQL Server. Cast if the display matters.\n- Round **after** you sum, not before: `ROUND(SUM(x), 2)`, otherwise rounding errors accumulate.",
+      "syntax": {
+        "mysql": "ROUND(x [, d])",
+        "tsql": "ROUND(x, d [, function])"
+      },
+      "args": [
+        {
+          "name": "x (position 1)",
+          "meaning": "The number to round."
+        },
+        {
+          "name": "d (position 2)",
+          "meaning": "Digits after the decimal point to keep. Default 0 in MySQL; required in SQL Server. Negative rounds left of the point."
+        },
+        {
+          "name": "function (SQL Server position 3)",
+          "meaning": "0 (default) = round; any non-zero value = truncate instead. See the next section."
+        }
+      ],
+      "examples": [
+        {
+          "id": "round-basic",
+          "title": "Positive, zero and negative digits",
+          "explain_md": "Half away from zero on both sides of 0; a negative `d` rounds to the left of the decimal point.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT ROUND(2.5, 0) AS half_up, ROUND(-2.5, 0) AS half_neg, ROUND(1234.5678, 2) AS two_dec, ROUND(1234.5678, -2) AS hundreds;",
+          "tsql": "SELECT ROUND(2.5, 0) AS half_up, ROUND(-2.5, 0) AS half_neg, ROUND(1234.5678, 2) AS two_dec, ROUND(1234.5678, -2) AS hundreds;",
+          "expected": {
+            "columns": [
+              "half_up",
+              "half_neg",
+              "two_dec",
+              "hundreds"
+            ],
+            "rows": [
+              [
+                "3",
+                "-3",
+                "1234.57",
+                "1200"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "round-tax",
+          "title": "Sales tax on orders",
+          "explain_md": "`amount * 0.0825` has four decimals; ROUND to cents.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, amount, ROUND(amount * 0.0825, 2) AS tax FROM orders WHERE order_id BETWEEN 101 AND 105 ORDER BY order_id;",
+          "tsql": "SELECT order_id, amount, ROUND(amount * 0.0825, 2) AS tax FROM orders WHERE order_id BETWEEN 101 AND 105 ORDER BY order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "amount",
+              "tax"
+            ],
+            "rows": [
+              [
+                "101",
+                "120.00",
+                "9.90"
+              ],
+              [
+                "102",
+                "45.50",
+                "3.75"
+              ],
+              [
+                "103",
+                "80.00",
+                "6.60"
+              ],
+              [
+                "104",
+                "60.00",
+                "4.95"
+              ],
+              [
+                "105",
+                "15.00",
+                "1.24"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "truncate-floor-ceil",
+      "heading": "Truncate, FLOOR, CEIL",
+      "body_md": "- **Truncate** (drop digits, toward zero): MySQL `TRUNCATE(x, d)`; SQL Server `ROUND(x, d, 1)` (third argument non-zero). `TRUNCATE(-1.99, 1)` = -1.9.\n- `FLOOR(x)` = largest integer <= x (toward minus infinity); `CEIL(x)` / `CEILING(x)` = smallest integer >= x. For negatives they differ from truncate: `FLOOR(-1.5)` = -2, `CEIL(-1.5)` = -1, truncate = -1.\n- SQL Server only has `CEILING` (no `CEIL`); MySQL has both.\n- Round up to a multiple of n: `CEIL(x / n) * n`; round down: `FLOOR(x / n) * n`. Ceiling of a division needs a decimal division (see the division section).\n- Bucketing: `FLOOR(salary / 50000) * 50000` makes salary bands.",
+      "syntax": {
+        "mysql": "FLOOR(x)\nCEIL(x) / CEILING(x)\nTRUNCATE(x, d)",
+        "tsql": "FLOOR(x)\nCEILING(x)\nROUND(x, d, 1)"
+      },
+      "args": [
+        {
+          "name": "x (position 1)",
+          "meaning": "The number."
+        },
+        {
+          "name": "d (TRUNCATE position 2)",
+          "meaning": "Decimals to keep; negative zeroes digits left of the point (`TRUNCATE(1999, -2)` = 1900). MySQL requires it."
+        },
+        {
+          "name": "1 (ROUND position 3)",
+          "meaning": "SQL Server: non-zero flag turns ROUND into truncate."
+        }
+      ],
+      "examples": [
+        {
+          "id": "floor-ceil-trunc",
+          "title": "Negative numbers are the trap",
+          "explain_md": "FLOOR goes down, CEIL goes up, truncate goes toward zero.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT FLOOR(-1.5) AS floor_neg, CEIL(-1.5) AS ceil_neg, TRUNCATE(-1.99, 1) AS trunc_neg, FLOOR(7.9) AS floor_pos, CEIL(7.1) AS ceil_pos, TRUNCATE(7.987, 2) AS trunc_pos;",
+          "tsql": "SELECT FLOOR(-1.5) AS floor_neg, CEILING(-1.5) AS ceil_neg, ROUND(-1.99, 1, 1) AS trunc_neg, FLOOR(7.9) AS floor_pos, CEILING(7.1) AS ceil_pos, ROUND(7.987, 2, 1) AS trunc_pos;",
+          "expected": {
+            "columns": [
+              "floor_neg",
+              "ceil_neg",
+              "trunc_neg",
+              "floor_pos",
+              "ceil_pos",
+              "trunc_pos"
+            ],
+            "rows": [
+              [
+                "-2",
+                "-1",
+                "-1.9",
+                "7",
+                "8",
+                "7.98"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "salary-bands",
+          "title": "50k salary bands",
+          "explain_md": "FLOOR(salary / 50000) * 50000 gives the band start; the decimal literal keeps SQL Server from truncating early.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary, FLOOR(salary / 50000.0) * 50000 AS band_start FROM employees WHERE salary IS NOT NULL AND emp_id <= 5 ORDER BY emp_id;",
+          "tsql": "SELECT name, salary, FLOOR(salary / 50000.0) * 50000 AS band_start FROM employees WHERE salary IS NOT NULL AND emp_id <= 5 ORDER BY emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "band_start"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000",
+                "250000"
+              ],
+              [
+                "Ben",
+                "150000",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000",
+                "150000"
+              ],
+              [
+                "Dev",
+                "120000",
+                "100000"
+              ],
+              [
+                "Eli",
+                "95000",
+                "50000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "mod-abs-power",
+      "heading": "ABS, MOD / %, POWER, SQRT, SIGN",
+      "body_md": "- `ABS(x)` absolute value. `SIGN(x)` returns -1, 0 or 1.\n- Modulo: `x % y` works in both engines; `MOD(x, y)` and `x MOD y` are MySQL only. SQL Server has no MOD function.\n- The remainder takes the sign of the **dividend**: `-17 % 5` = -2 and `17 % -5` = 2 (both engines).\n- `x % 0`: MySQL returns NULL; SQL Server raises a divide-by-zero error.\n- `POWER(x, y)` = x^y (MySQL also `POW`). Returns a float. `SQRT(x)` errors on negatives in SQL Server, returns NULL in MySQL.\n- Logarithms: MySQL `LOG(x)` natural, `LOG(base, x)` two-argument with **base first**; SQL Server `LOG(x [, base])` with the base **second**. `LOG10(x)` is the same in both.\n- Even/odd test: `id % 2 = 0`. Every-nth-row sampling: `id % 10 = 0`.",
+      "syntax": {
+        "mysql": "MOD(n, m)  /  n % m  /  n MOD m\nPOWER(x, y)\nSQRT(x)\nLOG(base, x)",
+        "tsql": "n % m\nPOWER(x, y)\nSQRT(x)\nLOG(x, base)"
+      },
+      "args": [
+        {
+          "name": "n (MOD position 1)",
+          "meaning": "Dividend."
+        },
+        {
+          "name": "m (MOD position 2)",
+          "meaning": "Divisor; 0 gives NULL (MySQL) or an error (SQL Server)."
+        },
+        {
+          "name": "x, y (POWER)",
+          "meaning": "Base then exponent."
+        }
+      ],
+      "examples": [
+        {
+          "id": "mod-basic",
+          "title": "Modulo with signs",
+          "explain_md": "Remainder follows the dividend's sign. `MOD(17, 5)` and `17 % 5` agree.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT ABS(-7) AS abs_v, MOD(17, 5) AS mod_fn, 17 % 5 AS mod_op, -17 % 5 AS mod_neg, SIGN(-9) AS sign_v, POWER(2, 10) AS pow_v, SQRT(144) AS root_v;",
+          "tsql": "SELECT ABS(-7) AS abs_v, 17 % 5 AS mod_fn, 17 % 5 AS mod_op, -17 % 5 AS mod_neg, SIGN(-9) AS sign_v, POWER(2, 10) AS pow_v, SQRT(144) AS root_v;",
+          "dialect_note_md": "SQL Server has no `MOD()`, so both modulo columns use `%`.",
+          "expected": {
+            "columns": [
+              "abs_v",
+              "mod_fn",
+              "mod_op",
+              "mod_neg",
+              "sign_v",
+              "pow_v",
+              "root_v"
+            ],
+            "rows": [
+              [
+                "7",
+                "2",
+                "2",
+                "-2",
+                "-1",
+                "1024",
+                "12"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "even-ids",
+          "title": "Even employee ids",
+          "explain_md": "Filter with `emp_id % 2 = 0`.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT emp_id, name FROM employees WHERE MOD(emp_id, 2) = 0 ORDER BY emp_id;",
+          "tsql": "SELECT emp_id, name FROM employees WHERE emp_id % 2 = 0 ORDER BY emp_id;",
+          "expected": {
+            "columns": [
+              "emp_id",
+              "name"
+            ],
+            "rows": [
+              [
+                "2",
+                "Ben"
+              ],
+              [
+                "4",
+                "Dev"
+              ],
+              [
+                "6",
+                "Fay"
+              ],
+              [
+                "8",
+                "Hal"
+              ],
+              [
+                "10",
+                "Jon"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "integer-division",
+      "heading": "Division: decimal vs integer",
+      "body_md": "The most-tested numeric trap.\n- MySQL `/` is **always decimal**: `7 / 2` = 3.5000. Integer division is the `DIV` operator: `7 DIV 2` = 3 (truncates toward zero, so `-7 DIV 2` = -3). `%` gives the remainder.\n- SQL Server `/` with two integers **truncates**: `7 / 2` = 3. Make one side decimal to get 3.5: `7 * 1.0 / 2`, `7 / 2.0` or `CAST(7 AS DECIMAL(10,2)) / 2`.\n- Percentages and averages are where this bites: `COUNT(*) / total` is 0 in SQL Server unless multiplied by `100.0` first.\n- Ceiling of a division: `CEIL(7 / 2)` is 4 in MySQL but 3 in SQL Server (the division already truncated). Write `CEILING(7 / 2.0)` for both.\n- SQL Server `AVG(int_col)` truncates too: use `AVG(col * 1.0)`.",
+      "syntax": {
+        "mysql": "a / b       -- decimal\na DIV b     -- integer quotient",
+        "tsql": "a / b                -- int / int truncates\na * 1.0 / b          -- decimal result"
+      },
+      "args": [
+        {
+          "name": "a",
+          "meaning": "Dividend."
+        },
+        {
+          "name": "b",
+          "meaning": "Divisor. 0 gives NULL in MySQL SELECTs (error in strict INSERT/UPDATE) and an error in SQL Server - guard with NULLIF(b, 0)."
+        }
+      ],
+      "examples": [
+        {
+          "id": "div-decimal",
+          "title": "Force decimal division",
+          "explain_md": "`7 * 1.0 / 2` is 3.5 in both engines; ceiling of 7/2.0 is 4.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT 7 * 1.0 / 2 AS decimal_div, CEILING(7 / 2.0) AS ceil_div, 7 % 2 AS remainder;",
+          "tsql": "SELECT 7 * 1.0 / 2 AS decimal_div, CEILING(7 / 2.0) AS ceil_div, 7 % 2 AS remainder;",
+          "expected": {
+            "columns": [
+              "decimal_div",
+              "ceil_div",
+              "remainder"
+            ],
+            "rows": [
+              [
+                "3.50000",
+                "4",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "div-integer",
+          "title": "Integer division",
+          "explain_md": "MySQL needs DIV for a whole-number quotient; the SQL Server `/` on two integers already truncates.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT 7 / 2 AS slash, 7 DIV 2 AS div_op, -7 DIV 2 AS div_negative;",
+          "tsql": "SELECT 7 / 2 AS slash, 7 / 2 AS div_op, -7 / 2 AS div_negative;",
+          "dialect_note_md": "In real SQL Server this returns 3, 3, -3 (integer division truncates). MySQL `/` returns 3.5000, `DIV` returns 3 and -3. The in-browser SQL Server emulator shows 3.5 for `7 / 2` - the same trap in reverse.",
+          "expected": {
+            "columns": [
+              "slash",
+              "div_op",
+              "div_negative"
+            ],
+            "rows": [
+              [
+                "3.5000",
+                "3",
+                "-3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "ratios-percentages",
+      "heading": "Percentages, ratios and safe division",
+      "body_md": "Pattern: `100.0 * part / total`, then ROUND.\n- Put the decimal (`100.0`) **first** so the multiplication happens before an integer division can truncate.\n- Share of total: `100.0 * COUNT(*) / (SELECT COUNT(*) FROM t)` or `100.0 * SUM(x) / SUM(SUM(x)) OVER ()`.\n- Guard the denominator: `100.0 * part / NULLIF(total, 0)`; wrap in `COALESCE(..., 0)` if NULL is not wanted.\n- Percent change: `100.0 * (new - old) / NULLIF(old, 0)`. Growth is relative to the **old** value.\n- Percentage points vs percent: 10% to 12% is +2 points but +20% relative.\n- Conditional share: `100.0 * SUM(CASE WHEN cond THEN 1 ELSE 0 END) / COUNT(*)`.",
+      "examples": [
+        {
+          "id": "pct-share",
+          "title": "Order status share",
+          "explain_md": "11 of 14 orders are completed. `100.0 * COUNT(*) / (...)` stays decimal; the subquery gives the total.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT status, COUNT(*) AS orders_n, ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM orders), 1) AS pct FROM orders GROUP BY status ORDER BY status;",
+          "tsql": "SELECT status, COUNT(*) AS orders_n, ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM orders), 1) AS pct FROM orders GROUP BY status ORDER BY status;",
+          "expected": {
+            "columns": [
+              "status",
+              "orders_n",
+              "pct"
+            ],
+            "rows": [
+              [
+                "cancelled",
+                "2",
+                "14.3"
+              ],
+              [
+                "completed",
+                "11",
+                "78.6"
+              ],
+              [
+                "refunded",
+                "1",
+                "7.1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "pct-yoy",
+          "title": "Year-over-year growth",
+          "explain_md": "Join each 2024 month to the same month a year earlier; growth is (new - old) / old.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT cur.month_start, cur.revenue, ROUND(100.0 * (cur.revenue - prev.revenue) / NULLIF(prev.revenue, 0), 1) AS yoy_pct FROM monthly_revenue cur JOIN monthly_revenue prev ON prev.month_start = cur.month_start - INTERVAL 1 YEAR WHERE cur.month_start < '2024-04-01' ORDER BY cur.month_start;",
+          "tsql": "SELECT cur.month_start, cur.revenue, ROUND(100.0 * (cur.revenue - prev.revenue) / NULLIF(prev.revenue, 0), 1) AS yoy_pct FROM monthly_revenue cur JOIN monthly_revenue prev ON prev.month_start = DATEADD(YEAR, -1, cur.month_start) WHERE cur.month_start < '2024-04-01' ORDER BY cur.month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "yoy_pct"
+            ],
+            "rows": [
+              [
+                "2024-01-01",
+                "12000.00",
+                "20.0"
+              ],
+              [
+                "2024-02-01",
+                "12100.00",
+                "10.0"
+              ],
+              [
+                "2024-03-01",
+                "13650.00",
+                "30.0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Rounded shares need not add up: three rows rounded to one decimal can total 99.9 or 100.1.",
+        "SQL Server DECIMAL division can shrink the result scale (e.g. `DECIMAL(10,2) / DECIMAL(10,2)` keeps at least 6 decimals); the result is still correct but cast to a fixed scale for display."
+      ]
+    },
+    {
+      "id": "cast-convert",
+      "heading": "CAST and CONVERT to DECIMAL / INT / text",
+      "body_md": "- `CAST(x AS type)` is ANSI and works in both engines. `CONVERT` differs: **MySQL `CONVERT(x, type)`** has the value first; **SQL Server `CONVERT(type, x [, style])`** has the type first.\n- `DECIMAL(p, s)`: p = total digits, s = digits after the point. `DECIMAL(10, 2)` holds up to 99999999.99. Overflow is an error; extra decimals are rounded.\n- MySQL `CAST` target types are limited: `SIGNED`/`UNSIGNED` (integers), `DECIMAL(p,s)`, `CHAR`, `DATE`, `DATETIME`, `DOUBLE`. `CAST(x AS VARCHAR(10))` and `AS INT` are **errors** in MySQL; use `CHAR` and `SIGNED`.\n- SQL Server `CAST(x AS INT)` of a decimal **truncates** (12.99 becomes 12); MySQL `CAST(12.99 AS SIGNED)` **rounds** (13).\n- Failed conversion of text: SQL Server errors (`TRY_CAST` / `TRY_CONVERT` return NULL); MySQL returns 0 for 'abc' with a warning, or the numeric prefix of '12abc'.",
+      "syntax": {
+        "mysql": "CAST(expr AS type)\nCONVERT(expr, type)",
+        "tsql": "CAST(expr AS type)\nCONVERT(type, expr [, style])\nTRY_CAST(expr AS type)"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "The value to convert."
+        },
+        {
+          "name": "type",
+          "meaning": "Target type. MySQL: SIGNED, UNSIGNED, DECIMAL(p,s), CHAR, DATE... SQL Server: any type."
+        },
+        {
+          "name": "CONVERT position order",
+          "meaning": "MySQL: (value, type). SQL Server: (type, value, style)."
+        }
+      ],
+      "examples": [
+        {
+          "id": "cast-decimal",
+          "title": "Text to DECIMAL, number to text",
+          "explain_md": "`CAST('12.345' AS DECIMAL(10,2))` rounds to 12.35. MySQL converts to text with CHAR; SQL Server uses VARCHAR.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT CAST('12.345' AS DECIMAL(10, 2)) AS as_decimal, CAST(7 AS CHAR) AS as_text, CONVERT('12.5', DECIMAL(5, 1)) AS convert_fn;",
+          "tsql": "SELECT CAST('12.345' AS DECIMAL(10, 2)) AS as_decimal, CAST(7 AS VARCHAR(10)) AS as_text, CONVERT(DECIMAL(5, 1), '12.5') AS convert_fn;",
+          "expected": {
+            "columns": [
+              "as_decimal",
+              "as_text",
+              "convert_fn"
+            ],
+            "rows": [
+              [
+                "12.35",
+                "7",
+                "12.5"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cast-to-int",
+          "title": "Decimal to integer: round or truncate?",
+          "explain_md": "The same-looking cast gives different results.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT CAST(12.99 AS SIGNED) AS as_int, CAST(-12.99 AS SIGNED) AS as_int_neg;",
+          "tsql": "SELECT CAST(12.99 AS INT) AS as_int, CAST(-12.99 AS INT) AS as_int_neg;",
+          "dialect_note_md": "Real SQL Server returns 12 and -12 (truncates); MySQL returns 13 and -13 (rounds). Use `FLOOR` / `ROUND` explicitly when the intent matters.",
+          "expected": {
+            "columns": [
+              "as_int",
+              "as_int_neg"
+            ],
+            "rows": [
+              [
+                "13",
+                "-13"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "greatest-least",
+      "heading": "GREATEST and LEAST (row-wise max/min)",
+      "body_md": "- `GREATEST(a, b, c)` / `LEAST(a, b, c)` compare **values in one row**; `MAX` / `MIN` aggregate down **rows**.\n- MySQL returns **NULL if any argument is NULL**. Wrap with `COALESCE` for 'ignore missing'.\n- SQL Server added `GREATEST` / `LEAST` in **2022** (and Azure SQL); the documented behaviour is to ignore NULL arguments, so results differ from MySQL when a NULL is present. Before 2022 use `CASE` or `(SELECT MAX(v) FROM (VALUES (a), (b)) AS t(v))`.\n- Common uses: floor a value (`GREATEST(x, 0)`), cap a value (`LEAST(x, 100000)`), latest of several date columns.",
+      "syntax": {
+        "mysql": "GREATEST(v1, v2 [, ...])\nLEAST(v1, v2 [, ...])",
+        "tsql": "GREATEST(v1, v2 [, ...])   -- 2022+\nLEAST(v1, v2 [, ...])      -- 2022+"
+      },
+      "args": [
+        {
+          "name": "v1, v2, ...",
+          "meaning": "Two or more values or columns from the same row; the result type follows normal precedence."
+        }
+      ],
+      "examples": [
+        {
+          "id": "greatest-basic",
+          "title": "Floor and cap",
+          "explain_md": "Row-wise comparison of literals; the cap keeps values under 100,000.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT GREATEST(3, 9, 5) AS biggest, LEAST(3, 9, 5) AS smallest, GREATEST(-4, 0) AS floored_at_zero, LEAST(150000, 100000) AS capped;",
+          "tsql": "SELECT GREATEST(3, 9, 5) AS biggest, LEAST(3, 9, 5) AS smallest, GREATEST(-4, 0) AS floored_at_zero, LEAST(150000, 100000) AS capped;",
+          "dialect_note_md": "Requires SQL Server 2022+; on older versions use CASE expressions.",
+          "expected": {
+            "columns": [
+              "biggest",
+              "smallest",
+              "floored_at_zero",
+              "capped"
+            ],
+            "rows": [
+              [
+                "9",
+                "3",
+                "0",
+                "100000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "greatest-null",
+          "title": "NULL arguments differ by engine",
+          "explain_md": "MySQL propagates NULL; SQL Server 2022 ignores it.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT GREATEST(3, NULL, 7) AS greatest_null, LEAST(3, NULL, 7) AS least_null;",
+          "tsql": "SELECT GREATEST(3, NULL, 7) AS greatest_null, LEAST(3, NULL, 7) AS least_null;",
+          "dialect_note_md": "MySQL returns NULL for both. SQL Server 2022 returns 7 and 3 (NULL arguments are ignored).",
+          "expected": {
+            "columns": [
+              "greatest_null",
+              "least_null"
+            ],
+            "rows": [
+              [
+                null,
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "greatest-capped",
+          "title": "Cap salaries (NULL-safe)",
+          "explain_md": "COALESCE first so Jon's NULL becomes 0 instead of NULL in MySQL; then LEAST caps at 100,000.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary, LEAST(COALESCE(salary, 0), 100000) AS capped FROM employees WHERE emp_id IN (2, 4, 8, 10) ORDER BY emp_id;",
+          "tsql": "SELECT name, salary, LEAST(COALESCE(salary, 0), 100000) AS capped FROM employees WHERE emp_id IN (2, 4, 8, 10) ORDER BY emp_id;",
+          "dialect_note_md": "Requires SQL Server 2022+ for LEAST.",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "capped"
+            ],
+            "rows": [
+              [
+                "Ben",
+                "150000",
+                "100000"
+              ],
+              [
+                "Dev",
+                "120000",
+                "100000"
+              ],
+              [
+                "Hal",
+                "80000",
+                "80000"
+              ],
+              [
+                "Jon",
+                null,
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    }
+  ]
+}

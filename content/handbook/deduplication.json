@@ -1,0 +1,760 @@
+{
+  "id": "deduplication",
+  "title": "Deduplication",
+  "group": "Patterns",
+  "order": 1,
+  "summary_md": "Remove or find repeated rows: DISTINCT vs GROUP BY, duplicate detection, cleaned comparison keys, one-row-per-key with ROW_NUMBER, and safe deletes.",
+  "sections": [
+    {
+      "id": "distinct-vs-group-by",
+      "heading": "DISTINCT vs GROUP BY",
+      "body_md": "- `SELECT DISTINCT a, b` removes duplicate **whole output rows**; it is not a function of one column.\n- `GROUP BY a, b` returns the same unique combinations, and lets you add aggregates (`COUNT(*)`, `MIN`, `MAX`).\n- Both treat **NULLs as equal** to each other (one NULL group), unlike `=`.\n- `COUNT(*)` counts rows, `COUNT(col)` skips NULLs, `COUNT(DISTINCT col)` counts unique non-NULL values.",
+      "syntax": {
+        "mysql": "SELECT DISTINCT col1, col2 FROM t;\nSELECT col1, col2, COUNT(*) FROM t GROUP BY col1, col2;",
+        "tsql": "SELECT DISTINCT col1, col2 FROM t;\nSELECT col1, col2, COUNT(*) FROM t GROUP BY col1, col2;"
+      },
+      "args": [
+        {
+          "name": "DISTINCT",
+          "meaning": "Applies to the entire select list, not just the first column. `DISTINCT(a), b` is the same as `DISTINCT a, b`."
+        },
+        {
+          "name": "GROUP BY cols",
+          "meaning": "Defines the uniqueness key; every non-aggregated select column must be listed."
+        }
+      ],
+      "examples": [
+        {
+          "id": "distinct-city",
+          "title": "Distinct cities",
+          "explain_md": "Three Austin accounts collapse to one row, and the NULL city survives as a single row (NULLs sort first).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT DISTINCT city\nFROM customers\nORDER BY city;",
+          "tsql": "SELECT DISTINCT city\nFROM customers\nORDER BY city;",
+          "expected": {
+            "columns": [
+              "city"
+            ],
+            "rows": [
+              [
+                null
+              ],
+              [
+                "Austin"
+              ],
+              [
+                "Boston"
+              ],
+              [
+                "Denver"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "distinct-pair",
+          "title": "DISTINCT applies to the whole row",
+          "explain_md": "Customer 2 placed two orders on 2024-02-03; the pair `(customer_id, order_date)` appears once, giving 13 rows from 14 orders.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT DISTINCT customer_id, order_date\nFROM orders\nORDER BY customer_id, order_date;",
+          "tsql": "SELECT DISTINCT customer_id, order_date\nFROM orders\nORDER BY customer_id, order_date;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "order_date"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-01-06"
+              ],
+              [
+                "1",
+                "2024-02-02"
+              ],
+              [
+                "1",
+                "2024-03-09"
+              ],
+              [
+                "1",
+                "2024-05-05"
+              ],
+              [
+                "2",
+                "2024-01-21"
+              ],
+              [
+                "2",
+                "2024-02-03"
+              ],
+              [
+                "2",
+                "2024-06-30"
+              ],
+              [
+                "3",
+                "2024-02-14"
+              ],
+              [
+                "3",
+                "2024-04-01"
+              ],
+              [
+                "4",
+                "2024-03-03"
+              ],
+              [
+                "4",
+                "2024-06-11"
+              ],
+              [
+                "5",
+                "2024-03-16"
+              ],
+              [
+                "5",
+                "2024-04-20"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "group-by-same",
+          "title": "GROUP BY gives the same combinations plus counts",
+          "explain_md": "For customer 2, the 02-03 group has 2 rows totalling 75.00.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, order_date, COUNT(*) AS n_rows, SUM(amount) AS total\nFROM orders\nWHERE customer_id = 2\nGROUP BY customer_id, order_date\nORDER BY order_date;",
+          "tsql": "SELECT customer_id, order_date, COUNT(*) AS n_rows, SUM(amount) AS total\nFROM orders\nWHERE customer_id = 2\nGROUP BY customer_id, order_date\nORDER BY order_date;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "order_date",
+              "n_rows",
+              "total"
+            ],
+            "rows": [
+              [
+                "2",
+                "2024-01-21",
+                "1",
+                "45.50"
+              ],
+              [
+                "2",
+                "2024-02-03",
+                "2",
+                "75.00"
+              ],
+              [
+                "2",
+                "2024-06-30",
+                "1",
+                "30.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "count-variants",
+          "title": "COUNT(*) vs COUNT(col) vs COUNT(DISTINCT col)",
+          "explain_md": "Six accounts, five with a city, three distinct cities.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT COUNT(*) AS total_rows,\n       COUNT(city) AS non_null_city,\n       COUNT(DISTINCT city) AS distinct_city\nFROM customers;",
+          "tsql": "SELECT COUNT(*) AS total_rows,\n       COUNT(city) AS non_null_city,\n       COUNT(DISTINCT city) AS distinct_city\nFROM customers;",
+          "expected": {
+            "columns": [
+              "total_rows",
+              "non_null_city",
+              "distinct_city"
+            ],
+            "rows": [
+              [
+                "6",
+                "5",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`SELECT DISTINCT` on a wide table hides the real problem (which key is duplicated?). Find duplicates by key first, then decide."
+      ]
+    },
+    {
+      "id": "find-duplicates",
+      "heading": "Finding duplicates",
+      "body_md": "- Decide the **business key** (what makes two rows 'the same'), group by it, and keep groups with `HAVING COUNT(*) > 1`.\n- To see the actual rows, use a window count (`COUNT(*) OVER (PARTITION BY key)`) and filter in an outer query, or join back to the duplicate keys.\n- `HAVING` filters groups after aggregation; `WHERE` filters rows before.",
+      "syntax": {
+        "mysql": "SELECT key_cols, COUNT(*) FROM t GROUP BY key_cols HAVING COUNT(*) > 1;",
+        "tsql": "SELECT key_cols, COUNT(*) FROM t GROUP BY key_cols HAVING COUNT(*) > 1;"
+      },
+      "args": [
+        {
+          "name": "key_cols",
+          "meaning": "The columns that define 'same row'."
+        },
+        {
+          "name": "HAVING COUNT(*) > 1",
+          "meaning": "Keeps only keys that occur more than once."
+        }
+      ],
+      "examples": [
+        {
+          "id": "having-count",
+          "title": "Duplicate keys",
+          "explain_md": "One key repeats: customer 2 on 2024-02-03.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, order_date, COUNT(*) AS n\nFROM orders\nGROUP BY customer_id, order_date\nHAVING COUNT(*) > 1\nORDER BY customer_id, order_date;",
+          "tsql": "SELECT customer_id, order_date, COUNT(*) AS n\nFROM orders\nGROUP BY customer_id, order_date\nHAVING COUNT(*) > 1\nORDER BY customer_id, order_date;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "order_date",
+              "n"
+            ],
+            "rows": [
+              [
+                "2",
+                "2024-02-03",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "show-dup-rows",
+          "title": "Show the duplicate rows themselves",
+          "explain_md": "A window count tags every row with its group size, so the full rows (orders 104 and 105) come back.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, customer_id, order_date, amount\nFROM (SELECT order_id, customer_id, order_date, amount,\n             COUNT(*) OVER (PARTITION BY customer_id, order_date) AS n\n      FROM orders) AS x\nWHERE n > 1\nORDER BY order_id;",
+          "tsql": "SELECT order_id, customer_id, order_date, amount\nFROM (SELECT order_id, customer_id, order_date, amount,\n             COUNT(*) OVER (PARTITION BY customer_id, order_date) AS n\n      FROM orders) AS x\nWHERE n > 1\nORDER BY order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "customer_id",
+              "order_date",
+              "amount"
+            ],
+            "rows": [
+              [
+                "104",
+                "2",
+                "2024-02-03",
+                "60.00"
+              ],
+              [
+                "105",
+                "2",
+                "2024-02-03",
+                "15.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "surplus-rows",
+          "title": "How many surplus rows?",
+          "explain_md": "Surplus = rows beyond the first in each group. `SUM(n - 1)` is how many a dedup would remove.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT SUM(n - 1) AS surplus_rows\nFROM (SELECT COUNT(*) AS n\n      FROM orders\n      GROUP BY customer_id, order_date) AS g;",
+          "tsql": "SELECT SUM(n - 1) AS surplus_rows\nFROM (SELECT COUNT(*) AS n\n      FROM orders\n      GROUP BY customer_id, order_date) AS g;",
+          "expected": {
+            "columns": [
+              "surplus_rows"
+            ],
+            "rows": [
+              [
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "normalise",
+      "heading": "Normalising before comparing",
+      "body_md": "- Real duplicates differ by case, padding or formatting. Compare a **cleaned key**: `LOWER(TRIM(col))`.\n- Use the same expression in `GROUP BY` / `PARTITION BY` and in the select list.\n- Comparison rules depend on collation: both engines default to case-insensitive, but trailing-space handling differs (MySQL 8 default compares trailing spaces; SQL Server ignores them). Normalise explicitly instead of relying on it.\n- `GROUP BY` / `DISTINCT` treat NULL as one value; joins on `=` do not match NULL to NULL (MySQL `<=>`, SQL Server 2022 `IS NOT DISTINCT FROM`).",
+      "syntax": {
+        "mysql": "LOWER(TRIM(email))",
+        "tsql": "LOWER(LTRIM(RTRIM(email)))   -- TRIM(email) also works on SQL Server 2017+"
+      },
+      "args": [
+        {
+          "name": "TRIM(x)",
+          "meaning": "Removes leading and trailing spaces (MySQL: also `TRIM(BOTH ch FROM x)`)."
+        },
+        {
+          "name": "LOWER(x)",
+          "meaning": "Lower-cases so 'PABLO@' and 'pablo@' match regardless of collation."
+        }
+      ],
+      "examples": [
+        {
+          "id": "clean-key",
+          "title": "Compute the key",
+          "explain_md": "Customers 4 and 6 differ only by case and a trailing space; their cleaned keys are identical.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, name, email, LOWER(TRIM(email)) AS email_key\nFROM customers\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id, name, email, LOWER(TRIM(email)) AS email_key\nFROM customers\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "name",
+              "email",
+              "email_key"
+            ],
+            "rows": [
+              [
+                "1",
+                "Maya Lopez",
+                "maya@shop.com",
+                "maya@shop.com"
+              ],
+              [
+                "2",
+                "Noah Kim",
+                "noah.kim@mail.org",
+                "noah.kim@mail.org"
+              ],
+              [
+                "3",
+                "Olga Petrova",
+                "olga@shop.com",
+                "olga@shop.com"
+              ],
+              [
+                "4",
+                "Pablo Diaz",
+                "PABLO@mail.org",
+                "pablo@mail.org"
+              ],
+              [
+                "5",
+                "Quinn Lee",
+                "quinn@corp.net",
+                "quinn@corp.net"
+              ],
+              [
+                "6",
+                "pablo diaz",
+                "pablo@mail.org ",
+                "pablo@mail.org"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "dupes-by-clean-key",
+          "title": "Duplicate groups on the cleaned key",
+          "explain_md": "One group has two accounts: keep 4 (earliest id), consider 6 the duplicate.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT LOWER(TRIM(email)) AS email_key,\n       COUNT(*) AS n,\n       MIN(customer_id) AS keep_id,\n       MAX(customer_id) AS latest_id\nFROM customers\nGROUP BY LOWER(TRIM(email))\nHAVING COUNT(*) > 1\nORDER BY email_key;",
+          "tsql": "SELECT LOWER(TRIM(email)) AS email_key,\n       COUNT(*) AS n,\n       MIN(customer_id) AS keep_id,\n       MAX(customer_id) AS latest_id\nFROM customers\nGROUP BY LOWER(TRIM(email))\nHAVING COUNT(*) > 1\nORDER BY email_key;",
+          "expected": {
+            "columns": [
+              "email_key",
+              "n",
+              "keep_id",
+              "latest_id"
+            ],
+            "rows": [
+              [
+                "pablo@mail.org",
+                "2",
+                "4",
+                "6"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Stripping inner whitespace needs `REPLACE(col, ' ', '')`; TRIM only touches the ends.",
+        "Normalising in the comparison defeats an index on `email`; for big tables store the cleaned key as a computed column."
+      ]
+    },
+    {
+      "id": "row-number-keep",
+      "heading": "Latest or first row per key with ROW_NUMBER",
+      "body_md": "- Number the rows inside each key and keep `rn = 1`: `ROW_NUMBER() OVER (PARTITION BY key ORDER BY ...)`.\n- **Keep-last** = order by the timestamp `DESC`; **keep-first** = order `ASC`.\n- Always add a **deterministic tie-breaker** (a unique id) as the last ORDER BY column; without it, ties pick an arbitrary row that can change between runs.\n- `RANK` / `DENSE_RANK` keep ties and so cannot deduplicate on their own.\n- If you only need aggregate columns, `GROUP BY key` with `MAX()` is simpler.",
+      "syntax": {
+        "mysql": "ROW_NUMBER() OVER (PARTITION BY key ORDER BY pref_col DESC, unique_id DESC)",
+        "tsql": "ROW_NUMBER() OVER (PARTITION BY key ORDER BY pref_col DESC, unique_id DESC)"
+      },
+      "args": [
+        {
+          "name": "PARTITION BY key",
+          "meaning": "The business key; one survivor per partition."
+        },
+        {
+          "name": "ORDER BY pref_col",
+          "meaning": "Which row survives: DESC for newest, ASC for oldest."
+        },
+        {
+          "name": "unique_id",
+          "meaning": "Tie-breaker. Without it, equal `pref_col` values give a non-deterministic winner."
+        }
+      ],
+      "examples": [
+        {
+          "id": "latest-order",
+          "title": "Latest order per customer",
+          "explain_md": "Descending date, then descending `order_id` as the tie-breaker.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH numbered AS (\n  SELECT order_id, customer_id, order_date, amount,\n         ROW_NUMBER() OVER (PARTITION BY customer_id\n                            ORDER BY order_date DESC, order_id DESC) AS rn\n  FROM orders\n)\nSELECT order_id, customer_id, order_date, amount\nFROM numbered\nWHERE rn = 1\nORDER BY customer_id;",
+          "tsql": "WITH numbered AS (\n  SELECT order_id, customer_id, order_date, amount,\n         ROW_NUMBER() OVER (PARTITION BY customer_id\n                            ORDER BY order_date DESC, order_id DESC) AS rn\n  FROM orders\n)\nSELECT order_id, customer_id, order_date, amount\nFROM numbered\nWHERE rn = 1\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "customer_id",
+              "order_date",
+              "amount"
+            ],
+            "rows": [
+              [
+                "112",
+                "1",
+                "2024-05-05",
+                "65.00"
+              ],
+              [
+                "114",
+                "2",
+                "2024-06-30",
+                "30.00"
+              ],
+              [
+                "110",
+                "3",
+                "2024-04-01",
+                "50.00"
+              ],
+              [
+                "113",
+                "4",
+                "2024-06-11",
+                "110.00"
+              ],
+              [
+                "111",
+                "5",
+                "2024-04-20",
+                "90.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "tie-breaker",
+          "title": "One top earner per department",
+          "explain_md": "Ben and Cara tie at 150000; `emp_id` in the ORDER BY makes Ben win every time, so Engineering returns one row.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH numbered AS (\n  SELECT dept, name, salary,\n         ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC, emp_id) AS rn\n  FROM employees\n)\nSELECT dept, name, salary\nFROM numbered\nWHERE rn = 1\nORDER BY dept;",
+          "tsql": "WITH numbered AS (\n  SELECT dept, name, salary,\n         ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC, emp_id) AS rn\n  FROM employees\n)\nSELECT dept, name, salary\nFROM numbered\nWHERE rn = 1\nORDER BY dept;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "150000"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "110000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "first-vs-last",
+          "title": "Keep-first vs keep-last on the cleaned email",
+          "explain_md": "Two numberings side by side: account 4 is first and 6 is last in the pablo group; everyone else is both.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH k AS (\n  SELECT customer_id, name, signup_date,\n         ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(email))\n                            ORDER BY signup_date, customer_id) AS rn_first,\n         ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(email))\n                            ORDER BY signup_date DESC, customer_id DESC) AS rn_last\n  FROM customers\n)\nSELECT customer_id, name, rn_first, rn_last\nFROM k\nORDER BY customer_id;",
+          "tsql": "WITH k AS (\n  SELECT customer_id, name, signup_date,\n         ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(email))\n                            ORDER BY signup_date, customer_id) AS rn_first,\n         ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(email))\n                            ORDER BY signup_date DESC, customer_id DESC) AS rn_last\n  FROM customers\n)\nSELECT customer_id, name, rn_first, rn_last\nFROM k\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "name",
+              "rn_first",
+              "rn_last"
+            ],
+            "rows": [
+              [
+                "1",
+                "Maya Lopez",
+                "1",
+                "1"
+              ],
+              [
+                "2",
+                "Noah Kim",
+                "1",
+                "1"
+              ],
+              [
+                "3",
+                "Olga Petrova",
+                "1",
+                "1"
+              ],
+              [
+                "4",
+                "Pablo Diaz",
+                "1",
+                "2"
+              ],
+              [
+                "5",
+                "Quinn Lee",
+                "1",
+                "1"
+              ],
+              [
+                "6",
+                "pablo diaz",
+                "2",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "keep-first-rows",
+          "title": "The deduplicated customer list (keep first)",
+          "explain_md": "Filtering on `rn_first = 1` drops the later duplicate (account 6).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH k AS (\n  SELECT customer_id, name, email, signup_date,\n         ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(email))\n                            ORDER BY signup_date, customer_id) AS rn\n  FROM customers\n)\nSELECT customer_id, name, email, signup_date\nFROM k\nWHERE rn = 1\nORDER BY customer_id;",
+          "tsql": "WITH k AS (\n  SELECT customer_id, name, email, signup_date,\n         ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(email))\n                            ORDER BY signup_date, customer_id) AS rn\n  FROM customers\n)\nSELECT customer_id, name, email, signup_date\nFROM k\nWHERE rn = 1\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "name",
+              "email",
+              "signup_date"
+            ],
+            "rows": [
+              [
+                "1",
+                "Maya Lopez",
+                "maya@shop.com",
+                "2024-01-05"
+              ],
+              [
+                "2",
+                "Noah Kim",
+                "noah.kim@mail.org",
+                "2024-01-20"
+              ],
+              [
+                "3",
+                "Olga Petrova",
+                "olga@shop.com",
+                "2024-02-11"
+              ],
+              [
+                "4",
+                "Pablo Diaz",
+                "PABLO@mail.org",
+                "2024-03-02"
+              ],
+              [
+                "5",
+                "Quinn Lee",
+                "quinn@corp.net",
+                "2024-03-15"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "group-by-max",
+          "title": "When only aggregates are needed: GROUP BY + MAX",
+          "explain_md": "No window needed for 'last order date per customer'; use ROW_NUMBER only when you need the other columns of that row.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, MAX(order_date) AS last_order_date\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id, MAX(order_date) AS last_order_date\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "last_order_date"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-05-05"
+              ],
+              [
+                "2",
+                "2024-06-30"
+              ],
+              [
+                "3",
+                "2024-04-01"
+              ],
+              [
+                "4",
+                "2024-06-11"
+              ],
+              [
+                "5",
+                "2024-04-20"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "No tie-breaker: re-running the query (or the DELETE) can keep a different row each time."
+      ]
+    },
+    {
+      "id": "delete-duplicates",
+      "heading": "Deleting duplicates",
+      "body_md": "- **Always preview first**: run the SELECT that lists the rows with `rn > 1`, check the count, then delete.\n- **MySQL**: cannot select from the table being deleted in a subquery directly (error 1093), so wrap the numbered rows in a derived table. `DELETE ... WHERE id IN (SELECT id FROM (...) AS d WHERE rn > 1)`.\n- **SQL Server**: delete straight through a CTE; the rows are removed from the underlying table. `WITH d AS (SELECT ..., ROW_NUMBER() ...) DELETE FROM d WHERE rn > 1;`\n- Do it inside a transaction, and add a `UNIQUE` constraint afterwards so duplicates cannot return.\n- Huge tables: build a clean copy (`CREATE TABLE ... AS SELECT` / `SELECT INTO`) and swap names rather than deleting millions of rows.\n- The examples below are the previews (SELECTs) of what each DELETE would remove.",
+      "syntax": {
+        "mysql": "DELETE FROM customers\nWHERE customer_id IN (\n  SELECT customer_id FROM (\n    SELECT customer_id,\n           ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(email))\n                              ORDER BY signup_date, customer_id) AS rn\n    FROM customers\n  ) AS d\n  WHERE d.rn > 1\n);",
+        "tsql": "WITH d AS (\n  SELECT customer_id,\n         ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(email))\n                            ORDER BY signup_date, customer_id) AS rn\n  FROM customers\n)\nDELETE FROM d WHERE rn > 1;"
+      },
+      "args": [
+        {
+          "name": "derived table d",
+          "meaning": "MySQL: forces the numbering to be materialised so the DELETE target is not read live (avoids error 1093)."
+        },
+        {
+          "name": "DELETE FROM d",
+          "meaning": "SQL Server: deleting from a CTE that selects one base table deletes from that table."
+        },
+        {
+          "name": "rn > 1",
+          "meaning": "Everything except the survivor of each partition."
+        }
+      ],
+      "examples": [
+        {
+          "id": "preview-customers",
+          "title": "Preview: duplicate customers to delete (keep first)",
+          "explain_md": "Only account 6 would be deleted. In MySQL the numbering lives in a derived table, in SQL Server in a CTE; both are the exact shape the DELETE uses.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT d.customer_id, d.name, d.email\nFROM (SELECT customer_id, name, email,\n             ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(email))\n                                ORDER BY signup_date, customer_id) AS rn\n      FROM customers) AS d\nWHERE d.rn > 1\nORDER BY d.customer_id;",
+          "tsql": "WITH d AS (\n  SELECT customer_id, name, email,\n         ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(email))\n                            ORDER BY signup_date, customer_id) AS rn\n  FROM customers\n)\nSELECT customer_id, name, email\nFROM d\nWHERE rn > 1\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "name",
+              "email"
+            ],
+            "rows": [
+              [
+                "6",
+                "pablo diaz",
+                "pablo@mail.org "
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "preview-orders",
+          "title": "Preview: duplicate orders (same customer and day)",
+          "explain_md": "Keeping the lowest `order_id` per customer-day means order 105 is the surplus row.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT d.order_id, d.customer_id, d.order_date, d.amount\nFROM (SELECT order_id, customer_id, order_date, amount,\n             ROW_NUMBER() OVER (PARTITION BY customer_id, order_date ORDER BY order_id) AS rn\n      FROM orders) AS d\nWHERE d.rn > 1\nORDER BY d.order_id;",
+          "tsql": "WITH d AS (\n  SELECT order_id, customer_id, order_date, amount,\n         ROW_NUMBER() OVER (PARTITION BY customer_id, order_date ORDER BY order_id) AS rn\n  FROM orders\n)\nSELECT order_id, customer_id, order_date, amount\nFROM d\nWHERE rn > 1\nORDER BY order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "customer_id",
+              "order_date",
+              "amount"
+            ],
+            "rows": [
+              [
+                "105",
+                "2",
+                "2024-02-03",
+                "15.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "verify-counts",
+          "title": "Verify: rows now vs unique keys",
+          "explain_md": "Before the delete: 6 rows but 5 unique cleaned emails. After a correct delete both numbers are 5.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT COUNT(*) AS rows_now,\n       COUNT(DISTINCT LOWER(TRIM(email))) AS unique_keys\nFROM customers;",
+          "tsql": "SELECT COUNT(*) AS rows_now,\n       COUNT(DISTINCT LOWER(TRIM(email))) AS unique_keys\nFROM customers;",
+          "expected": {
+            "columns": [
+              "rows_now",
+              "unique_keys"
+            ],
+            "rows": [
+              [
+                "6",
+                "5"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Run the preview SELECT and compare the count to your surplus-row count before any DELETE.",
+        "Dedup rules (what is 'the same', which row survives) are a business decision: state your assumption in the interview."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,865 @@
+{
+  "id": "aggregation",
+  "title": "Aggregation and GROUP BY",
+  "group": "Foundations",
+  "order": 3,
+  "summary_md": "Collapse rows into answers: COUNT variants, NULL behaviour of SUM/AVG, GROUP BY and HAVING rules, conditional aggregation, rates without integer-division bugs, and grouping by expressions.",
+  "sections": [
+    {
+      "id": "count-variants",
+      "heading": "COUNT(*) vs COUNT(col) vs COUNT(DISTINCT col)",
+      "body_md": "- `COUNT(*)` counts **rows**, NULLs or not.\n- `COUNT(col)` counts rows where `col` is **not NULL**.\n- `COUNT(DISTINCT col)` counts **distinct non-NULL** values.\n- `COUNT(1)` is identical to `COUNT(*)`.\n- COUNT never returns NULL: an empty set gives 0. (SUM/AVG/MIN/MAX return NULL.)\n- After a LEFT JOIN, count a column from the *right* table (`COUNT(o.order_id)`) to get 0 for unmatched rows; `COUNT(*)` would give 1.",
+      "syntax": {
+        "mysql": "COUNT(*) | COUNT(expr) | COUNT(DISTINCT expr)",
+        "tsql": "COUNT(*) | COUNT(expr) | COUNT(DISTINCT expr)  -- COUNT_BIG for > 2.1 billion rows"
+      },
+      "args": [
+        {
+          "name": "*",
+          "meaning": "Every row in the group, regardless of NULLs."
+        },
+        {
+          "name": "expr",
+          "meaning": "Counts rows where this expression is not NULL."
+        },
+        {
+          "name": "DISTINCT expr",
+          "meaning": "Counts each different non-NULL value once."
+        }
+      ],
+      "examples": [
+        {
+          "id": "count-three",
+          "title": "Three counts, three answers",
+          "explain_md": "10 rows, but only 9 salaries and 9 managers (Jon has no salary, Ana has no manager). 4 distinct departments.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT COUNT(*)               AS all_rows,\n       COUNT(salary)          AS with_salary,\n       COUNT(manager_id)      AS with_manager,\n       COUNT(DISTINCT dept)   AS depts\nFROM employees;",
+          "tsql": "SELECT COUNT(*)               AS all_rows,\n       COUNT(salary)          AS with_salary,\n       COUNT(manager_id)      AS with_manager,\n       COUNT(DISTINCT dept)   AS depts\nFROM employees;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "all_rows",
+              "with_salary",
+              "with_manager",
+              "depts"
+            ],
+            "rows": [
+              [
+                "10",
+                "9",
+                "9",
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "count-distinct-orders",
+          "title": "Orders vs distinct customers",
+          "explain_md": "14 orders were placed by only 5 distinct customers. COUNT(DISTINCT) is how you de-duplicate 'unique users'.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT COUNT(*)                    AS orders,\n       COUNT(DISTINCT customer_id) AS buyers\nFROM orders;",
+          "tsql": "SELECT COUNT(*)                    AS orders,\n       COUNT(DISTINCT customer_id) AS buyers\nFROM orders;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "orders",
+              "buyers"
+            ],
+            "rows": [
+              [
+                "14",
+                "5"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "count-left-join",
+          "title": "COUNT(*) vs COUNT(right column) after LEFT JOIN",
+          "explain_md": "Customer 6 has no orders. COUNT(*) reports 1 (the NULL-padded row); COUNT(o.order_id) correctly reports 0.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id,\n       COUNT(*)          AS wrong_count,\n       COUNT(o.order_id) AS right_count\nFROM customers AS c\nLEFT JOIN orders AS o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.customer_id,\n       COUNT(*)          AS wrong_count,\n       COUNT(o.order_id) AS right_count\nFROM customers AS c\nLEFT JOIN orders AS o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id\nORDER BY c.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "wrong_count",
+              "right_count"
+            ],
+            "rows": [
+              [
+                "1",
+                "4",
+                "4"
+              ],
+              [
+                "2",
+                "4",
+                "4"
+              ],
+              [
+                "3",
+                "2",
+                "2"
+              ],
+              [
+                "4",
+                "2",
+                "2"
+              ],
+              [
+                "5",
+                "2",
+                "2"
+              ],
+              [
+                "6",
+                "1",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "T-SQL `COUNT` returns INT (use `COUNT_BIG` for huge tables); MySQL returns BIGINT.",
+        "T-SQL allows only one expression inside COUNT(DISTINCT ...); multi-column distinct counts need a subquery or concatenation."
+      ]
+    },
+    {
+      "id": "sum-avg-nulls",
+      "heading": "SUM, AVG, MIN, MAX and NULLs",
+      "body_md": "- All of them **ignore NULL inputs**.\n- `AVG(x)` = `SUM(x) / COUNT(x)`, not divided by `COUNT(*)`. NULLs raise the average relative to treating them as 0.\n- Over an empty set (or all NULLs) SUM/AVG/MIN/MAX return **NULL**. Wrap with `COALESCE(SUM(x), 0)` when you need 0.\n- MIN/MAX work on numbers, dates and strings.\n- `SUM(DISTINCT x)` / `AVG(DISTINCT x)` exist but are almost always a bug.",
+      "syntax": {
+        "mysql": "SUM(expr) | AVG(expr) | MIN(expr) | MAX(expr)",
+        "tsql": "SUM(expr) | AVG(expr) | MIN(expr) | MAX(expr)"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "Column or expression evaluated per row; NULL results are skipped."
+        }
+      ],
+      "examples": [
+        {
+          "id": "avg-null",
+          "title": "AVG skips NULL",
+          "explain_md": "Nine non-NULL salaries are averaged. Treating Jon as 0 (second column) lowers the result. Pick the one the question's wording implies.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT AVG(salary)              AS avg_ignoring_null,\n       AVG(COALESCE(salary, 0)) AS avg_null_as_zero\nFROM employees;",
+          "tsql": "SELECT AVG(salary * 1.0)              AS avg_ignoring_null,\n       AVG(COALESCE(salary, 0) * 1.0) AS avg_null_as_zero\nFROM employees;",
+          "dialect_note_md": "`AVG` of an INT column returns INT in SQL Server (truncated). Multiplying by `1.0` makes it decimal like MySQL.",
+          "expected": {
+            "columns": [
+              "avg_ignoring_null",
+              "avg_null_as_zero"
+            ],
+            "rows": [
+              [
+                "125000.0000",
+                "112500.0000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "empty-sum",
+          "title": "SUM over no rows is NULL, COUNT is 0",
+          "explain_md": "No order has status 'void'. Use COALESCE to turn the NULL into 0.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT SUM(amount)                AS raw_sum,\n       COALESCE(SUM(amount), 0)   AS safe_sum,\n       COUNT(*)                   AS n\nFROM orders\nWHERE status = 'void';",
+          "tsql": "SELECT SUM(amount)                AS raw_sum,\n       COALESCE(SUM(amount), 0)   AS safe_sum,\n       COUNT(*)                   AS n\nFROM orders\nWHERE status = 'void';",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "raw_sum",
+              "safe_sum",
+              "n"
+            ],
+            "rows": [
+              [
+                null,
+                "0.00",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "min-max",
+          "title": "MIN / MAX on dates and amounts",
+          "explain_md": "First and last order date, and the largest order, in one pass.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT MIN(order_date) AS first_order,\n       MAX(order_date) AS last_order,\n       MAX(amount)     AS biggest\nFROM orders;",
+          "tsql": "SELECT MIN(order_date) AS first_order,\n       MAX(order_date) AS last_order,\n       MAX(amount)     AS biggest\nFROM orders;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "first_order",
+              "last_order",
+              "biggest"
+            ],
+            "rows": [
+              [
+                "2024-01-06",
+                "2024-06-30",
+                "300.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Integer SUM in SQL Server overflows at 2^31; cast to BIGINT (`SUM(CAST(x AS BIGINT))`) for big totals."
+      ]
+    },
+    {
+      "id": "group-by",
+      "heading": "GROUP BY rules",
+      "body_md": "- One output row per distinct combination of the GROUP BY expressions.\n- Every SELECT column must be **either in GROUP BY or inside an aggregate**. SQL Server enforces this; MySQL 8 does too by default (`ONLY_FULL_GROUP_BY`), unless the column is functionally dependent on the grouped key.\n- NULLs form **one** group (GROUP BY treats NULLs as equal).\n- Group by the key's id, then also select the name (put both in GROUP BY) - names are not unique.\n- GROUP BY with no aggregate behaves like DISTINCT.\n- Output order is not guaranteed; add ORDER BY.",
+      "examples": [
+        {
+          "id": "group-dept",
+          "title": "One row per department",
+          "explain_md": "Aggregates run per group. Marketing has 2 people but 1 non-NULL salary.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept,\n       COUNT(*)      AS headcount,\n       COUNT(salary) AS paid,\n       SUM(salary)   AS payroll\nFROM employees\nGROUP BY dept\nORDER BY dept;",
+          "tsql": "SELECT dept,\n       COUNT(*)      AS headcount,\n       COUNT(salary) AS paid,\n       SUM(salary)   AS payroll\nFROM employees\nGROUP BY dept\nORDER BY dept;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "dept",
+              "headcount",
+              "paid",
+              "payroll"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "4",
+                "4",
+                "515000"
+              ],
+              [
+                "Exec",
+                "1",
+                "1",
+                "250000"
+              ],
+              [
+                "Marketing",
+                "2",
+                "1",
+                "90000"
+              ],
+              [
+                "Sales",
+                "3",
+                "3",
+                "270000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "group-two-keys",
+          "title": "Two grouping keys",
+          "explain_md": "One row per (customer, status) pair that exists. Pairs with no orders do not appear.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, status, COUNT(*) AS n, SUM(amount) AS total\nFROM orders\nGROUP BY customer_id, status\nORDER BY customer_id, status;",
+          "tsql": "SELECT customer_id, status, COUNT(*) AS n, SUM(amount) AS total\nFROM orders\nGROUP BY customer_id, status\nORDER BY customer_id, status;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "status",
+              "n",
+              "total"
+            ],
+            "rows": [
+              [
+                "1",
+                "cancelled",
+                "1",
+                "80.00"
+              ],
+              [
+                "1",
+                "completed",
+                "3",
+                "305.00"
+              ],
+              [
+                "2",
+                "completed",
+                "4",
+                "150.50"
+              ],
+              [
+                "3",
+                "completed",
+                "2",
+                "250.00"
+              ],
+              [
+                "4",
+                "completed",
+                "1",
+                "110.00"
+              ],
+              [
+                "4",
+                "refunded",
+                "1",
+                "75.25"
+              ],
+              [
+                "5",
+                "cancelled",
+                "1",
+                "90.00"
+              ],
+              [
+                "5",
+                "completed",
+                "1",
+                "300.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "group-null-city",
+          "title": "NULL is its own group",
+          "explain_md": "Olga's NULL city shows up as one row of its own, sorted first in ascending order.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT city, COUNT(*) AS customers\nFROM customers\nGROUP BY city\nORDER BY city;",
+          "tsql": "SELECT city, COUNT(*) AS customers\nFROM customers\nGROUP BY city\nORDER BY city;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "city",
+              "customers"
+            ],
+            "rows": [
+              [
+                null,
+                "1"
+              ],
+              [
+                "Austin",
+                "3"
+              ],
+              [
+                "Boston",
+                "1"
+              ],
+              [
+                "Denver",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`SELECT dept, name, COUNT(*) FROM employees GROUP BY dept` is an error (name is neither grouped nor aggregated).",
+        "Selecting a non-grouped column is allowed only if MySQL can prove it depends on the key; do not rely on it in interviews."
+      ]
+    },
+    {
+      "id": "having",
+      "heading": "HAVING: filtering groups",
+      "body_md": "- `HAVING` runs after GROUP BY and can use aggregates: `HAVING COUNT(*) > 1`.\n- Conditions on plain columns belong in `WHERE` (filter early, group less).\n- Typical interview forms: duplicates (`HAVING COUNT(*) > 1`), 'at least N' (`HAVING COUNT(DISTINCT x) >= N`), thresholds (`HAVING SUM(x) > y`).",
+      "examples": [
+        {
+          "id": "having-dups",
+          "title": "Find duplicate keys",
+          "explain_md": "Which (customer, date) pairs have more than one order? Customer 2 on 2024-02-03.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, order_date, COUNT(*) AS n\nFROM orders\nGROUP BY customer_id, order_date\nHAVING COUNT(*) > 1\nORDER BY customer_id, order_date;",
+          "tsql": "SELECT customer_id, order_date, COUNT(*) AS n\nFROM orders\nGROUP BY customer_id, order_date\nHAVING COUNT(*) > 1\nORDER BY customer_id, order_date;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "order_date",
+              "n"
+            ],
+            "rows": [
+              [
+                "2",
+                "2024-02-03",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "having-distinct",
+          "title": "At least two different statuses",
+          "explain_md": "Customers who have seen more than one status across their orders.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, COUNT(DISTINCT status) AS statuses\nFROM orders\nGROUP BY customer_id\nHAVING COUNT(DISTINCT status) >= 2\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id, COUNT(DISTINCT status) AS statuses\nFROM orders\nGROUP BY customer_id\nHAVING COUNT(DISTINCT status) >= 2\nORDER BY customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "statuses"
+            ],
+            "rows": [
+              [
+                "1",
+                "2"
+              ],
+              [
+                "4",
+                "2"
+              ],
+              [
+                "5",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "having-vs-where",
+          "title": "Same result, but WHERE is cheaper",
+          "explain_md": "Filtering `dept <> 'Exec'` in HAVING works only because dept is grouped; WHERE is the right place and skips the Exec group entirely.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept, COUNT(*) AS headcount\nFROM employees\nWHERE dept <> 'Exec'\nGROUP BY dept\nHAVING COUNT(*) >= 3\nORDER BY dept;",
+          "tsql": "SELECT dept, COUNT(*) AS headcount\nFROM employees\nWHERE dept <> 'Exec'\nGROUP BY dept\nHAVING COUNT(*) >= 3\nORDER BY dept;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "dept",
+              "headcount"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "4"
+              ],
+              [
+                "Sales",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "conditional-agg",
+      "heading": "Conditional aggregation (SUM / COUNT with CASE)",
+      "body_md": "Aggregate only the rows that meet a condition, several conditions in one pass, one output row per group.\n\n- Count matching rows: `SUM(CASE WHEN cond THEN 1 ELSE 0 END)` or `COUNT(CASE WHEN cond THEN 1 END)` (COUNT skips the NULL from the missing ELSE).\n- Sum matching values: `SUM(CASE WHEN cond THEN amount ELSE 0 END)`.\n- MySQL shortcut: `SUM(cond)` since a comparison is 1/0. Not valid in SQL Server.\n- Use this instead of several self-joins or UNIONs; it is the basis of pivots (see CASE page).",
+      "examples": [
+        {
+          "id": "cond-counts",
+          "title": "Status counts side by side",
+          "explain_md": "One row per customer with a column per status. Customers with no matching orders still show 0 because ELSE 0.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id,\n       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,\n       SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,\n       SUM(CASE WHEN status = 'refunded'  THEN 1 ELSE 0 END) AS refunded\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id,\n       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,\n       SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,\n       SUM(CASE WHEN status = 'refunded'  THEN 1 ELSE 0 END) AS refunded\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "completed",
+              "cancelled",
+              "refunded"
+            ],
+            "rows": [
+              [
+                "1",
+                "3",
+                "1",
+                "0"
+              ],
+              [
+                "2",
+                "4",
+                "0",
+                "0"
+              ],
+              [
+                "3",
+                "2",
+                "0",
+                "0"
+              ],
+              [
+                "4",
+                "1",
+                "0",
+                "1"
+              ],
+              [
+                "5",
+                "1",
+                "1",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cond-sum",
+          "title": "Revenue only from completed orders",
+          "explain_md": "Total vs completed-only revenue in one scan. `COUNT(CASE ... THEN 1 END)` counts the completed rows.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT COUNT(*)                                          AS all_orders,\n       COUNT(CASE WHEN status = 'completed' THEN 1 END)  AS completed_orders,\n       SUM(amount)                                       AS gross,\n       SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) AS net\nFROM orders;",
+          "tsql": "SELECT COUNT(*)                                          AS all_orders,\n       COUNT(CASE WHEN status = 'completed' THEN 1 END)  AS completed_orders,\n       SUM(amount)                                       AS gross,\n       SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) AS net\nFROM orders;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "all_orders",
+              "completed_orders",
+              "gross",
+              "net"
+            ],
+            "rows": [
+              [
+                "14",
+                "11",
+                "1360.75",
+                "1115.50"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cond-mysql-shortcut",
+          "title": "MySQL boolean shortcut",
+          "explain_md": "`SUM(status = 'cancelled')` works because the comparison evaluates to 1 or 0.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, SUM(status = 'cancelled') AS cancelled\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id, SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "dialect_note_md": "SQL Server has no boolean type, so `SUM(status = 'cancelled')` is a syntax error there. Use the CASE form, which works in both.",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "cancelled"
+            ],
+            "rows": [
+              [
+                "1",
+                "1"
+              ],
+              [
+                "2",
+                "0"
+              ],
+              [
+                "3",
+                "0"
+              ],
+              [
+                "4",
+                "0"
+              ],
+              [
+                "5",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "rates",
+      "heading": "Rates, percentages and the integer-division trap",
+      "body_md": "- **SQL Server**: `int / int` is integer division and **truncates** (`7 / 2 = 3`, `1 / 3 = 0`). Force decimals with `* 1.0`, `CAST(x AS DECIMAL(10,4))`, or a decimal literal.\n- **MySQL**: `/` always returns a decimal (`7 / 2 = 3.5000`); `DIV` is integer division.\n- Avoid divide-by-zero with `NULLIF(denominator, 0)` (result becomes NULL instead of an error). SQL Server errors on /0; MySQL returns NULL.\n- Compute rate = matching / total in one pass with conditional aggregation.\n- `ROUND(x, 2)` for display; rounding differs only in the last digit when types differ.",
+      "syntax": {
+        "mysql": "NULLIF(expr1, expr2)   x DIV y   ROUND(x, d)",
+        "tsql": "NULLIF(expr1, expr2)   CAST(x AS DECIMAL(p,s))   ROUND(x, d)"
+      },
+      "args": [
+        {
+          "name": "NULLIF(expr1, expr2)",
+          "meaning": "Returns NULL if expr1 = expr2, otherwise expr1."
+        },
+        {
+          "name": "ROUND(x, d)",
+          "meaning": "x rounded to d decimal places."
+        },
+        {
+          "name": "x DIV y",
+          "meaning": "MySQL only: integer division."
+        }
+      ],
+      "examples": [
+        {
+          "id": "int-division",
+          "title": "7 / 2",
+          "explain_md": "MySQL returns 3.5000. SQL Server returns 3 for int / int. Force a decimal to make them agree.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT 7 / 2 AS plain, CAST(7 AS DECIMAL(10,2)) / 2 AS decimal_div;",
+          "tsql": "SELECT 7 / 2 AS plain, CAST(7 AS DECIMAL(10,2)) / 2 AS decimal_div;",
+          "dialect_note_md": "In SQL Server `7 / 2` is `3` (int / int truncates). MySQL gives `3.5000`. The `decimal_div` column is 3.5 in both. The in-browser emulator returns decimals here; real SQL Server truncates `plain` to 3.",
+          "expected": {
+            "columns": [
+              "plain",
+              "decimal_div"
+            ],
+            "rows": [
+              [
+                "3.5000",
+                "3.500000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cancel-rate",
+          "title": "Cancellation rate per customer",
+          "explain_md": "Rate = cancelled / total. Multiplying by 1.0 keeps SQL Server from truncating 1/3 to 0. Customers with no cancellations get 0.00.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id,\n       COUNT(*) AS orders,\n       ROUND(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) * 1.0 / COUNT(*), 2) AS cancel_rate\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id,\n       COUNT(*) AS orders,\n       ROUND(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) * 1.0 / COUNT(*), 2) AS cancel_rate\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "orders",
+              "cancel_rate"
+            ],
+            "rows": [
+              [
+                "1",
+                "4",
+                "0.25"
+              ],
+              [
+                "2",
+                "4",
+                "0.00"
+              ],
+              [
+                "3",
+                "2",
+                "0.00"
+              ],
+              [
+                "4",
+                "2",
+                "0.00"
+              ],
+              [
+                "5",
+                "2",
+                "0.50"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "safe-ratio",
+          "title": "Guard the denominator with NULLIF",
+          "explain_md": "No row matches 'void', so the denominator is 0; NULLIF turns it into NULL and the ratio into NULL instead of an error.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT SUM(amount) / NULLIF(SUM(CASE WHEN status = 'void' THEN amount END), 0) AS ratio\nFROM orders;",
+          "tsql": "SELECT SUM(amount) / NULLIF(SUM(CASE WHEN status = 'void' THEN amount END), 0) AS ratio\nFROM orders;",
+          "dialect_note_md": "Without NULLIF, SQL Server raises 'Divide by zero error encountered'; MySQL silently returns NULL.",
+          "expected": {
+            "columns": [
+              "ratio"
+            ],
+            "rows": [
+              [
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Percentages: multiply by 100.0 (decimal) first, `100.0 * a / b`, to avoid truncation in SQL Server.",
+        "Average of rates is not the overall rate. Sum the numerators and denominators, then divide."
+      ]
+    },
+    {
+      "id": "group-expr",
+      "heading": "Grouping by an expression",
+      "body_md": "- You may group by any expression: a date part, a CASE bucket, a string slice.\n- The SELECT list must repeat (or reference) the same expression. MySQL allows the alias in GROUP BY; SQL Server needs the full expression (or a derived table).\n- Month bucket: MySQL `DATE_FORMAT(d, '%Y-%m')`; SQL Server `FORMAT(d, 'yyyy-MM')` or `LEFT(CONVERT(VARCHAR(10), d, 23), 7)`.\n- `YEAR(d)`, `MONTH(d)` exist in both. Group on `(YEAR, MONTH)` if you need a sortable pair.\n- Computing the expression once in a derived table is the portable pattern.",
+      "examples": [
+        {
+          "id": "group-month",
+          "title": "Orders per calendar month",
+          "explain_md": "Group on year and month so January 2024 never merges with January 2025 data.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT YEAR(order_date)  AS yr,\n       MONTH(order_date) AS mth,\n       COUNT(*)          AS orders,\n       SUM(amount)       AS total\nFROM orders\nGROUP BY YEAR(order_date), MONTH(order_date)\nORDER BY yr, mth;",
+          "tsql": "SELECT YEAR(order_date)  AS yr,\n       MONTH(order_date) AS mth,\n       COUNT(*)          AS orders,\n       SUM(amount)       AS total\nFROM orders\nGROUP BY YEAR(order_date), MONTH(order_date)\nORDER BY yr, mth;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "yr",
+              "mth",
+              "orders",
+              "total"
+            ],
+            "rows": [
+              [
+                "2024",
+                "1",
+                "2",
+                "165.50"
+              ],
+              [
+                "2024",
+                "2",
+                "4",
+                "355.00"
+              ],
+              [
+                "2024",
+                "3",
+                "3",
+                "495.25"
+              ],
+              [
+                "2024",
+                "4",
+                "2",
+                "140.00"
+              ],
+              [
+                "2024",
+                "5",
+                "1",
+                "65.00"
+              ],
+              [
+                "2024",
+                "6",
+                "2",
+                "140.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "group-text-month",
+          "title": "Month label with DATE_FORMAT",
+          "explain_md": "A single sortable `YYYY-MM` string key.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT DATE_FORMAT(order_date, '%Y-%m') AS ym, COUNT(*) AS orders\nFROM orders\nGROUP BY DATE_FORMAT(order_date, '%Y-%m')\nORDER BY ym;",
+          "tsql": "SELECT FORMAT(order_date, 'yyyy-MM') AS ym, COUNT(*) AS orders\nFROM orders\nGROUP BY FORMAT(order_date, 'yyyy-MM')\nORDER BY ym;",
+          "dialect_note_md": "`DATE_FORMAT` is MySQL only; SQL Server uses `FORMAT(date, 'yyyy-MM')` (slow on big tables) or `CONVERT`.",
+          "expected": {
+            "columns": [
+              "ym",
+              "orders"
+            ],
+            "rows": [
+              [
+                "2024-01",
+                "2"
+              ],
+              [
+                "2024-02",
+                "4"
+              ],
+              [
+                "2024-03",
+                "3"
+              ],
+              [
+                "2024-04",
+                "2"
+              ],
+              [
+                "2024-05",
+                "1"
+              ],
+              [
+                "2024-06",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "group-case-bucket",
+          "title": "Group by a CASE bucket",
+          "explain_md": "Compute the bucket in a derived table, then group by it: portable and the CASE is written once.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT band, COUNT(*) AS people\nFROM (\n  SELECT CASE WHEN salary IS NULL THEN 'unknown'\n              WHEN salary >= 130000 THEN 'high'\n              WHEN salary >= 90000  THEN 'mid'\n              ELSE 'low' END AS band\n  FROM employees\n) AS b\nGROUP BY band\nORDER BY band;",
+          "tsql": "SELECT band, COUNT(*) AS people\nFROM (\n  SELECT CASE WHEN salary IS NULL THEN 'unknown'\n              WHEN salary >= 130000 THEN 'high'\n              WHEN salary >= 90000  THEN 'mid'\n              ELSE 'low' END AS band\n  FROM employees\n) AS b\nGROUP BY band\nORDER BY band;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "band",
+              "people"
+            ],
+            "rows": [
+              [
+                "high",
+                "3"
+              ],
+              [
+                "low",
+                "2"
+              ],
+              [
+                "mid",
+                "4"
+              ],
+              [
+                "unknown",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    }
+  ]
+}

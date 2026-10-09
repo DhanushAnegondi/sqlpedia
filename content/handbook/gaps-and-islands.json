@@ -1,0 +1,2154 @@
+{
+  "id": "gaps-and-islands",
+  "title": "Gaps and islands",
+  "group": "Patterns",
+  "order": 3,
+  "summary_md": "Find unbroken runs (islands) and the holes between them: streaks, longest consecutive days, missing dates and ids, runs of the same status. One trick covers almost all of it: value minus ROW_NUMBER is constant inside a run.",
+  "sections": [
+    {
+      "id": "consecutive-days",
+      "heading": "Consecutive days: the row-number trick",
+      "body_md": "**Cue:** \"consecutive days\", \"streak\", \"in a row\", \"unbroken run\", \"N days straight\".\n\n**Shape (always the same 4 steps):**\n- Reduce to one row per (entity, day) with `SELECT DISTINCT`. Duplicates break the trick.\n- `ROW_NUMBER()` per entity ordered by day -> `rn`.\n- `day - rn` days = a constant per unbroken run. Call it the island key `grp`.\n- `GROUP BY entity, grp` -> `MIN(day)`, `MAX(day)`, `COUNT(*)` = start, end, length.\n\n**Why it works:** inside a run both `day` and `rn` rise by 1 per row, so their difference stays fixed. A missing day makes `day` jump by 2 while `rn` rises by 1, so the key changes.",
+      "syntax": {
+        "mysql": "DATE_SUB(day_col, INTERVAL ROW_NUMBER() OVER (PARTITION BY entity ORDER BY day_col) DAY)",
+        "tsql": "DATEADD(day, -ROW_NUMBER() OVER (PARTITION BY entity ORDER BY day_col), day_col)"
+      },
+      "args": [
+        {
+          "name": "day_col",
+          "meaning": "A DATE column, already de-duplicated to one row per entity per day."
+        },
+        {
+          "name": "PARTITION BY entity",
+          "meaning": "Restart the numbering for each user/device/account so streaks never span two entities."
+        },
+        {
+          "name": "ORDER BY day_col",
+          "meaning": "Numbering follows calendar order; this is what makes day minus rn constant inside a run."
+        },
+        {
+          "name": "INTERVAL ... DAY / day, -n",
+          "meaning": "Subtract rn calendar days. T-SQL negates the number because DATEADD adds."
+        }
+      ],
+      "examples": [
+        {
+          "id": "dataset-active-days",
+          "title": "Step 1-2: one row per user-day, then number them",
+          "explain_md": "`DISTINCT` collapses user 2's two events at the same second (and any same-day repeats) into one row. User 3 has days 1, 2, 3 and 5 May, so `rn` runs 1-4.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH days AS (\n  SELECT DISTINCT user_id, DATE(event_ts) AS active_day\n  FROM events\n)\nSELECT user_id, active_day,\n       ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY active_day) AS rn\nFROM days\nORDER BY user_id, active_day;",
+          "tsql": "WITH days AS (\n  SELECT DISTINCT user_id, CAST(event_ts AS DATE) AS active_day\n  FROM events\n)\nSELECT user_id, active_day,\n       ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY active_day) AS rn\nFROM days\nORDER BY user_id, active_day;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "active_day",
+              "rn"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-05-01",
+                "1"
+              ],
+              [
+                "2",
+                "2024-05-01",
+                "1"
+              ],
+              [
+                "2",
+                "2024-05-02",
+                "2"
+              ],
+              [
+                "3",
+                "2024-05-01",
+                "1"
+              ],
+              [
+                "3",
+                "2024-05-02",
+                "2"
+              ],
+              [
+                "3",
+                "2024-05-03",
+                "3"
+              ],
+              [
+                "3",
+                "2024-05-05",
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "dataset-island-key",
+          "title": "Step 3: subtract rn days to get the island key",
+          "explain_md": "User 3: May 1-3 all map to the same `grp` (2024-04-30); May 5 maps to 2024-05-01. Different key = different island. The key is not a meaningful date, only a label.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH days AS (\n  SELECT DISTINCT user_id, DATE(event_ts) AS active_day FROM events\n), numbered AS (\n  SELECT user_id, active_day,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY active_day) AS rn\n  FROM days\n)\nSELECT user_id, active_day, rn,\n       DATE_SUB(active_day, INTERVAL rn DAY) AS grp\nFROM numbered\nORDER BY user_id, active_day;",
+          "tsql": "WITH days AS (\n  SELECT DISTINCT user_id, CAST(event_ts AS DATE) AS active_day FROM events\n), numbered AS (\n  SELECT user_id, active_day,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY active_day) AS rn\n  FROM days\n)\nSELECT user_id, active_day, rn,\n       DATEADD(day, -rn, active_day) AS grp\nFROM numbered\nORDER BY user_id, active_day;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "active_day",
+              "rn",
+              "grp"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-05-01",
+                "1",
+                "2024-04-30"
+              ],
+              [
+                "2",
+                "2024-05-01",
+                "1",
+                "2024-04-30"
+              ],
+              [
+                "2",
+                "2024-05-02",
+                "2",
+                "2024-04-30"
+              ],
+              [
+                "3",
+                "2024-05-01",
+                "1",
+                "2024-04-30"
+              ],
+              [
+                "3",
+                "2024-05-02",
+                "2",
+                "2024-04-30"
+              ],
+              [
+                "3",
+                "2024-05-03",
+                "3",
+                "2024-04-30"
+              ],
+              [
+                "3",
+                "2024-05-05",
+                "4",
+                "2024-05-01"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "dataset-islands",
+          "title": "Step 4: collapse each island",
+          "explain_md": "One row per run. User 3 has a 3-day island and a 1-day island; users 1 and 2 have a single island each.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH days AS (\n  SELECT DISTINCT user_id, DATE(event_ts) AS active_day FROM events\n), numbered AS (\n  SELECT user_id, active_day,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY active_day) AS rn\n  FROM days\n), keyed AS (\n  SELECT user_id, active_day, DATE_SUB(active_day, INTERVAL rn DAY) AS grp\n  FROM numbered\n)\nSELECT user_id, MIN(active_day) AS streak_start, MAX(active_day) AS streak_end,\n       COUNT(*) AS streak_days\nFROM keyed\nGROUP BY user_id, grp\nORDER BY user_id, streak_start;",
+          "tsql": "WITH days AS (\n  SELECT DISTINCT user_id, CAST(event_ts AS DATE) AS active_day FROM events\n), numbered AS (\n  SELECT user_id, active_day,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY active_day) AS rn\n  FROM days\n), keyed AS (\n  SELECT user_id, active_day, DATEADD(day, -rn, active_day) AS grp\n  FROM numbered\n)\nSELECT user_id, MIN(active_day) AS streak_start, MAX(active_day) AS streak_end,\n       COUNT(*) AS streak_days\nFROM keyed\nGROUP BY user_id, grp\nORDER BY user_id, streak_start;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "streak_start",
+              "streak_end",
+              "streak_days"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-05-01",
+                "2024-05-01",
+                "1"
+              ],
+              [
+                "2",
+                "2024-05-01",
+                "2024-05-02",
+                "2"
+              ],
+              [
+                "3",
+                "2024-05-01",
+                "2024-05-03",
+                "3"
+              ],
+              [
+                "3",
+                "2024-05-05",
+                "2024-05-05",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "dup-days-trap",
+          "title": "Trap: skipping the dedupe step",
+          "explain_md": "User 1 logged in twice on 06-02. Without `DISTINCT`, `rn` keeps counting the duplicate, so `day - rn` shifts: the 06-01..06-03 run splits (06-03 gets 2024-05-30, 06-01 gets 2024-05-31) and 06-05 collides with 06-01 (both 2024-05-31), merging unrelated days. Always dedupe to one row per entity-day first.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "logins",
+              "description_md": "One row per login event. User 1 logged in twice on 2024-06-02 (duplicate day). User 4's run crosses a month end.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "login_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-06-01"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-03"
+                ],
+                [
+                  1,
+                  "2024-06-05"
+                ],
+                [
+                  1,
+                  "2024-06-06"
+                ],
+                [
+                  1,
+                  "2024-06-10"
+                ],
+                [
+                  2,
+                  "2024-06-01"
+                ],
+                [
+                  2,
+                  "2024-06-03"
+                ],
+                [
+                  2,
+                  "2024-06-04"
+                ],
+                [
+                  2,
+                  "2024-06-05"
+                ],
+                [
+                  2,
+                  "2024-06-06"
+                ],
+                [
+                  3,
+                  "2024-06-02"
+                ],
+                [
+                  4,
+                  "2024-05-30"
+                ],
+                [
+                  4,
+                  "2024-05-31"
+                ],
+                [
+                  4,
+                  "2024-06-01"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH numbered AS (\n  SELECT user_id, login_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date) AS rn\n  FROM logins\n  WHERE user_id = 1\n)\nSELECT user_id, login_date, rn, DATE_SUB(login_date, INTERVAL rn DAY) AS grp\nFROM numbered\nORDER BY login_date, rn;",
+          "tsql": "WITH numbered AS (\n  SELECT user_id, login_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date) AS rn\n  FROM logins\n  WHERE user_id = 1\n)\nSELECT user_id, login_date, rn, DATEADD(day, -rn, login_date) AS grp\nFROM numbered\nORDER BY login_date, rn;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "login_date",
+              "rn",
+              "grp"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-06-01",
+                "1",
+                "2024-05-31"
+              ],
+              [
+                "1",
+                "2024-06-02",
+                "2",
+                "2024-05-31"
+              ],
+              [
+                "1",
+                "2024-06-02",
+                "3",
+                "2024-05-30"
+              ],
+              [
+                "1",
+                "2024-06-03",
+                "4",
+                "2024-05-30"
+              ],
+              [
+                "1",
+                "2024-06-05",
+                "5",
+                "2024-05-31"
+              ],
+              [
+                "1",
+                "2024-06-06",
+                "6",
+                "2024-05-31"
+              ],
+              [
+                "1",
+                "2024-06-10",
+                "7",
+                "2024-06-03"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "No dedupe -> duplicate days shift `rn` and fragment the streak.",
+        "If the grain is a timestamp, cast to DATE first (`DATE(ts)` / `CAST(ts AS DATE)`), then dedupe.",
+        "Works for gapless integer sequences too (`id - rn`), and across month/year ends because it is real date arithmetic."
+      ]
+    },
+    {
+      "id": "streak-length",
+      "heading": "Streak length, longest streak, current streak",
+      "body_md": "**Cue:** \"longest streak\", \"max consecutive days\", \"users with N+ days in a row\", \"current streak\".\n\n**Shape:** build the `islands` CTE once (dedupe -> rn -> key -> aggregate), then answer any streak question by filtering or ranking the islands.\n- Longest per user: `ROW_NUMBER() ... ORDER BY streak_days DESC` then `rk = 1`, or `MAX(streak_days)` if only the number is needed.\n- Streak of at least N: `WHERE streak_days >= N`.\n- Current streak: cut activity at the as-of date, keep the island whose end is the as-of day or the day before.",
+      "examples": [
+        {
+          "id": "all-streaks",
+          "title": "Every streak per user",
+          "explain_md": "The `islands` CTE is reused in the next examples. User 4 stays one 3-day island across the May/June boundary.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "logins",
+              "description_md": "One row per login event. User 1 logged in twice on 2024-06-02 (duplicate day). User 4's run crosses a month end.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "login_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-06-01"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-03"
+                ],
+                [
+                  1,
+                  "2024-06-05"
+                ],
+                [
+                  1,
+                  "2024-06-06"
+                ],
+                [
+                  1,
+                  "2024-06-10"
+                ],
+                [
+                  2,
+                  "2024-06-01"
+                ],
+                [
+                  2,
+                  "2024-06-03"
+                ],
+                [
+                  2,
+                  "2024-06-04"
+                ],
+                [
+                  2,
+                  "2024-06-05"
+                ],
+                [
+                  2,
+                  "2024-06-06"
+                ],
+                [
+                  3,
+                  "2024-06-02"
+                ],
+                [
+                  4,
+                  "2024-05-30"
+                ],
+                [
+                  4,
+                  "2024-05-31"
+                ],
+                [
+                  4,
+                  "2024-06-01"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n), numbered AS (\n  SELECT user_id, login_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date) AS rn\n  FROM days\n), islands AS (\n  SELECT user_id, MIN(login_date) AS streak_start, MAX(login_date) AS streak_end,\n         COUNT(*) AS streak_days\n  FROM (SELECT user_id, login_date, DATE_SUB(login_date, INTERVAL rn DAY) AS grp FROM numbered) k\n  GROUP BY user_id, grp\n)\nSELECT user_id, streak_start, streak_end, streak_days FROM islands ORDER BY user_id, streak_start;",
+          "tsql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n), numbered AS (\n  SELECT user_id, login_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date) AS rn\n  FROM days\n), islands AS (\n  SELECT user_id, MIN(login_date) AS streak_start, MAX(login_date) AS streak_end,\n         COUNT(*) AS streak_days\n  FROM (SELECT user_id, login_date, DATEADD(day, -rn, login_date) AS grp FROM numbered) k\n  GROUP BY user_id, grp\n)\nSELECT user_id, streak_start, streak_end, streak_days FROM islands ORDER BY user_id, streak_start;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "streak_start",
+              "streak_end",
+              "streak_days"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-06-01",
+                "2024-06-03",
+                "3"
+              ],
+              [
+                "1",
+                "2024-06-05",
+                "2024-06-06",
+                "2"
+              ],
+              [
+                "1",
+                "2024-06-10",
+                "2024-06-10",
+                "1"
+              ],
+              [
+                "2",
+                "2024-06-01",
+                "2024-06-01",
+                "1"
+              ],
+              [
+                "2",
+                "2024-06-03",
+                "2024-06-06",
+                "4"
+              ],
+              [
+                "3",
+                "2024-06-02",
+                "2024-06-02",
+                "1"
+              ],
+              [
+                "4",
+                "2024-05-30",
+                "2024-06-01",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "longest-streak",
+          "title": "Longest streak per user (with tie-break)",
+          "explain_md": "`ROW_NUMBER` keeps exactly one island per user. User 1 has a 3-day (06-01..03) and 2-day islands; user 2 has a 1-day and a 4-day. The tie-break (`streak_start DESC` = most recent) must be stated; use `RANK` instead if the question wants all tied islands.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "logins",
+              "description_md": "One row per login event. User 1 logged in twice on 2024-06-02 (duplicate day). User 4's run crosses a month end.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "login_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-06-01"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-03"
+                ],
+                [
+                  1,
+                  "2024-06-05"
+                ],
+                [
+                  1,
+                  "2024-06-06"
+                ],
+                [
+                  1,
+                  "2024-06-10"
+                ],
+                [
+                  2,
+                  "2024-06-01"
+                ],
+                [
+                  2,
+                  "2024-06-03"
+                ],
+                [
+                  2,
+                  "2024-06-04"
+                ],
+                [
+                  2,
+                  "2024-06-05"
+                ],
+                [
+                  2,
+                  "2024-06-06"
+                ],
+                [
+                  3,
+                  "2024-06-02"
+                ],
+                [
+                  4,
+                  "2024-05-30"
+                ],
+                [
+                  4,
+                  "2024-05-31"
+                ],
+                [
+                  4,
+                  "2024-06-01"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n), numbered AS (\n  SELECT user_id, login_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date) AS rn\n  FROM days\n), islands AS (\n  SELECT user_id, MIN(login_date) AS streak_start, MAX(login_date) AS streak_end,\n         COUNT(*) AS streak_days\n  FROM (SELECT user_id, login_date, DATE_SUB(login_date, INTERVAL rn DAY) AS grp FROM numbered) k\n  GROUP BY user_id, grp\n)\n, ranked AS (\n  SELECT islands.*,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY streak_days DESC, streak_start DESC) AS rk\n  FROM islands\n)\nSELECT user_id, streak_start, streak_end, streak_days\nFROM ranked\nWHERE rk = 1\nORDER BY user_id;",
+          "tsql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n), numbered AS (\n  SELECT user_id, login_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date) AS rn\n  FROM days\n), islands AS (\n  SELECT user_id, MIN(login_date) AS streak_start, MAX(login_date) AS streak_end,\n         COUNT(*) AS streak_days\n  FROM (SELECT user_id, login_date, DATEADD(day, -rn, login_date) AS grp FROM numbered) k\n  GROUP BY user_id, grp\n)\n, ranked AS (\n  SELECT islands.*,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY streak_days DESC, streak_start DESC) AS rk\n  FROM islands\n)\nSELECT user_id, streak_start, streak_end, streak_days\nFROM ranked\nWHERE rk = 1\nORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "streak_start",
+              "streak_end",
+              "streak_days"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-06-01",
+                "2024-06-03",
+                "3"
+              ],
+              [
+                "2",
+                "2024-06-03",
+                "2024-06-06",
+                "4"
+              ],
+              [
+                "3",
+                "2024-06-02",
+                "2024-06-02",
+                "1"
+              ],
+              [
+                "4",
+                "2024-05-30",
+                "2024-06-01",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "users-with-n-streak",
+          "title": "Users who ever had a streak of at least 3 days",
+          "explain_md": "Filter on the island length, then `DISTINCT` the user (a user can have several qualifying islands). If only the best length is needed, `MAX(streak_days)` per user is enough.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "logins",
+              "description_md": "One row per login event. User 1 logged in twice on 2024-06-02 (duplicate day). User 4's run crosses a month end.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "login_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-06-01"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-03"
+                ],
+                [
+                  1,
+                  "2024-06-05"
+                ],
+                [
+                  1,
+                  "2024-06-06"
+                ],
+                [
+                  1,
+                  "2024-06-10"
+                ],
+                [
+                  2,
+                  "2024-06-01"
+                ],
+                [
+                  2,
+                  "2024-06-03"
+                ],
+                [
+                  2,
+                  "2024-06-04"
+                ],
+                [
+                  2,
+                  "2024-06-05"
+                ],
+                [
+                  2,
+                  "2024-06-06"
+                ],
+                [
+                  3,
+                  "2024-06-02"
+                ],
+                [
+                  4,
+                  "2024-05-30"
+                ],
+                [
+                  4,
+                  "2024-05-31"
+                ],
+                [
+                  4,
+                  "2024-06-01"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n), numbered AS (\n  SELECT user_id, login_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date) AS rn\n  FROM days\n), islands AS (\n  SELECT user_id, MIN(login_date) AS streak_start, MAX(login_date) AS streak_end,\n         COUNT(*) AS streak_days\n  FROM (SELECT user_id, login_date, DATE_SUB(login_date, INTERVAL rn DAY) AS grp FROM numbered) k\n  GROUP BY user_id, grp\n)\nSELECT DISTINCT user_id FROM islands WHERE streak_days >= 3 ORDER BY user_id;",
+          "tsql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n), numbered AS (\n  SELECT user_id, login_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date) AS rn\n  FROM days\n), islands AS (\n  SELECT user_id, MIN(login_date) AS streak_start, MAX(login_date) AS streak_end,\n         COUNT(*) AS streak_days\n  FROM (SELECT user_id, login_date, DATEADD(day, -rn, login_date) AS grp FROM numbered) k\n  GROUP BY user_id, grp\n)\nSELECT DISTINCT user_id FROM islands WHERE streak_days >= 3 ORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id"
+            ],
+            "rows": [
+              [
+                "1"
+              ],
+              [
+                "2"
+              ],
+              [
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "current-streak",
+          "title": "Current streak as of a date",
+          "explain_md": "Ignore activity after the as-of date, then keep only islands that end on the as-of day or the day before (a streak is still alive if today is empty but yesterday is not). User 1's 06-10 login is after the as-of date; user 4's streak ended 06-01 so it is dead.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "logins",
+              "description_md": "One row per login event. User 1 logged in twice on 2024-06-02 (duplicate day). User 4's run crosses a month end.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "login_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-06-01"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-03"
+                ],
+                [
+                  1,
+                  "2024-06-05"
+                ],
+                [
+                  1,
+                  "2024-06-06"
+                ],
+                [
+                  1,
+                  "2024-06-10"
+                ],
+                [
+                  2,
+                  "2024-06-01"
+                ],
+                [
+                  2,
+                  "2024-06-03"
+                ],
+                [
+                  2,
+                  "2024-06-04"
+                ],
+                [
+                  2,
+                  "2024-06-05"
+                ],
+                [
+                  2,
+                  "2024-06-06"
+                ],
+                [
+                  3,
+                  "2024-06-02"
+                ],
+                [
+                  4,
+                  "2024-05-30"
+                ],
+                [
+                  4,
+                  "2024-05-31"
+                ],
+                [
+                  4,
+                  "2024-06-01"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n  WHERE login_date <= CAST('2024-06-06' AS DATE)\n), numbered AS (\n  SELECT user_id, login_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date) AS rn\n  FROM days\n), islands AS (\n  SELECT user_id, MIN(login_date) AS streak_start, MAX(login_date) AS streak_end,\n         COUNT(*) AS streak_days\n  FROM (SELECT user_id, login_date, DATE_SUB(login_date, INTERVAL rn DAY) AS grp FROM numbered) k\n  GROUP BY user_id, grp\n)\nSELECT user_id, streak_days AS current_streak\nFROM islands\nWHERE streak_end >= DATE_SUB(CAST('2024-06-06' AS DATE), INTERVAL 1 DAY)\nORDER BY user_id;",
+          "tsql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n  WHERE login_date <= CAST('2024-06-06' AS DATE)\n), numbered AS (\n  SELECT user_id, login_date,\n         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date) AS rn\n  FROM days\n), islands AS (\n  SELECT user_id, MIN(login_date) AS streak_start, MAX(login_date) AS streak_end,\n         COUNT(*) AS streak_days\n  FROM (SELECT user_id, login_date, DATEADD(day, -rn, login_date) AS grp FROM numbered) k\n  GROUP BY user_id, grp\n)\nSELECT user_id, streak_days AS current_streak\nFROM islands\nWHERE streak_end >= DATEADD(day, -1, CAST('2024-06-06' AS DATE))\nORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "current_streak"
+            ],
+            "rows": [
+              [
+                "1",
+                "2"
+              ],
+              [
+                "2",
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "State the tie-break for longest streak (earliest, latest, or all tied via `RANK`).",
+        "Current streak: decide whether yesterday-only counts as alive, and filter out future-dated rows.",
+        "Streaks of weekdays only or business days need a calendar table; plain date arithmetic counts weekends as gaps."
+      ]
+    },
+    {
+      "id": "finding-gaps",
+      "heading": "Finding gaps",
+      "body_md": "**Cue:** \"find missing dates\", \"periods with no activity\", \"inactive for more than N days\", \"gaps between\".\n\n**Shape (LEAD method):**\n- Dedupe to one row per entity-day.\n- `LEAD(day)` per entity -> `next_day`.\n- Keep rows where `next_day - day > 1`. Gap = `day + 1` through `next_day - 1`.\n\n**When to use a calendar instead:** the gap can be at the start or end of the period, or the entity has zero rows. Join a calendar table and anti-join.\n\n**No calendar table?** Generate dates with a recursive CTE:\n- MySQL: `WITH RECURSIVE cal(d) AS (SELECT DATE '2024-03-01' UNION ALL SELECT d + INTERVAL 1 DAY FROM cal WHERE d < '2024-03-10') ...`\n- SQL Server: `WITH cal(d) AS (SELECT CAST('2024-03-01' AS DATE) UNION ALL SELECT DATEADD(day, 1, d) FROM cal WHERE d < '2024-03-10') ... OPTION (MAXRECURSION 400)` (no `RECURSIVE` keyword; default cap is 100 levels).",
+      "syntax": {
+        "mysql": "LEAD(day_col) OVER (PARTITION BY entity ORDER BY day_col)\nDATEDIFF(next_day, day_col)",
+        "tsql": "LEAD(day_col) OVER (PARTITION BY entity ORDER BY day_col)\nDATEDIFF(day, day_col, next_day)"
+      },
+      "args": [
+        {
+          "name": "day_col",
+          "meaning": "The de-duplicated date column."
+        },
+        {
+          "name": "next_day",
+          "meaning": "The LEAD result. NULL on each entity's last row, so `NULL > 1` drops it (correct)."
+        },
+        {
+          "name": "DATEDIFF first arg (T-SQL)",
+          "meaning": "The unit (`day`). MySQL's two-argument form is always days and takes (later, earlier)."
+        }
+      ],
+      "examples": [
+        {
+          "id": "lead-gap-rows",
+          "title": "LEAD to look at the next active day",
+          "explain_md": "After dedupe, `LEAD` pulls each user's next login date. `gap_days` = 1 means consecutive; the last row per user has no next day (NULL).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "logins",
+              "description_md": "One row per login event. User 1 logged in twice on 2024-06-02 (duplicate day). User 4's run crosses a month end.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "login_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-06-01"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-03"
+                ],
+                [
+                  1,
+                  "2024-06-05"
+                ],
+                [
+                  1,
+                  "2024-06-06"
+                ],
+                [
+                  1,
+                  "2024-06-10"
+                ],
+                [
+                  2,
+                  "2024-06-01"
+                ],
+                [
+                  2,
+                  "2024-06-03"
+                ],
+                [
+                  2,
+                  "2024-06-04"
+                ],
+                [
+                  2,
+                  "2024-06-05"
+                ],
+                [
+                  2,
+                  "2024-06-06"
+                ],
+                [
+                  3,
+                  "2024-06-02"
+                ],
+                [
+                  4,
+                  "2024-05-30"
+                ],
+                [
+                  4,
+                  "2024-05-31"
+                ],
+                [
+                  4,
+                  "2024-06-01"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n)\nSELECT user_id, login_date,\n       LEAD(login_date) OVER (PARTITION BY user_id ORDER BY login_date) AS next_login,\n       DATEDIFF(LEAD(login_date) OVER (PARTITION BY user_id ORDER BY login_date), login_date) AS gap_days\nFROM days\nORDER BY user_id, login_date;",
+          "tsql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n)\nSELECT user_id, login_date,\n       LEAD(login_date) OVER (PARTITION BY user_id ORDER BY login_date) AS next_login,\n       DATEDIFF(day, login_date, LEAD(login_date) OVER (PARTITION BY user_id ORDER BY login_date)) AS gap_days\nFROM days\nORDER BY user_id, login_date;",
+          "dialect_note_md": "Argument order differs: MySQL `DATEDIFF(later, earlier)` returns days; SQL Server `DATEDIFF(day, earlier, later)`.",
+          "expected": {
+            "columns": [
+              "user_id",
+              "login_date",
+              "next_login",
+              "gap_days"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-06-01",
+                "2024-06-02",
+                "1"
+              ],
+              [
+                "1",
+                "2024-06-02",
+                "2024-06-03",
+                "1"
+              ],
+              [
+                "1",
+                "2024-06-03",
+                "2024-06-05",
+                "2"
+              ],
+              [
+                "1",
+                "2024-06-05",
+                "2024-06-06",
+                "1"
+              ],
+              [
+                "1",
+                "2024-06-06",
+                "2024-06-10",
+                "4"
+              ],
+              [
+                "1",
+                "2024-06-10",
+                null,
+                null
+              ],
+              [
+                "2",
+                "2024-06-01",
+                "2024-06-03",
+                "2"
+              ],
+              [
+                "2",
+                "2024-06-03",
+                "2024-06-04",
+                "1"
+              ],
+              [
+                "2",
+                "2024-06-04",
+                "2024-06-05",
+                "1"
+              ],
+              [
+                "2",
+                "2024-06-05",
+                "2024-06-06",
+                "1"
+              ],
+              [
+                "2",
+                "2024-06-06",
+                null,
+                null
+              ],
+              [
+                "3",
+                "2024-06-02",
+                null,
+                null
+              ],
+              [
+                "4",
+                "2024-05-30",
+                "2024-05-31",
+                "1"
+              ],
+              [
+                "4",
+                "2024-05-31",
+                "2024-06-01",
+                "1"
+              ],
+              [
+                "4",
+                "2024-06-01",
+                null,
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "gap-ranges",
+          "title": "Report each gap as a range of missing days",
+          "explain_md": "Keep rows where the next day is more than 1 day away. The missing range is `login_date + 1` to `next_login - 1`; the count is `gap_days - 1`. Users 1 and 2 have gaps; users 3 and 4 have none (single day / unbroken).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "logins",
+              "description_md": "One row per login event. User 1 logged in twice on 2024-06-02 (duplicate day). User 4's run crosses a month end.",
+              "columns": [
+                {
+                  "name": "user_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "login_date",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-06-01"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-02"
+                ],
+                [
+                  1,
+                  "2024-06-03"
+                ],
+                [
+                  1,
+                  "2024-06-05"
+                ],
+                [
+                  1,
+                  "2024-06-06"
+                ],
+                [
+                  1,
+                  "2024-06-10"
+                ],
+                [
+                  2,
+                  "2024-06-01"
+                ],
+                [
+                  2,
+                  "2024-06-03"
+                ],
+                [
+                  2,
+                  "2024-06-04"
+                ],
+                [
+                  2,
+                  "2024-06-05"
+                ],
+                [
+                  2,
+                  "2024-06-06"
+                ],
+                [
+                  3,
+                  "2024-06-02"
+                ],
+                [
+                  4,
+                  "2024-05-30"
+                ],
+                [
+                  4,
+                  "2024-05-31"
+                ],
+                [
+                  4,
+                  "2024-06-01"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n), nxt AS (\n  SELECT user_id, login_date,\n         LEAD(login_date) OVER (PARTITION BY user_id ORDER BY login_date) AS next_login\n  FROM days\n)\nSELECT user_id,\n       DATE_ADD(login_date, INTERVAL 1 DAY) AS gap_start,\n       DATE_SUB(next_login, INTERVAL 1 DAY) AS gap_end,\n       DATEDIFF(next_login, login_date) - 1 AS missing_days\nFROM nxt\nWHERE DATEDIFF(next_login, login_date) > 1\nORDER BY user_id, gap_start;",
+          "tsql": "WITH days AS (\n  SELECT DISTINCT user_id, login_date FROM logins\n), nxt AS (\n  SELECT user_id, login_date,\n         LEAD(login_date) OVER (PARTITION BY user_id ORDER BY login_date) AS next_login\n  FROM days\n)\nSELECT user_id,\n       DATEADD(day, 1, login_date) AS gap_start,\n       DATEADD(day, -1, next_login) AS gap_end,\n       DATEDIFF(day, login_date, next_login) - 1 AS missing_days\nFROM nxt\nWHERE DATEDIFF(day, login_date, next_login) > 1\nORDER BY user_id, gap_start;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "gap_start",
+              "gap_end",
+              "missing_days"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-06-04",
+                "2024-06-04",
+                "1"
+              ],
+              [
+                "1",
+                "2024-06-07",
+                "2024-06-09",
+                "3"
+              ],
+              [
+                "2",
+                "2024-06-02",
+                "2024-06-02",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "west-sales-gaps",
+          "title": "Gaps in a daily series (dataset)",
+          "explain_md": "West has no row on 03-04 or 03-07, so two one-day gaps. Same recipe, filtered to one region.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH nxt AS (\n  SELECT sale_date,\n         LEAD(sale_date) OVER (ORDER BY sale_date) AS next_date\n  FROM daily_sales\n  WHERE region = 'West'\n)\nSELECT DATE_ADD(sale_date, INTERVAL 1 DAY) AS gap_start,\n       DATE_SUB(next_date, INTERVAL 1 DAY) AS gap_end,\n       DATEDIFF(next_date, sale_date) - 1 AS missing_days\nFROM nxt\nWHERE DATEDIFF(next_date, sale_date) > 1\nORDER BY gap_start;",
+          "tsql": "WITH nxt AS (\n  SELECT sale_date,\n         LEAD(sale_date) OVER (ORDER BY sale_date) AS next_date\n  FROM daily_sales\n  WHERE region = 'West'\n)\nSELECT DATEADD(day, 1, sale_date) AS gap_start,\n       DATEADD(day, -1, next_date) AS gap_end,\n       DATEDIFF(day, sale_date, next_date) - 1 AS missing_days\nFROM nxt\nWHERE DATEDIFF(day, sale_date, next_date) > 1\nORDER BY gap_start;",
+          "expected": {
+            "columns": [
+              "gap_start",
+              "gap_end",
+              "missing_days"
+            ],
+            "rows": [
+              [
+                "2024-03-04",
+                "2024-03-04",
+                "1"
+              ],
+              [
+                "2024-03-07",
+                "2024-03-07",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "calendar-antijoin",
+          "title": "Calendar anti-join: also catches gaps at the edges",
+          "explain_md": "`LEAD` cannot see missing days before the first or after the last row. Join a calendar table (one row per date in the period you care about) and keep the dates with no match. If you have no calendar table, generate one with a recursive CTE (see the body above).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "dim_date",
+              "description_md": "A calendar table: one row per date, 2024-03-01..03-10.",
+              "columns": [
+                {
+                  "name": "d",
+                  "type": "DATE"
+                }
+              ],
+              "rows": [
+                [
+                  "2024-03-01"
+                ],
+                [
+                  "2024-03-02"
+                ],
+                [
+                  "2024-03-03"
+                ],
+                [
+                  "2024-03-04"
+                ],
+                [
+                  "2024-03-05"
+                ],
+                [
+                  "2024-03-06"
+                ],
+                [
+                  "2024-03-07"
+                ],
+                [
+                  "2024-03-08"
+                ],
+                [
+                  "2024-03-09"
+                ],
+                [
+                  "2024-03-10"
+                ]
+              ]
+            },
+            {
+              "name": "west_sales",
+              "description_md": "Sales days for the West region only (no sales on 03-04 and 03-07).",
+              "columns": [
+                {
+                  "name": "sale_date",
+                  "type": "DATE"
+                },
+                {
+                  "name": "revenue",
+                  "type": "DECIMAL(10,2)"
+                }
+              ],
+              "rows": [
+                [
+                  "2024-03-01",
+                  50.0
+                ],
+                [
+                  "2024-03-02",
+                  70.0
+                ],
+                [
+                  "2024-03-03",
+                  60.0
+                ],
+                [
+                  "2024-03-05",
+                  90.0
+                ],
+                [
+                  "2024-03-06",
+                  40.0
+                ],
+                [
+                  "2024-03-08",
+                  75.0
+                ],
+                [
+                  "2024-03-09",
+                  65.0
+                ],
+                [
+                  "2024-03-10",
+                  85.0
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT c.d AS missing_date\nFROM dim_date c\nLEFT JOIN west_sales s ON s.sale_date = c.d\nWHERE s.sale_date IS NULL\nORDER BY c.d;",
+          "tsql": "SELECT c.d AS missing_date\nFROM dim_date c\nLEFT JOIN west_sales s ON s.sale_date = c.d\nWHERE s.sale_date IS NULL\nORDER BY c.d;",
+          "expected": {
+            "columns": [
+              "missing_date"
+            ],
+            "rows": [
+              [
+                "2024-03-04"
+              ],
+              [
+                "2024-03-07"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "LEAD only finds gaps between existing rows; leading/trailing gaps need a calendar.",
+        "Gap length is `gap_days - 1`, not `gap_days`.",
+        "Decide up front whether a gap is 'more than 1 day' or 'more than N days of inactivity'."
+      ]
+    },
+    {
+      "id": "missing-ids",
+      "heading": "Missing ids and id islands",
+      "body_md": "**Cue:** \"find the missing invoice numbers\", \"ranges of consecutive ids\", \"sequence has holes\".\n\n**Shape:**\n- Missing ranges: `LEAD(id)`, keep `next - id > 1`, report `id+1 .. next-1`.\n- Present ranges: `id - ROW_NUMBER() OVER (ORDER BY id)` is the island key.\n- First missing id: anti-join the table to itself on `id + 1`.",
+      "examples": [
+        {
+          "id": "missing-id-ranges",
+          "title": "Missing id ranges with LEAD",
+          "explain_md": "Ids 104, 107-108 and 112-114 are missing. Same LEAD shape on integers: a gap exists where `next_id - invoice_id > 1`.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "invoices",
+              "description_md": "Invoice ids that should be gapless from 101 upward. Some were deleted or never issued.",
+              "columns": [
+                {
+                  "name": "invoice_id",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  101
+                ],
+                [
+                  102
+                ],
+                [
+                  103
+                ],
+                [
+                  105
+                ],
+                [
+                  106
+                ],
+                [
+                  109
+                ],
+                [
+                  110
+                ],
+                [
+                  111
+                ],
+                [
+                  115
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH nxt AS (\n  SELECT invoice_id, LEAD(invoice_id) OVER (ORDER BY invoice_id) AS next_id\n  FROM invoices\n)\nSELECT invoice_id + 1 AS missing_from, next_id - 1 AS missing_to,\n       next_id - invoice_id - 1 AS how_many\nFROM nxt\nWHERE next_id - invoice_id > 1\nORDER BY missing_from;",
+          "tsql": "WITH nxt AS (\n  SELECT invoice_id, LEAD(invoice_id) OVER (ORDER BY invoice_id) AS next_id\n  FROM invoices\n)\nSELECT invoice_id + 1 AS missing_from, next_id - 1 AS missing_to,\n       next_id - invoice_id - 1 AS how_many\nFROM nxt\nWHERE next_id - invoice_id > 1\nORDER BY missing_from;",
+          "expected": {
+            "columns": [
+              "missing_from",
+              "missing_to",
+              "how_many"
+            ],
+            "rows": [
+              [
+                "104",
+                "104",
+                "1"
+              ],
+              [
+                "107",
+                "108",
+                "2"
+              ],
+              [
+                "112",
+                "114",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "id-islands",
+          "title": "Islands of consecutive ids: id minus row number",
+          "explain_md": "No date functions needed: `invoice_id - rn` is constant inside a run. Four runs of ids: 101-103, 105-106, 109-111 and 115 alone.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "invoices",
+              "description_md": "Invoice ids that should be gapless from 101 upward. Some were deleted or never issued.",
+              "columns": [
+                {
+                  "name": "invoice_id",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  101
+                ],
+                [
+                  102
+                ],
+                [
+                  103
+                ],
+                [
+                  105
+                ],
+                [
+                  106
+                ],
+                [
+                  109
+                ],
+                [
+                  110
+                ],
+                [
+                  111
+                ],
+                [
+                  115
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH numbered AS (\n  SELECT invoice_id, invoice_id - ROW_NUMBER() OVER (ORDER BY invoice_id) AS grp\n  FROM invoices\n)\nSELECT MIN(invoice_id) AS first_id, MAX(invoice_id) AS last_id, COUNT(*) AS ids_in_run\nFROM numbered\nGROUP BY grp\nORDER BY first_id;",
+          "tsql": "WITH numbered AS (\n  SELECT invoice_id, invoice_id - ROW_NUMBER() OVER (ORDER BY invoice_id) AS grp\n  FROM invoices\n)\nSELECT MIN(invoice_id) AS first_id, MAX(invoice_id) AS last_id, COUNT(*) AS ids_in_run\nFROM numbered\nGROUP BY grp\nORDER BY first_id;",
+          "expected": {
+            "columns": [
+              "first_id",
+              "last_id",
+              "ids_in_run"
+            ],
+            "rows": [
+              [
+                "101",
+                "103",
+                "3"
+              ],
+              [
+                "105",
+                "106",
+                "2"
+              ],
+              [
+                "109",
+                "111",
+                "3"
+              ],
+              [
+                "115",
+                "115",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "first-missing-id",
+          "title": "Smallest missing id (self anti-join)",
+          "explain_md": "An id starts a hole if `id + 1` does not exist. The minimum such `id + 1` is the first missing id. It cannot see a hole before the first id, and `MAX + 1` is always a candidate, which only wins when nothing is missing.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "invoices",
+              "description_md": "Invoice ids that should be gapless from 101 upward. Some were deleted or never issued.",
+              "columns": [
+                {
+                  "name": "invoice_id",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  101
+                ],
+                [
+                  102
+                ],
+                [
+                  103
+                ],
+                [
+                  105
+                ],
+                [
+                  106
+                ],
+                [
+                  109
+                ],
+                [
+                  110
+                ],
+                [
+                  111
+                ],
+                [
+                  115
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT MIN(a.invoice_id + 1) AS first_missing\nFROM invoices a\nLEFT JOIN invoices b ON b.invoice_id = a.invoice_id + 1\nWHERE b.invoice_id IS NULL;",
+          "tsql": "SELECT MIN(a.invoice_id + 1) AS first_missing\nFROM invoices a\nLEFT JOIN invoices b ON b.invoice_id = a.invoice_id + 1\nWHERE b.invoice_id IS NULL;",
+          "expected": {
+            "columns": [
+              "first_missing"
+            ],
+            "rows": [
+              [
+                "104"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Holes before the first id or after the last cannot be seen without knowing the expected range (compare to a generated sequence).",
+        "Duplicate ids break `id - rn`; dedupe first."
+      ]
+    },
+    {
+      "id": "status-islands",
+      "heading": "Islands of consecutive status values",
+      "body_md": "**Cue:** \"how long was the device down in a row\", \"consecutive rows with the same status\", \"stretches where the value stayed the same\".\n\n**Shape A (two row numbers):** `ROW_NUMBER() OVER (PARTITION BY entity ORDER BY ts) - ROW_NUMBER() OVER (PARTITION BY entity, status ORDER BY ts)` is constant per run. Group by entity, status, key.\n\n**Shape B (change flag):** `LAG` compare -> 0/1 flag -> running `SUM` = run number. Preferred when the condition is more than simple equality.",
+      "examples": [
+        {
+          "id": "two-row-numbers",
+          "title": "Two row numbers: overall vs within status",
+          "explain_md": "`rn_all` counts every reading per machine; `rn_status` counts readings of the same status. While a run continues both rise together so `rn_all - rn_status` is constant; when status flips, one counter stalls and the difference changes.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "machine_status",
+              "description_md": "Hourly status readings per machine. Machine 1 flips up/down/up/down; machine 2 stays up.",
+              "columns": [
+                {
+                  "name": "machine_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "read_ts",
+                  "type": "DATETIME"
+                },
+                {
+                  "name": "status",
+                  "type": "VARCHAR(5)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-06-01 08:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 09:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 10:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 11:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 12:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 13:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 14:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 15:00:00",
+                  "down"
+                ],
+                [
+                  2,
+                  "2024-06-01 08:00:00",
+                  "up"
+                ],
+                [
+                  2,
+                  "2024-06-01 09:00:00",
+                  "up"
+                ],
+                [
+                  2,
+                  "2024-06-01 10:00:00",
+                  "up"
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT machine_id, read_ts, status,\n       ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY read_ts) AS rn_all,\n       ROW_NUMBER() OVER (PARTITION BY machine_id, status ORDER BY read_ts) AS rn_status,\n       ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY read_ts)\n         - ROW_NUMBER() OVER (PARTITION BY machine_id, status ORDER BY read_ts) AS grp\nFROM machine_status\nORDER BY machine_id, read_ts;",
+          "tsql": "SELECT machine_id, read_ts, status,\n       ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY read_ts) AS rn_all,\n       ROW_NUMBER() OVER (PARTITION BY machine_id, status ORDER BY read_ts) AS rn_status,\n       ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY read_ts)\n         - ROW_NUMBER() OVER (PARTITION BY machine_id, status ORDER BY read_ts) AS grp\nFROM machine_status\nORDER BY machine_id, read_ts;",
+          "expected": {
+            "columns": [
+              "machine_id",
+              "read_ts",
+              "status",
+              "rn_all",
+              "rn_status",
+              "grp"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-06-01 08:00:00",
+                "up",
+                "1",
+                "1",
+                "0"
+              ],
+              [
+                "1",
+                "2024-06-01 09:00:00",
+                "up",
+                "2",
+                "2",
+                "0"
+              ],
+              [
+                "1",
+                "2024-06-01 10:00:00",
+                "down",
+                "3",
+                "1",
+                "2"
+              ],
+              [
+                "1",
+                "2024-06-01 11:00:00",
+                "down",
+                "4",
+                "2",
+                "2"
+              ],
+              [
+                "1",
+                "2024-06-01 12:00:00",
+                "down",
+                "5",
+                "3",
+                "2"
+              ],
+              [
+                "1",
+                "2024-06-01 13:00:00",
+                "up",
+                "6",
+                "3",
+                "3"
+              ],
+              [
+                "1",
+                "2024-06-01 14:00:00",
+                "down",
+                "7",
+                "4",
+                "3"
+              ],
+              [
+                "1",
+                "2024-06-01 15:00:00",
+                "down",
+                "8",
+                "5",
+                "3"
+              ],
+              [
+                "2",
+                "2024-06-01 08:00:00",
+                "up",
+                "1",
+                "1",
+                "0"
+              ],
+              [
+                "2",
+                "2024-06-01 09:00:00",
+                "up",
+                "2",
+                "2",
+                "0"
+              ],
+              [
+                "2",
+                "2024-06-01 10:00:00",
+                "up",
+                "3",
+                "3",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "status-runs",
+          "title": "Collapse each run of the same status",
+          "explain_md": "`GROUP BY machine_id, status, grp` (status must be in the grouping: two different statuses can share a `grp` value). Machine 1 has 4 runs: up, down, up, down.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "machine_status",
+              "description_md": "Hourly status readings per machine. Machine 1 flips up/down/up/down; machine 2 stays up.",
+              "columns": [
+                {
+                  "name": "machine_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "read_ts",
+                  "type": "DATETIME"
+                },
+                {
+                  "name": "status",
+                  "type": "VARCHAR(5)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-06-01 08:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 09:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 10:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 11:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 12:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 13:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 14:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 15:00:00",
+                  "down"
+                ],
+                [
+                  2,
+                  "2024-06-01 08:00:00",
+                  "up"
+                ],
+                [
+                  2,
+                  "2024-06-01 09:00:00",
+                  "up"
+                ],
+                [
+                  2,
+                  "2024-06-01 10:00:00",
+                  "up"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH numbered AS (\n  SELECT machine_id, read_ts, status,\n         ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY read_ts)\n           - ROW_NUMBER() OVER (PARTITION BY machine_id, status ORDER BY read_ts) AS grp\n  FROM machine_status\n), runs AS (\n  SELECT machine_id, status, grp, MIN(read_ts) AS run_start, MAX(read_ts) AS run_end,\n         COUNT(*) AS readings\n  FROM numbered\n  GROUP BY machine_id, status, grp\n)\nSELECT machine_id, status, run_start, run_end, readings FROM runs ORDER BY machine_id, run_start;",
+          "tsql": "WITH numbered AS (\n  SELECT machine_id, read_ts, status,\n         ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY read_ts)\n           - ROW_NUMBER() OVER (PARTITION BY machine_id, status ORDER BY read_ts) AS grp\n  FROM machine_status\n), runs AS (\n  SELECT machine_id, status, grp, MIN(read_ts) AS run_start, MAX(read_ts) AS run_end,\n         COUNT(*) AS readings\n  FROM numbered\n  GROUP BY machine_id, status, grp\n)\nSELECT machine_id, status, run_start, run_end, readings FROM runs ORDER BY machine_id, run_start;",
+          "expected": {
+            "columns": [
+              "machine_id",
+              "status",
+              "run_start",
+              "run_end",
+              "readings"
+            ],
+            "rows": [
+              [
+                "1",
+                "up",
+                "2024-06-01 08:00:00",
+                "2024-06-01 09:00:00",
+                "2"
+              ],
+              [
+                "1",
+                "down",
+                "2024-06-01 10:00:00",
+                "2024-06-01 12:00:00",
+                "3"
+              ],
+              [
+                "1",
+                "up",
+                "2024-06-01 13:00:00",
+                "2024-06-01 13:00:00",
+                "1"
+              ],
+              [
+                "1",
+                "down",
+                "2024-06-01 14:00:00",
+                "2024-06-01 15:00:00",
+                "2"
+              ],
+              [
+                "2",
+                "up",
+                "2024-06-01 08:00:00",
+                "2024-06-01 10:00:00",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "longest-down-run",
+          "title": "Longest 'down' run per machine",
+          "explain_md": "Filter the runs to the status you care about, then rank. Machine 2 never went down so it has no row; LEFT JOIN from a machine list if it must show as 0.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "machine_status",
+              "description_md": "Hourly status readings per machine. Machine 1 flips up/down/up/down; machine 2 stays up.",
+              "columns": [
+                {
+                  "name": "machine_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "read_ts",
+                  "type": "DATETIME"
+                },
+                {
+                  "name": "status",
+                  "type": "VARCHAR(5)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-06-01 08:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 09:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 10:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 11:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 12:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 13:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 14:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 15:00:00",
+                  "down"
+                ],
+                [
+                  2,
+                  "2024-06-01 08:00:00",
+                  "up"
+                ],
+                [
+                  2,
+                  "2024-06-01 09:00:00",
+                  "up"
+                ],
+                [
+                  2,
+                  "2024-06-01 10:00:00",
+                  "up"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH numbered AS (\n  SELECT machine_id, read_ts, status,\n         ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY read_ts)\n           - ROW_NUMBER() OVER (PARTITION BY machine_id, status ORDER BY read_ts) AS grp\n  FROM machine_status\n), runs AS (\n  SELECT machine_id, status, grp, MIN(read_ts) AS run_start, MAX(read_ts) AS run_end,\n         COUNT(*) AS readings\n  FROM numbered\n  GROUP BY machine_id, status, grp\n)\nSELECT machine_id, run_start, run_end, readings\nFROM (\n  SELECT runs.*, ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY readings DESC, run_start) AS rk\n  FROM runs\n  WHERE status = 'down'\n) r\nWHERE rk = 1\nORDER BY machine_id;",
+          "tsql": "WITH numbered AS (\n  SELECT machine_id, read_ts, status,\n         ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY read_ts)\n           - ROW_NUMBER() OVER (PARTITION BY machine_id, status ORDER BY read_ts) AS grp\n  FROM machine_status\n), runs AS (\n  SELECT machine_id, status, grp, MIN(read_ts) AS run_start, MAX(read_ts) AS run_end,\n         COUNT(*) AS readings\n  FROM numbered\n  GROUP BY machine_id, status, grp\n)\nSELECT machine_id, run_start, run_end, readings\nFROM (\n  SELECT runs.*, ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY readings DESC, run_start) AS rk\n  FROM runs\n  WHERE status = 'down'\n) r\nWHERE rk = 1\nORDER BY machine_id;",
+          "expected": {
+            "columns": [
+              "machine_id",
+              "run_start",
+              "run_end",
+              "readings"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-06-01 10:00:00",
+                "2024-06-01 12:00:00",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "lag-flag-alternative",
+          "title": "Alternative: flag changes with LAG, then running SUM",
+          "explain_md": "Mark a row 1 when its status differs from the previous row (first row: `LAG` is NULL, `=` gives NULL, so the ELSE branch gives 1). The running sum is the run number. Same family as sessionization; needs no matched pair of row numbers.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "machine_status",
+              "description_md": "Hourly status readings per machine. Machine 1 flips up/down/up/down; machine 2 stays up.",
+              "columns": [
+                {
+                  "name": "machine_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "read_ts",
+                  "type": "DATETIME"
+                },
+                {
+                  "name": "status",
+                  "type": "VARCHAR(5)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "2024-06-01 08:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 09:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 10:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 11:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 12:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 13:00:00",
+                  "up"
+                ],
+                [
+                  1,
+                  "2024-06-01 14:00:00",
+                  "down"
+                ],
+                [
+                  1,
+                  "2024-06-01 15:00:00",
+                  "down"
+                ],
+                [
+                  2,
+                  "2024-06-01 08:00:00",
+                  "up"
+                ],
+                [
+                  2,
+                  "2024-06-01 09:00:00",
+                  "up"
+                ],
+                [
+                  2,
+                  "2024-06-01 10:00:00",
+                  "up"
+                ]
+              ]
+            }
+          ],
+          "mysql": "WITH flagged AS (\n  SELECT machine_id, read_ts, status,\n         CASE WHEN status = LAG(status) OVER (PARTITION BY machine_id ORDER BY read_ts)\n              THEN 0 ELSE 1 END AS is_new_run\n  FROM machine_status\n)\nSELECT machine_id, read_ts, status, is_new_run,\n       SUM(is_new_run) OVER (PARTITION BY machine_id ORDER BY read_ts\n                             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS run_no\nFROM flagged\nORDER BY machine_id, read_ts;",
+          "tsql": "WITH flagged AS (\n  SELECT machine_id, read_ts, status,\n         CASE WHEN status = LAG(status) OVER (PARTITION BY machine_id ORDER BY read_ts)\n              THEN 0 ELSE 1 END AS is_new_run\n  FROM machine_status\n)\nSELECT machine_id, read_ts, status, is_new_run,\n       SUM(is_new_run) OVER (PARTITION BY machine_id ORDER BY read_ts\n                             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS run_no\nFROM flagged\nORDER BY machine_id, read_ts;",
+          "expected": {
+            "columns": [
+              "machine_id",
+              "read_ts",
+              "status",
+              "is_new_run",
+              "run_no"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-06-01 08:00:00",
+                "up",
+                "1",
+                "1"
+              ],
+              [
+                "1",
+                "2024-06-01 09:00:00",
+                "up",
+                "0",
+                "1"
+              ],
+              [
+                "1",
+                "2024-06-01 10:00:00",
+                "down",
+                "1",
+                "2"
+              ],
+              [
+                "1",
+                "2024-06-01 11:00:00",
+                "down",
+                "0",
+                "2"
+              ],
+              [
+                "1",
+                "2024-06-01 12:00:00",
+                "down",
+                "0",
+                "2"
+              ],
+              [
+                "1",
+                "2024-06-01 13:00:00",
+                "up",
+                "1",
+                "3"
+              ],
+              [
+                "1",
+                "2024-06-01 14:00:00",
+                "down",
+                "1",
+                "4"
+              ],
+              [
+                "1",
+                "2024-06-01 15:00:00",
+                "down",
+                "0",
+                "4"
+              ],
+              [
+                "2",
+                "2024-06-01 08:00:00",
+                "up",
+                "1",
+                "1"
+              ],
+              [
+                "2",
+                "2024-06-01 09:00:00",
+                "up",
+                "0",
+                "1"
+              ],
+              [
+                "2",
+                "2024-06-01 10:00:00",
+                "up",
+                "0",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Group by status as well as the key; different statuses can produce the same key value.",
+        "Ties in the ordering column make run boundaries non-deterministic; add a unique tie-breaker.",
+        "Use explicit `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` on the running sum; the default `RANGE` frame treats equal timestamps as one step."
+      ]
+    }
+  ]
+}

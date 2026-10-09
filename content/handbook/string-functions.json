@@ -1,0 +1,778 @@
+{
+  "id": "string-functions",
+  "title": "String functions",
+  "group": "Functions",
+  "order": 1,
+  "summary_md": "Exact syntax and argument order for the string functions interviewers use, with MySQL and SQL Server side by side: concatenation, length, substring, search, trim/pad, splitting, aggregation and cleaning.",
+  "sections": [
+    {
+      "id": "concatenation",
+      "heading": "Joining strings: CONCAT, CONCAT_WS, +",
+      "body_md": "- `CONCAT(a, b, ...)` works in both engines and converts numbers to text. NULL handling differs (see the NULL page): MySQL returns NULL, SQL Server treats NULL as empty.\n- `CONCAT_WS(sep, a, b, ...)` puts `sep` between values and **skips NULLs**. Position 1 is the separator, not data.\n- SQL Server also has `a + b`; both sides must be text (`'ID-' + 5` fails - use `CONCAT` or `CAST`). NULL + anything = NULL.\n- MySQL has **no** string `+` (it adds numbers) and `||` means OR unless `PIPES_AS_CONCAT` is set.",
+      "syntax": {
+        "mysql": "CONCAT(str1, str2 [, ...])\nCONCAT_WS(separator, str1, str2 [, ...])",
+        "tsql": "CONCAT(str1, str2 [, ...])\nCONCAT_WS(separator, str1, str2 [, ...])   -- 2017+\nstr1 + str2"
+      },
+      "args": [
+        {
+          "name": "separator (CONCAT_WS position 1)",
+          "meaning": "Text placed between the remaining arguments."
+        },
+        {
+          "name": "str1, str2, ...",
+          "meaning": "Values to join, in order. Non-text values are converted."
+        }
+      ],
+      "examples": [
+        {
+          "id": "concat-literals",
+          "title": "CONCAT and CONCAT_WS with literals",
+          "explain_md": "Numbers are converted automatically; `CONCAT_WS` inserts the separator only between values.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT CONCAT('order-', 7) AS tagged, CONCAT_WS('/', '2024', '03', '15') AS path, CONCAT('a', 'b', 'c') AS abc;",
+          "tsql": "SELECT CONCAT('order-', 7) AS tagged, CONCAT_WS('/', '2024', '03', '15') AS path, CONCAT('a', 'b', 'c') AS abc;",
+          "expected": {
+            "columns": [
+              "tagged",
+              "path",
+              "abc"
+            ],
+            "rows": [
+              [
+                "order-7",
+                "2024/03/15",
+                "abc"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "concat-orders",
+          "title": "Build a label from a column",
+          "explain_md": "`CONCAT` accepts the INT `order_id` directly in both engines. The SQL Server `+` operator would need `CAST(order_id AS VARCHAR(10))`.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, CONCAT('ORD-', order_id, ' (', status, ')') AS label FROM orders WHERE order_id <= 103 ORDER BY order_id;",
+          "tsql": "SELECT order_id, 'ORD-' + CAST(order_id AS VARCHAR(10)) + ' (' + status + ')' AS label FROM orders WHERE order_id <= 103 ORDER BY order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "label"
+            ],
+            "rows": [
+              [
+                "101",
+                "ORD-101 (completed)"
+              ],
+              [
+                "102",
+                "ORD-102 (completed)"
+              ],
+              [
+                "103",
+                "ORD-103 (cancelled)"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "length",
+      "heading": "Length: LENGTH vs CHAR_LENGTH vs LEN vs DATALENGTH",
+      "body_md": "Four names, three behaviours.\n- MySQL `CHAR_LENGTH(s)` = number of **characters**, trailing spaces included. MySQL `LENGTH(s)` = number of **bytes** (a multi-byte character such as an accented letter counts 2+ in utf8mb4). Use CHAR_LENGTH for 'how long is this text'.\n- SQL Server `LEN(s)` = characters, but **ignores trailing spaces**. `DATALENGTH(s)` = bytes **including** trailing spaces (NVARCHAR uses 2 bytes per character, so divide by 2).\n- Trick for trailing spaces in SQL Server: `LEN(s + 'x') - 1`.\n- NULL in, NULL out (all four).\n- Use length to find dirty data: `WHERE LEN(col) <> LEN(TRIM(col))` (SQL Server) / `WHERE CHAR_LENGTH(col) <> CHAR_LENGTH(TRIM(col))` (MySQL).",
+      "syntax": {
+        "mysql": "CHAR_LENGTH(str)   -- characters\nLENGTH(str)        -- bytes",
+        "tsql": "LEN(str)          -- characters, ignores trailing spaces\nDATALENGTH(expr)  -- bytes"
+      },
+      "args": [
+        {
+          "name": "str",
+          "meaning": "The text to measure."
+        }
+      ],
+      "examples": [
+        {
+          "id": "length-trailing",
+          "title": "Trailing spaces",
+          "explain_md": "The literal has two trailing spaces: 5 characters, 3 after trimming. SQL Server `LEN` already ignores them (3); `DATALENGTH` counts them (5).",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT CHAR_LENGTH('abc  ') AS with_trailing, CHAR_LENGTH(TRIM('abc  ')) AS ignoring_trailing;",
+          "tsql": "SELECT DATALENGTH('abc  ') AS with_trailing, LEN('abc  ') AS ignoring_trailing;",
+          "dialect_note_md": "MySQL: `CHAR_LENGTH('abc  ')` is 5 and `LENGTH` is the byte count (5 for ASCII). SQL Server: `LEN('abc  ')` is 3, `DATALENGTH('abc  ')` is 5 for VARCHAR (10 for NVARCHAR).",
+          "expected": {
+            "columns": [
+              "with_trailing",
+              "ignoring_trailing"
+            ],
+            "rows": [
+              [
+                "5",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "length-email",
+          "title": "Spot the dirty email",
+          "explain_md": "Customers 4 and 6 are 'the same' address in different case; customer 6 also has a trailing space, so it is one character longer.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, email, CHAR_LENGTH(email) AS chars, CHAR_LENGTH(TRIM(email)) AS chars_trimmed FROM customers WHERE customer_id IN (4, 6) ORDER BY customer_id;",
+          "tsql": "SELECT customer_id, email, DATALENGTH(email) AS chars, LEN(email) AS chars_trimmed FROM customers WHERE customer_id IN (4, 6) ORDER BY customer_id;",
+          "dialect_note_md": "In SQL Server `DATALENGTH` on a VARCHAR column equals the character count including trailing spaces, and `LEN` skips the trailing space.",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "email",
+              "chars",
+              "chars_trimmed"
+            ],
+            "rows": [
+              [
+                "4",
+                "PABLO@mail.org",
+                "14",
+                "14"
+              ],
+              [
+                "6",
+                "pablo@mail.org ",
+                "15",
+                "14"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "substring-left-right",
+      "heading": "SUBSTRING, LEFT, RIGHT, REVERSE (1-based positions)",
+      "body_md": "Positions start at **1**, not 0.\n- `SUBSTRING(str, start, length)`: position 1 = the string, position 2 = first character to take (1-based), position 3 = how many characters (optional in MySQL; **required** in SQL Server - pass a big number such as `8000` for 'to the end').\n- MySQL accepts a **negative start**: `SUBSTRING('interview', -4)` counts from the right = `view`. SQL Server has no such rule (use `RIGHT`).\n- `start = 0`: MySQL returns an empty string. SQL Server treats 0 as 'one before the string' so the window is shifted: `SUBSTRING('interview', 0, 3)` = `in`.\n- `LEFT(str, n)` / `RIGHT(str, n)`: first / last n characters, same in both engines.\n- `REVERSE(str)` exists in both; palindromes and 'last token' tricks use it.\n- MySQL aliases: `SUBSTR`, `MID`, `SUBSTRING(str FROM start FOR length)`.",
+      "syntax": {
+        "mysql": "SUBSTRING(str, start [, length])\nLEFT(str, n)\nRIGHT(str, n)\nREVERSE(str)",
+        "tsql": "SUBSTRING(expression, start, length)\nLEFT(expression, n)\nRIGHT(expression, n)\nREVERSE(expression)"
+      },
+      "args": [
+        {
+          "name": "str / expression (position 1)",
+          "meaning": "The text to cut."
+        },
+        {
+          "name": "start (position 2)",
+          "meaning": "1-based index of the first character kept. MySQL: negative counts from the end."
+        },
+        {
+          "name": "length (position 3)",
+          "meaning": "How many characters to return. Optional in MySQL; required in SQL Server."
+        },
+        {
+          "name": "n (LEFT/RIGHT position 2)",
+          "meaning": "Number of characters from the left / right edge."
+        }
+      ],
+      "examples": [
+        {
+          "id": "substring-basic",
+          "title": "Extract pieces",
+          "explain_md": "`SUBSTRING('interview', 2, 4)` starts at the 2nd letter and takes 4: `nter`. LEFT/RIGHT take from either end.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT SUBSTRING('interview', 2, 4) AS mid, SUBSTRING('interview', 6) AS tail, LEFT('interview', 3) AS first3, RIGHT('interview', 4) AS last4, REVERSE('interview') AS reversed;",
+          "tsql": "SELECT SUBSTRING('interview', 2, 4) AS mid, SUBSTRING('interview', 6, 8000) AS tail, LEFT('interview', 3) AS first3, RIGHT('interview', 4) AS last4, REVERSE('interview') AS reversed;",
+          "dialect_note_md": "SQL Server requires the third argument of SUBSTRING, so 'to the end' is written with a large length.",
+          "expected": {
+            "columns": [
+              "mid",
+              "tail",
+              "first3",
+              "last4",
+              "reversed"
+            ],
+            "rows": [
+              [
+                "nter",
+                "view",
+                "int",
+                "view",
+                "weivretni"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "substring-negative",
+          "title": "Counting from the right",
+          "explain_md": "MySQL accepts a negative start (position 2): -4 means 'the 4th character from the end'. SQL Server computes the position instead.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT SUBSTRING('interview', -4, 4) AS negative_start, SUBSTRING('interview', -4) AS negative_to_end;",
+          "tsql": "SELECT SUBSTRING('interview', LEN('interview') - 3, 4) AS negative_start, SUBSTRING('interview', LEN('interview') - 3, 8000) AS negative_to_end;",
+          "dialect_note_md": "SQL Server has no negative-start form; `RIGHT('interview', 4)` is the shortcut. Also note `SUBSTRING('interview', 0, 3)` returns `in` in SQL Server (the window begins one position before the string) but an empty string in MySQL.",
+          "expected": {
+            "columns": [
+              "negative_start",
+              "negative_to_end"
+            ],
+            "rows": [
+              [
+                "view",
+                "view"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "substring-customers",
+          "title": "Initial and first 5 letters of email",
+          "explain_md": "Typical report columns built from `LEFT` and `SUBSTRING`.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, LEFT(name, 1) AS initial, SUBSTRING(email, 1, 5) AS email_start FROM customers WHERE customer_id <= 3 ORDER BY customer_id;",
+          "tsql": "SELECT name, LEFT(name, 1) AS initial, SUBSTRING(email, 1, 5) AS email_start FROM customers WHERE customer_id <= 3 ORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "initial",
+              "email_start"
+            ],
+            "rows": [
+              [
+                "Maya Lopez",
+                "M",
+                "maya@"
+              ],
+              [
+                "Noah Kim",
+                "N",
+                "noah."
+              ],
+              [
+                "Olga Petrova",
+                "O",
+                "olga@"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "find-position",
+      "heading": "Finding text: LOCATE / INSTR vs CHARINDEX",
+      "body_md": "All return the **1-based position** of the first match, or **0** if not found. The argument order differs - the classic interview slip:\n- MySQL `LOCATE(substr, str [, start])` - needle first.\n- MySQL `INSTR(str, substr)` - haystack first (no start argument). `POSITION(substr IN str)` is the standard spelling of LOCATE.\n- SQL Server `CHARINDEX(substr, str [, start])` - needle first, like LOCATE.\n- `start` (position 3) is 1-based: the search begins at that character, and the returned position is still counted from the start of the whole string.\n- All three are case-insensitive under the default collations. For 'contains', `col LIKE '%x%'` is simpler.\n- SQL Server `PATINDEX('%pattern%', str)` supports wildcards; MySQL needs `REGEXP` for that.",
+      "syntax": {
+        "mysql": "LOCATE(substr, str [, start])\nINSTR(str, substr)",
+        "tsql": "CHARINDEX(substr, str [, start])"
+      },
+      "args": [
+        {
+          "name": "substr",
+          "meaning": "The text to look for (LOCATE/CHARINDEX position 1; INSTR position 2)."
+        },
+        {
+          "name": "str",
+          "meaning": "The text to search in (LOCATE/CHARINDEX position 2; INSTR position 1)."
+        },
+        {
+          "name": "start",
+          "meaning": "Optional 1-based position to begin searching (LOCATE/CHARINDEX position 3). Default 1."
+        }
+      ],
+      "examples": [
+        {
+          "id": "find-at",
+          "title": "Position of '@'",
+          "explain_md": "`LOCATE` and `CHARINDEX` take the needle first; `INSTR` flips it. All give 5.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT LOCATE('@', 'maya@shop.com') AS locate_pos, INSTR('maya@shop.com', '@') AS instr_pos, LOCATE('o', 'maya@shop.com', 8) AS second_o, LOCATE('z', 'maya@shop.com') AS missing;",
+          "tsql": "SELECT CHARINDEX('@', 'maya@shop.com') AS locate_pos, CHARINDEX('@', 'maya@shop.com') AS instr_pos, CHARINDEX('o', 'maya@shop.com', 8) AS second_o, CHARINDEX('z', 'maya@shop.com') AS missing;",
+          "expected": {
+            "columns": [
+              "locate_pos",
+              "instr_pos",
+              "second_o",
+              "missing"
+            ],
+            "rows": [
+              [
+                "5",
+                "5",
+                "8",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "find-dataset",
+          "title": "Where is the '@' in each email?",
+          "explain_md": "Same call over a column; useful as the building block for splitting at the delimiter.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, email, LOCATE('@', email) AS at_pos FROM customers ORDER BY customer_id;",
+          "tsql": "SELECT customer_id, email, CHARINDEX('@', email) AS at_pos FROM customers ORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "email",
+              "at_pos"
+            ],
+            "rows": [
+              [
+                "1",
+                "maya@shop.com",
+                "5"
+              ],
+              [
+                "2",
+                "noah.kim@mail.org",
+                "9"
+              ],
+              [
+                "3",
+                "olga@shop.com",
+                "5"
+              ],
+              [
+                "4",
+                "PABLO@mail.org",
+                "6"
+              ],
+              [
+                "5",
+                "quinn@corp.net",
+                "6"
+              ],
+              [
+                "6",
+                "pablo@mail.org ",
+                "6"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "INSTR and LOCATE have the arguments in opposite orders; CHARINDEX copies LOCATE. Swap them and you silently get 0."
+      ]
+    },
+    {
+      "id": "replace-trim-case-pad",
+      "heading": "REPLACE, TRIM, UPPER/LOWER, padding",
+      "body_md": "- `REPLACE(str, from, to)`: replaces every occurrence. MySQL matches **case-sensitively**; SQL Server follows the column collation (case-insensitive by default).\n- `TRIM(str)` strips spaces both sides in both engines. `LTRIM` / `RTRIM` strip one side. MySQL: `TRIM([BOTH|LEADING|TRAILING] chars FROM str)`; SQL Server 2017+: `TRIM(chars FROM str)` - there `chars` is a **set** of characters to strip.\n- `UPPER(str)` / `LOWER(str)` are the same in both.\n- Zero-padding: MySQL `LPAD(str, len, pad)` / `RPAD(...)`. **LPAD truncates** from the right if `str` is longer than `len`. SQL Server has no LPAD: use `RIGHT(CONCAT(REPLICATE('0', n), str), n)` (or `FORMAT(num, '00000')`); `RIGHT` keeps the *last* n characters, so truncation drops the left.\n- `REPEAT(str, n)` (MySQL) = `REPLICATE(str, n)` (SQL Server).",
+      "syntax": {
+        "mysql": "REPLACE(str, from_str, to_str)\nTRIM([{BOTH|LEADING|TRAILING} [remstr] FROM] str)\nLPAD(str, len, padstr)\nRPAD(str, len, padstr)",
+        "tsql": "REPLACE(string, pattern, replacement)\nTRIM([characters FROM] string)\nRIGHT(CONCAT(REPLICATE(pad, len), str), len)   -- LPAD\nLEFT(CONCAT(str, REPLICATE(pad, len)), len)    -- RPAD"
+      },
+      "args": [
+        {
+          "name": "str / string (REPLACE position 1)",
+          "meaning": "The text to search."
+        },
+        {
+          "name": "from_str (position 2)",
+          "meaning": "Text to find (all occurrences)."
+        },
+        {
+          "name": "to_str (position 3)",
+          "meaning": "Replacement; '' deletes the match."
+        },
+        {
+          "name": "len (LPAD position 2)",
+          "meaning": "Final length of the result (longer input is cut to this length)."
+        },
+        {
+          "name": "padstr (LPAD position 3)",
+          "meaning": "Characters used to fill on the left (LPAD) or right (RPAD)."
+        }
+      ],
+      "examples": [
+        {
+          "id": "replace-trim",
+          "title": "REPLACE and TRIM",
+          "explain_md": "Remove dashes, strip spaces, strip a specific character from both ends.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT REPLACE('555-123-4567', '-', '') AS digits, TRIM('  hello  ') AS trimmed, TRIM(BOTH 'x' FROM 'xxhixx') AS stripped_x, UPPER('mixed Case') AS up, LOWER('MIXED Case') AS low;",
+          "tsql": "SELECT REPLACE('555-123-4567', '-', '') AS digits, TRIM('  hello  ') AS trimmed, TRIM(BOTH 'x' FROM 'xxhixx') AS stripped_x, UPPER('mixed Case') AS up, LOWER('MIXED Case') AS low;",
+          "dialect_note_md": "`TRIM(BOTH chars FROM str)` needs SQL Server 2017+ (the BOTH keyword is optional there).",
+          "expected": {
+            "columns": [
+              "digits",
+              "trimmed",
+              "stripped_x",
+              "up",
+              "low"
+            ],
+            "rows": [
+              [
+                "5551234567",
+                "hello",
+                "hi",
+                "MIXED CASE",
+                "mixed case"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "replace-case",
+          "title": "REPLACE is case-sensitive in MySQL only",
+          "explain_md": "MySQL leaves 'AbA' untouched because 'a' is not 'A'.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT REPLACE('AbA', 'a', '-') AS result;",
+          "tsql": "SELECT REPLACE('AbA', 'a', '-') AS result;",
+          "dialect_note_md": "Real SQL Server (default case-insensitive collation) returns `-b-`; MySQL returns `AbA`. Force a case-sensitive match with `COLLATE Latin1_General_CS_AS` on the first argument.",
+          "expected": {
+            "columns": [
+              "result"
+            ],
+            "rows": [
+              [
+                "AbA"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "pad-ids",
+          "title": "Zero-pad order ids to 6 digits",
+          "explain_md": "`LPAD(7, 6, '0')` style padding. SQL Server builds it from REPLICATE and RIGHT.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, LPAD(order_id, 6, '0') AS padded FROM orders WHERE order_id IN (101, 114) ORDER BY order_id;",
+          "tsql": "SELECT order_id, RIGHT(CONCAT(REPLICATE('0', 6), order_id), 6) AS padded FROM orders WHERE order_id IN (101, 114) ORDER BY order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "padded"
+            ],
+            "rows": [
+              [
+                "101",
+                "000101"
+              ],
+              [
+                "114",
+                "000114"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`LPAD('12345', 3, '0')` returns `123` (cuts the right side); the `RIGHT(...)` idiom in SQL Server returns `345`. Check max length before padding.",
+        "MySQL `TRIM('xy' FROM s)` strips the exact substring 'xy'; SQL Server's `TRIM('xy' FROM s)` strips any of the characters x or y."
+      ]
+    },
+    {
+      "id": "split-at-delimiter",
+      "heading": "Text before / after a delimiter",
+      "body_md": "Classic tasks: email domain, local part, first name, last word.\n- MySQL: `SUBSTRING_INDEX(str, delim, count)`. Position 3 `count` > 0 returns everything **before** the count-th delimiter from the left; `count` < 0 returns everything **after** the |count|-th delimiter from the right. If the delimiter is absent, the whole string comes back.\n- Domain: `SUBSTRING_INDEX(email, '@', -1)`. Local part: `SUBSTRING_INDEX(email, '@', 1)`. Nth item: nest two calls: `SUBSTRING_INDEX(SUBSTRING_INDEX(s, ',', n), ',', -1)`.\n- SQL Server has no equivalent: combine `CHARINDEX` with `LEFT` / `SUBSTRING`. Before the delimiter: `LEFT(s, CHARINDEX(d, s) - 1)`; after: `SUBSTRING(s, CHARINDEX(d, s) + 1, 8000)`.\n- If the delimiter is missing, `CHARINDEX` = 0 and `LEFT(s, -1)` raises an error. Guard: `LEFT(s, CHARINDEX(d, s + d) - 1)`.\n- Last word in SQL Server: `RIGHT(s, CHARINDEX(' ', REVERSE(s)) - 1)`.\n- SQL Server 2022 adds `STRING_SPLIT(s, sep, 1)` with an ordinal column for 'Nth item'.",
+      "syntax": {
+        "mysql": "SUBSTRING_INDEX(str, delim, count)",
+        "tsql": "LEFT(str, CHARINDEX(delim, str) - 1)\nSUBSTRING(str, CHARINDEX(delim, str) + 1, 8000)"
+      },
+      "args": [
+        {
+          "name": "str (position 1)",
+          "meaning": "The text to split."
+        },
+        {
+          "name": "delim (position 2)",
+          "meaning": "The delimiter; case-sensitive, may be longer than one character."
+        },
+        {
+          "name": "count (position 3)",
+          "meaning": "Which delimiter counts. +n: everything before the nth delimiter from the left. -n: everything after the nth delimiter from the right."
+        }
+      ],
+      "examples": [
+        {
+          "id": "email-domain",
+          "title": "Local part and domain",
+          "explain_md": "`SUBSTRING_INDEX(email, '@', -1)` is the text after the last '@'. Trimming first removes customer 6's trailing space.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, SUBSTRING_INDEX(TRIM(email), '@', 1) AS local_part, SUBSTRING_INDEX(TRIM(email), '@', -1) AS domain FROM customers ORDER BY customer_id;",
+          "tsql": "SELECT customer_id, LEFT(TRIM(email), CHARINDEX('@', TRIM(email)) - 1) AS local_part, SUBSTRING(TRIM(email), CHARINDEX('@', TRIM(email)) + 1, 8000) AS domain FROM customers ORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "local_part",
+              "domain"
+            ],
+            "rows": [
+              [
+                "1",
+                "maya",
+                "shop.com"
+              ],
+              [
+                "2",
+                "noah.kim",
+                "mail.org"
+              ],
+              [
+                "3",
+                "olga",
+                "shop.com"
+              ],
+              [
+                "4",
+                "PABLO",
+                "mail.org"
+              ],
+              [
+                "5",
+                "quinn",
+                "corp.net"
+              ],
+              [
+                "6",
+                "pablo",
+                "mail.org"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "first-last-name",
+          "title": "First and last name",
+          "explain_md": "Positive count = left side of the first space; negative count = right side of the last space.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, SUBSTRING_INDEX(name, ' ', 1) AS first_name, SUBSTRING_INDEX(name, ' ', -1) AS last_name FROM customers WHERE customer_id <= 3 ORDER BY customer_id;",
+          "tsql": "SELECT name, LEFT(name, CHARINDEX(' ', name) - 1) AS first_name, SUBSTRING(name, CHARINDEX(' ', name) + 1, 8000) AS last_name FROM customers WHERE customer_id <= 3 ORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "first_name",
+              "last_name"
+            ],
+            "rows": [
+              [
+                "Maya Lopez",
+                "Maya",
+                "Lopez"
+              ],
+              [
+                "Noah Kim",
+                "Noah",
+                "Kim"
+              ],
+              [
+                "Olga Petrova",
+                "Olga",
+                "Petrova"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "nth-item",
+          "title": "Third item of a comma list (MySQL nesting)",
+          "explain_md": "Inner call keeps 'a,b,c'; outer call with -1 keeps what follows the last comma: `c`.",
+          "uses_dataset": false,
+          "tables": [],
+          "mysql": "SELECT SUBSTRING_INDEX(SUBSTRING_INDEX('a,b,c,d', ',', 3), ',', -1) AS third_item, SUBSTRING_INDEX('no-delimiter', ',', 1) AS missing_delim;",
+          "tsql": "SELECT SUBSTRING('a,b,c,d', 5, 1) AS third_item, LEFT('no-delimiter', CHARINDEX(',', 'no-delimiter' + ',') - 1) AS missing_delim;",
+          "dialect_note_md": "SQL Server has no nth-item helper for fixed positions; the literal `SUBSTRING('a,b,c,d', 5, 1)` just shows the result. In practice use `STRING_SPLIT(s, ',', 1)` (2022+) or split with a numbers table.",
+          "expected": {
+            "columns": [
+              "third_item",
+              "missing_delim"
+            ],
+            "rows": [
+              [
+                "c",
+                "no-delimiter"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "aggregate-strings",
+      "heading": "Aggregating text: GROUP_CONCAT vs STRING_AGG",
+      "body_md": "- MySQL `GROUP_CONCAT([DISTINCT] expr [ORDER BY expr [ASC|DESC]] [SEPARATOR 'sep'])`. Default separator is a comma. Output is silently truncated at `group_concat_max_len` (1024 bytes by default).\n- SQL Server 2017+ `STRING_AGG(expr, separator) [WITHIN GROUP (ORDER BY expr)]`. The separator is **required**; there is **no DISTINCT** (dedupe in a subquery first).\n- Without an ORDER BY the element order is unspecified in both - add one for deterministic output.\n- Both skip NULL values; if all inputs are NULL the result is NULL.\n- SQL Server `STRING_AGG` returns NVARCHAR(4000)/VARCHAR(8000) unless the input is MAX; cast to `VARCHAR(MAX)` for long lists.",
+      "syntax": {
+        "mysql": "GROUP_CONCAT([DISTINCT] expr [ORDER BY col [ASC|DESC]] [SEPARATOR 'sep'])",
+        "tsql": "STRING_AGG(expr, separator) [WITHIN GROUP (ORDER BY col [ASC|DESC])]"
+      },
+      "args": [
+        {
+          "name": "expr (position 1)",
+          "meaning": "The column or expression to concatenate."
+        },
+        {
+          "name": "separator",
+          "meaning": "MySQL: after the SEPARATOR keyword, default ','. SQL Server: position 2, required."
+        }
+      ],
+      "examples": [
+        {
+          "id": "agg-people",
+          "title": "People per department",
+          "explain_md": "Names sorted inside each group, joined with a comma and a space.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept, GROUP_CONCAT(name ORDER BY name SEPARATOR ', ') AS people FROM employees GROUP BY dept ORDER BY dept;",
+          "tsql": "SELECT dept, STRING_AGG(name, ', ') WITHIN GROUP (ORDER BY name) AS people FROM employees GROUP BY dept ORDER BY dept;",
+          "expected": {
+            "columns": [
+              "dept",
+              "people"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben, Cara, Dev, Eli"
+              ],
+              [
+                "Exec",
+                "Ana"
+              ],
+              [
+                "Marketing",
+                "Ivy, Jon"
+              ],
+              [
+                "Sales",
+                "Fay, Gus, Hal"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "agg-distinct",
+          "title": "Distinct list",
+          "explain_md": "MySQL has DISTINCT inside GROUP_CONCAT; SQL Server needs a DISTINCT subquery.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT GROUP_CONCAT(DISTINCT dept ORDER BY dept SEPARATOR '|') AS depts FROM employees;",
+          "tsql": "SELECT STRING_AGG(dept, '|') WITHIN GROUP (ORDER BY dept) AS depts FROM (SELECT DISTINCT dept FROM employees) AS d;",
+          "expected": {
+            "columns": [
+              "depts"
+            ],
+            "rows": [
+              [
+                "Engineering|Exec|Marketing|Sales"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "cleaning-comparison",
+      "heading": "Cleaning text and case-insensitive comparison",
+      "body_md": "- Default collations (MySQL `utf8mb4_0900_ai_ci`, SQL Server `SQL_Latin1_General_CP1_CI_AS`) compare text **case-insensitively**: `'ABC' = 'abc'` is TRUE and `LIKE` ignores case. `GROUP BY` and `DISTINCT` also merge them.\n- **Trailing spaces** differ: MySQL 8 default collations are NO PAD (`'abc' = 'abc  '` is FALSE); SQL Server pads (`TRUE`). Older MySQL collations such as `utf8mb4_general_ci` pad.\n- Force a case-sensitive compare: MySQL `col COLLATE utf8mb4_bin = 'x'` (or `BINARY col`); SQL Server `col COLLATE Latin1_General_CS_AS = 'x'`.\n- Normalise before comparing or deduping: `LOWER(TRIM(email))`. Remember plain `TRIM` removes spaces only, not tabs or newlines in either engine (use `REPLACE(col, CHAR(9), '')`, or pass the characters explicitly to `TRIM`).\n- Standard dedupe pattern: group by the cleaned key and keep `MIN(id)`.",
+      "examples": [
+        {
+          "id": "clean-email-dupes",
+          "title": "Find duplicate accounts after cleaning",
+          "explain_md": "Customers 4 and 6 only collide once the email is lower-cased and trimmed. Grouping on the raw column would see two different values (the trailing space).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT LOWER(TRIM(email)) AS clean_email, COUNT(*) AS accounts, MIN(customer_id) AS keep_id FROM customers GROUP BY LOWER(TRIM(email)) HAVING COUNT(*) > 1 ORDER BY clean_email;",
+          "tsql": "SELECT LOWER(TRIM(email)) AS clean_email, COUNT(*) AS accounts, MIN(customer_id) AS keep_id FROM customers GROUP BY LOWER(TRIM(email)) HAVING COUNT(*) > 1 ORDER BY clean_email;",
+          "expected": {
+            "columns": [
+              "clean_email",
+              "accounts",
+              "keep_id"
+            ],
+            "rows": [
+              [
+                "pablo@mail.org",
+                "2",
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "case-insensitive-eq",
+          "title": "Case-insensitive and trailing-space equality",
+          "explain_md": "Default collation matches 'PABLO@mail.org' (customer 4) for a lower-case literal, but customer 6's value has a trailing space.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, email FROM customers WHERE email = 'pablo@mail.org' ORDER BY customer_id;",
+          "tsql": "SELECT customer_id, email FROM customers WHERE email = 'pablo@mail.org' ORDER BY customer_id;",
+          "dialect_note_md": "MySQL 8 (NO PAD collation) returns only customer 4. Real SQL Server ignores trailing spaces in `=` and returns customers 4 and 6 - use `LIKE` or `RTRIM` if you need the difference.",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "email"
+            ],
+            "rows": [
+              [
+                "4",
+                "PABLO@mail.org"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "like-ci",
+          "title": "LIKE is case-insensitive by default",
+          "explain_md": "Pattern `'pablo%'` matches 'PABLO@mail.org' and 'pablo@mail.org ' in both engines.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, email FROM customers WHERE email LIKE 'pablo%' ORDER BY customer_id;",
+          "tsql": "SELECT customer_id, email FROM customers WHERE email LIKE 'pablo%' ORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "email"
+            ],
+            "rows": [
+              [
+                "4",
+                "PABLO@mail.org"
+              ],
+              [
+                "6",
+                "pablo@mail.org "
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`WHERE LOWER(col) = 'x'` is redundant under a CI collation and blocks index use; apply LOWER only when the collation is case-sensitive or when building a cleaned key.",
+        "`LIKE '%x'` (leading wildcard) cannot use an index in either engine."
+      ]
+    }
+  ]
+}

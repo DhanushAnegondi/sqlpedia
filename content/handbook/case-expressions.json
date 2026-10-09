@@ -1,0 +1,839 @@
+{
+  "id": "case-expressions",
+  "title": "CASE and conditional logic",
+  "group": "Foundations",
+  "order": 6,
+  "summary_md": "Branching inside a query: searched vs simple CASE, evaluation order and type rules, IF/IIF/COALESCE/NULLIF, bucketing, conditional-aggregation pivots, and custom sorting.",
+  "sections": [
+    {
+      "id": "case-forms",
+      "heading": "Searched vs simple CASE",
+      "body_md": "- **Searched CASE**: each WHEN is a full boolean condition. Most flexible; use it by default.\n- **Simple CASE**: compares one expression to values with `=`. Shorter for lookups, but it **cannot match NULL** (`WHEN NULL` is never true).\n- First WHEN that is TRUE wins; if none match you get the ELSE value, or **NULL** if there is no ELSE.\n- CASE is an expression: it returns a value and can appear in SELECT, WHERE, GROUP BY, ORDER BY, and inside aggregates.\n- Always close with `END`. Give the result an alias.",
+      "syntax": {
+        "mysql": "CASE WHEN cond1 THEN r1 [WHEN cond2 THEN r2 ...] [ELSE r_else] END\nCASE expr WHEN v1 THEN r1 [WHEN v2 THEN r2 ...] [ELSE r_else] END",
+        "tsql": "CASE WHEN cond1 THEN r1 [WHEN cond2 THEN r2 ...] [ELSE r_else] END\nCASE expr WHEN v1 THEN r1 [WHEN v2 THEN r2 ...] [ELSE r_else] END"
+      },
+      "args": [
+        {
+          "name": "WHEN cond",
+          "meaning": "Boolean condition (searched form) or value compared to expr with = (simple form)."
+        },
+        {
+          "name": "THEN r",
+          "meaning": "Value returned when that WHEN matches."
+        },
+        {
+          "name": "ELSE r_else",
+          "meaning": "Value when nothing matches; omitted means NULL."
+        },
+        {
+          "name": "expr",
+          "meaning": "Simple form only: the single expression compared to each WHEN value."
+        }
+      ],
+      "examples": [
+        {
+          "id": "case-searched",
+          "title": "Searched CASE: salary bands",
+          "explain_md": "Order the conditions from most to least specific. Jon (NULL salary) must be handled first or he falls into ELSE.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary,\n       CASE WHEN salary IS NULL     THEN 'unknown'\n            WHEN salary >= 150000   THEN 'senior'\n            WHEN salary >= 90000    THEN 'mid'\n            ELSE 'junior'\n       END AS band\nFROM employees\nORDER BY emp_id;",
+          "tsql": "SELECT name, salary,\n       CASE WHEN salary IS NULL     THEN 'unknown'\n            WHEN salary >= 150000   THEN 'senior'\n            WHEN salary >= 90000    THEN 'mid'\n            ELSE 'junior'\n       END AS band\nFROM employees\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "band"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000",
+                "senior"
+              ],
+              [
+                "Ben",
+                "150000",
+                "senior"
+              ],
+              [
+                "Cara",
+                "150000",
+                "senior"
+              ],
+              [
+                "Dev",
+                "120000",
+                "mid"
+              ],
+              [
+                "Eli",
+                "95000",
+                "mid"
+              ],
+              [
+                "Fay",
+                "110000",
+                "mid"
+              ],
+              [
+                "Gus",
+                "80000",
+                "junior"
+              ],
+              [
+                "Hal",
+                "80000",
+                "junior"
+              ],
+              [
+                "Ivy",
+                "90000",
+                "mid"
+              ],
+              [
+                "Jon",
+                null,
+                "unknown"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "case-simple",
+          "title": "Simple CASE: map codes to labels",
+          "explain_md": "Equality lookup against one column. Unlisted departments return NULL because there is no ELSE.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept,\n       CASE dept WHEN 'Engineering' THEN 'ENG'\n                 WHEN 'Sales'       THEN 'SLS'\n                 WHEN 'Marketing'   THEN 'MKT'\n       END AS code\nFROM employees\nORDER BY emp_id;",
+          "tsql": "SELECT name, dept,\n       CASE dept WHEN 'Engineering' THEN 'ENG'\n                 WHEN 'Sales'       THEN 'SLS'\n                 WHEN 'Marketing'   THEN 'MKT'\n       END AS code\nFROM employees\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "code"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "Exec",
+                null
+              ],
+              [
+                "Ben",
+                "Engineering",
+                "ENG"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "ENG"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "ENG"
+              ],
+              [
+                "Eli",
+                "Engineering",
+                "ENG"
+              ],
+              [
+                "Fay",
+                "Sales",
+                "SLS"
+              ],
+              [
+                "Gus",
+                "Sales",
+                "SLS"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "SLS"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "MKT"
+              ],
+              [
+                "Jon",
+                "Marketing",
+                "MKT"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "case-null-trap",
+          "title": "Simple CASE cannot test NULL",
+          "explain_md": "`CASE salary WHEN NULL` compiles to `salary = NULL`, never true. Jon lands in ELSE; the searched form with IS NULL is correct.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name,\n       CASE salary WHEN NULL THEN 'no salary' ELSE 'has salary' END AS wrong_check,\n       CASE WHEN salary IS NULL THEN 'no salary' ELSE 'has salary' END AS right_check\nFROM employees\nWHERE emp_id IN (9, 10)\nORDER BY emp_id;",
+          "tsql": "SELECT name,\n       CASE salary WHEN NULL THEN 'no salary' ELSE 'has salary' END AS wrong_check,\n       CASE WHEN salary IS NULL THEN 'no salary' ELSE 'has salary' END AS right_check\nFROM employees\nWHERE emp_id IN (9, 10)\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "wrong_check",
+              "right_check"
+            ],
+            "rows": [
+              [
+                "Ivy",
+                "has salary",
+                "has salary"
+              ],
+              [
+                "Jon",
+                "has salary",
+                "no salary"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Forgetting ELSE yields NULL, which then vanishes from SUM/AVG or breaks `<>` filters downstream."
+      ]
+    },
+    {
+      "id": "case-eval",
+      "heading": "Order of evaluation and result types",
+      "body_md": "- WHENs are tested **top to bottom**; the first TRUE one wins and the rest are ignored. Overlapping ranges therefore depend on order.\n- Put the most specific / narrowest condition first, and NULL handling before comparisons.\n- All THEN/ELSE results must share a compatible type. MySQL coerces silently; SQL Server picks the highest-precedence type and errors if a string cannot convert (`THEN 1 ... ELSE 'n/a'` fails).\n- Do not rely on CASE to prevent a divide-by-zero in SQL Server when aggregates appear inside it; use `NULLIF(denominator, 0)`.\n- CASE branches are not guaranteed to be evaluated lazily in every situation; keep branch expressions side-effect free.",
+      "examples": [
+        {
+          "id": "case-order-wrong",
+          "title": "Wrong order: broad condition first",
+          "explain_md": "`salary >= 0` is true for everyone with a salary, so the later branches never run.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary,\n       CASE WHEN salary >= 0      THEN 'junior'\n            WHEN salary >= 90000  THEN 'mid'\n            WHEN salary >= 150000 THEN 'senior'\n       END AS band\nFROM employees\nWHERE emp_id IN (1, 2, 5, 10)\nORDER BY emp_id;",
+          "tsql": "SELECT name, salary,\n       CASE WHEN salary >= 0      THEN 'junior'\n            WHEN salary >= 90000  THEN 'mid'\n            WHEN salary >= 150000 THEN 'senior'\n       END AS band\nFROM employees\nWHERE emp_id IN (1, 2, 5, 10)\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "band"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000",
+                "junior"
+              ],
+              [
+                "Ben",
+                "150000",
+                "junior"
+              ],
+              [
+                "Eli",
+                "95000",
+                "junior"
+              ],
+              [
+                "Jon",
+                null,
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "case-order-right",
+          "title": "Right order: narrowest first",
+          "explain_md": "Check from the top threshold down, so each row meets the highest band it qualifies for.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary,\n       CASE WHEN salary >= 150000 THEN 'senior'\n            WHEN salary >= 90000  THEN 'mid'\n            WHEN salary >= 0      THEN 'junior'\n       END AS band\nFROM employees\nWHERE emp_id IN (1, 2, 5, 10)\nORDER BY emp_id;",
+          "tsql": "SELECT name, salary,\n       CASE WHEN salary >= 150000 THEN 'senior'\n            WHEN salary >= 90000  THEN 'mid'\n            WHEN salary >= 0      THEN 'junior'\n       END AS band\nFROM employees\nWHERE emp_id IN (1, 2, 5, 10)\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "band"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000",
+                "senior"
+              ],
+              [
+                "Ben",
+                "150000",
+                "senior"
+              ],
+              [
+                "Eli",
+                "95000",
+                "mid"
+              ],
+              [
+                "Jon",
+                null,
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "case-type-mix",
+          "title": "Keep branch types consistent",
+          "explain_md": "Cast the number so every branch is text. Mixing `salary` (int) with `'n/a'` raises a conversion error in SQL Server.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name,\n       CASE WHEN salary IS NULL THEN 'n/a'\n            ELSE CAST(salary AS CHAR(10)) END AS salary_text\nFROM employees\nWHERE emp_id IN (9, 10)\nORDER BY emp_id;",
+          "tsql": "SELECT name,\n       CASE WHEN salary IS NULL THEN 'n/a'\n            ELSE CAST(salary AS VARCHAR(10)) END AS salary_text\nFROM employees\nWHERE emp_id IN (9, 10)\nORDER BY emp_id;",
+          "dialect_note_md": "MySQL's `CAST(x AS CHAR(n))` is `CAST(x AS VARCHAR(n))` in SQL Server.",
+          "expected": {
+            "columns": [
+              "name",
+              "salary_text"
+            ],
+            "rows": [
+              [
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Jon",
+                "n/a"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "if-iif",
+      "heading": "IF() and IIF(), COALESCE, NULLIF",
+      "body_md": "- Two-way shortcut: MySQL `IF(cond, then, else)`, SQL Server `IIF(cond, then, else)`. Both are just a one-WHEN CASE.\n- CASE is the portable choice and the one to write on a whiteboard.\n- `COALESCE(a, b, c)` returns the first non-NULL argument (portable). MySQL `IFNULL(a, b)` and SQL Server `ISNULL(a, b)` are the two-argument versions.\n- `NULLIF(a, b)` returns NULL when a = b, else a. Useful to avoid /0 or to turn '' or 0 into NULL.\n- `ISNULL` in SQL Server takes the type of the first argument (can truncate); COALESCE uses precedence of all arguments.",
+      "syntax": {
+        "mysql": "IF(cond, then_val, else_val)   IFNULL(a, b)   COALESCE(a, b, ...)   NULLIF(a, b)",
+        "tsql": "IIF(cond, then_val, else_val)   ISNULL(a, b)   COALESCE(a, b, ...)   NULLIF(a, b)"
+      },
+      "args": [
+        {
+          "name": "cond",
+          "meaning": "Boolean test."
+        },
+        {
+          "name": "then_val",
+          "meaning": "Returned when cond is TRUE."
+        },
+        {
+          "name": "else_val",
+          "meaning": "Returned when cond is FALSE or UNKNOWN (NULL)."
+        },
+        {
+          "name": "a, b, ...",
+          "meaning": "COALESCE: tried left to right, first non-NULL wins."
+        },
+        {
+          "name": "NULLIF(a, b)",
+          "meaning": "NULL if a equals b, otherwise a."
+        }
+      ],
+      "examples": [
+        {
+          "id": "if-iif-flag",
+          "title": "One-line flag",
+          "explain_md": "MySQL spells it IF, SQL Server IIF.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, IF(salary >= 100000, 'yes', 'no') AS high_earner\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY emp_id;",
+          "tsql": "SELECT name, IIF(salary >= 100000, 'yes', 'no') AS high_earner\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY emp_id;",
+          "dialect_note_md": "`IF()` exists only in MySQL; `IIF()` exists only in SQL Server (2012+). `CASE WHEN salary >= 100000 THEN 'yes' ELSE 'no' END` works in both.",
+          "expected": {
+            "columns": [
+              "name",
+              "high_earner"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "yes"
+              ],
+              [
+                "Ben",
+                "yes"
+              ],
+              [
+                "Cara",
+                "yes"
+              ],
+              [
+                "Dev",
+                "yes"
+              ],
+              [
+                "Eli",
+                "no"
+              ],
+              [
+                "Fay",
+                "yes"
+              ],
+              [
+                "Gus",
+                "no"
+              ],
+              [
+                "Hal",
+                "no"
+              ],
+              [
+                "Ivy",
+                "no"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "coalesce-nullif",
+          "title": "COALESCE and NULLIF",
+          "explain_md": "COALESCE supplies a default for Jon's NULL salary; `NULLIF(salary, 80000)` turns Gus's 80000 into NULL and leaves other values alone.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name,\n       COALESCE(salary, 0)  AS salary_or_zero,\n       NULLIF(salary, 80000) AS salary_hide_80k\nFROM employees\nWHERE emp_id IN (7, 9, 10)\nORDER BY emp_id;",
+          "tsql": "SELECT name,\n       COALESCE(salary, 0)  AS salary_or_zero,\n       NULLIF(salary, 80000) AS salary_hide_80k\nFROM employees\nWHERE emp_id IN (7, 9, 10)\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "salary_or_zero",
+              "salary_hide_80k"
+            ],
+            "rows": [
+              [
+                "Gus",
+                "80000",
+                null
+              ],
+              [
+                "Ivy",
+                "90000",
+                "90000"
+              ],
+              [
+                "Jon",
+                "0",
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "coalesce-chain",
+          "title": "First non-NULL in a chain",
+          "explain_md": "Customers with no city fall back to a placeholder; any number of arguments is allowed.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, COALESCE(city, 'unknown') AS city_label\nFROM customers\nORDER BY customer_id;",
+          "tsql": "SELECT name, COALESCE(city, 'unknown') AS city_label\nFROM customers\nORDER BY customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "city_label"
+            ],
+            "rows": [
+              [
+                "Maya Lopez",
+                "Austin"
+              ],
+              [
+                "Noah Kim",
+                "Boston"
+              ],
+              [
+                "Olga Petrova",
+                "unknown"
+              ],
+              [
+                "Pablo Diaz",
+                "Austin"
+              ],
+              [
+                "Quinn Lee",
+                "Denver"
+              ],
+              [
+                "pablo diaz",
+                "Austin"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "bucketing",
+      "heading": "Bucketing with CASE",
+      "body_md": "- Turn a continuous value into labelled ranges, then `GROUP BY` the label.\n- Compute the label in a derived table / CTE so the CASE is written once (SQL Server cannot GROUP BY the alias).\n- Use consistent boundaries: `>= low AND < high` so no value falls in two buckets.\n- Add an ordering key so buckets sort logically, not alphabetically.\n- To show buckets that have zero rows, you need a bucket list to LEFT JOIN from.",
+      "examples": [
+        {
+          "id": "bucket-amount",
+          "title": "Order size buckets",
+          "explain_md": "Count and total by size band. The numeric `ord` column drives a sensible sort.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT ord, bucket, COUNT(*) AS orders, SUM(amount) AS total\nFROM (\n  SELECT amount,\n         CASE WHEN amount < 50  THEN 1\n              WHEN amount < 100 THEN 2\n              ELSE 3 END AS ord,\n         CASE WHEN amount < 50  THEN 'small (<50)'\n              WHEN amount < 100 THEN 'medium (50-99)'\n              ELSE 'large (100+)' END AS bucket\n  FROM orders\n  WHERE status = 'completed'\n) AS b\nGROUP BY ord, bucket\nORDER BY ord;",
+          "tsql": "SELECT ord, bucket, COUNT(*) AS orders, SUM(amount) AS total\nFROM (\n  SELECT amount,\n         CASE WHEN amount < 50  THEN 1\n              WHEN amount < 100 THEN 2\n              ELSE 3 END AS ord,\n         CASE WHEN amount < 50  THEN 'small (<50)'\n              WHEN amount < 100 THEN 'medium (50-99)'\n              ELSE 'large (100+)' END AS bucket\n  FROM orders\n  WHERE status = 'completed'\n) AS b\nGROUP BY ord, bucket\nORDER BY ord;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "ord",
+              "bucket",
+              "orders",
+              "total"
+            ],
+            "rows": [
+              [
+                "1",
+                "small (<50)",
+                "3",
+                "90.50"
+              ],
+              [
+                "2",
+                "medium (50-99)",
+                "3",
+                "175.00"
+              ],
+              [
+                "3",
+                "large (100+)",
+                "5",
+                "850.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "bucket-tenure",
+          "title": "Hire-year cohort",
+          "explain_md": "CASE on a date column using half-open boundaries.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT cohort, COUNT(*) AS people\nFROM (\n  SELECT CASE WHEN hire_date < '2019-01-01' THEN 'before 2019'\n              WHEN hire_date < '2022-01-01' THEN '2019-2021'\n              ELSE '2022+' END AS cohort\n  FROM employees\n) AS t\nGROUP BY cohort\nORDER BY cohort;",
+          "tsql": "SELECT cohort, COUNT(*) AS people\nFROM (\n  SELECT CASE WHEN hire_date < '2019-01-01' THEN 'before 2019'\n              WHEN hire_date < '2022-01-01' THEN '2019-2021'\n              ELSE '2022+' END AS cohort\n  FROM employees\n) AS t\nGROUP BY cohort\nORDER BY cohort;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "cohort",
+              "people"
+            ],
+            "rows": [
+              [
+                "2019-2021",
+                "3"
+              ],
+              [
+                "2022+",
+                "4"
+              ],
+              [
+                "before 2019",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "pivot-preview",
+      "heading": "Conditional aggregation as a pivot",
+      "body_md": "- Rows to columns without PIVOT: one `SUM(CASE WHEN key = 'x' THEN value END)` per output column, `GROUP BY` the row key.\n- The column list is fixed in the SQL (static pivot). A dynamic list needs generated SQL, which is outside plain SELECT.\n- Missing combinations give NULL (no ELSE) or 0 (`ELSE 0`); wrap in COALESCE if you want zeros.\n- The same trick works with `COUNT(CASE ... THEN 1 END)` for counts.",
+      "examples": [
+        {
+          "id": "pivot-region",
+          "title": "Daily revenue with a column per region",
+          "explain_md": "One row per day. West has no row on 03-04, so its cell is NULL (no sales row existed).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date,\n       SUM(CASE WHEN region = 'East' THEN revenue END) AS east,\n       SUM(CASE WHEN region = 'West' THEN revenue END) AS west\nFROM daily_sales\nWHERE sale_date <= '2024-03-05'\nGROUP BY sale_date\nORDER BY sale_date;",
+          "tsql": "SELECT sale_date,\n       SUM(CASE WHEN region = 'East' THEN revenue END) AS east,\n       SUM(CASE WHEN region = 'West' THEN revenue END) AS west\nFROM daily_sales\nWHERE sale_date <= '2024-03-05'\nGROUP BY sale_date\nORDER BY sale_date;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "sale_date",
+              "east",
+              "west"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "100.00",
+                "50.00"
+              ],
+              [
+                "2024-03-02",
+                "120.00",
+                "70.00"
+              ],
+              [
+                "2024-03-03",
+                "90.00",
+                "60.00"
+              ],
+              [
+                "2024-03-04",
+                "150.00",
+                null
+              ],
+              [
+                "2024-03-05",
+                "110.00",
+                "90.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "pivot-status",
+          "title": "Order amount per customer by status",
+          "explain_md": "Each status becomes a column; COALESCE makes absent combinations 0.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id,\n       COALESCE(SUM(CASE WHEN status = 'completed' THEN amount END), 0) AS completed,\n       COALESCE(SUM(CASE WHEN status = 'cancelled' THEN amount END), 0) AS cancelled,\n       COALESCE(SUM(CASE WHEN status = 'refunded'  THEN amount END), 0) AS refunded\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id,\n       COALESCE(SUM(CASE WHEN status = 'completed' THEN amount END), 0) AS completed,\n       COALESCE(SUM(CASE WHEN status = 'cancelled' THEN amount END), 0) AS cancelled,\n       COALESCE(SUM(CASE WHEN status = 'refunded'  THEN amount END), 0) AS refunded\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "completed",
+              "cancelled",
+              "refunded"
+            ],
+            "rows": [
+              [
+                "1",
+                "305.00",
+                "80.00",
+                "0.00"
+              ],
+              [
+                "2",
+                "150.50",
+                "0.00",
+                "0.00"
+              ],
+              [
+                "3",
+                "250.00",
+                "0.00",
+                "0.00"
+              ],
+              [
+                "4",
+                "110.00",
+                "0.00",
+                "75.25"
+              ],
+              [
+                "5",
+                "300.00",
+                "90.00",
+                "0.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "case-order-by",
+      "heading": "CASE in ORDER BY (custom sort)",
+      "body_md": "- Sort by a rank you define: `ORDER BY CASE col WHEN 'a' THEN 1 WHEN 'b' THEN 2 ELSE 3 END`.\n- **NULLs last**: MySQL and SQL Server sort NULLs *first* ascending and *last* descending, and neither has `NULLS LAST`. Use `ORDER BY CASE WHEN col IS NULL THEN 1 ELSE 0 END, col`.\n- Put a final tiebreak (an id) after the CASE keys so the order is fully deterministic.\n- The CASE does not need to be in the SELECT list (except with `SELECT DISTINCT` in SQL Server).",
+      "examples": [
+        {
+          "id": "order-custom",
+          "title": "Pin a status order",
+          "explain_md": "Business order, not alphabetical: completed, then refunded, then cancelled.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, status\nFROM orders\nWHERE customer_id IN (1, 4)\nORDER BY CASE status WHEN 'completed' THEN 1\n                     WHEN 'refunded'  THEN 2\n                     ELSE 3 END,\n         order_id;",
+          "tsql": "SELECT order_id, status\nFROM orders\nWHERE customer_id IN (1, 4)\nORDER BY CASE status WHEN 'completed' THEN 1\n                     WHEN 'refunded'  THEN 2\n                     ELSE 3 END,\n         order_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "order_id",
+              "status"
+            ],
+            "rows": [
+              [
+                "101",
+                "completed"
+              ],
+              [
+                "108",
+                "completed"
+              ],
+              [
+                "112",
+                "completed"
+              ],
+              [
+                "113",
+                "completed"
+              ],
+              [
+                "107",
+                "refunded"
+              ],
+              [
+                "103",
+                "cancelled"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "order-nulls-last",
+          "title": "Salary descending, NULL last",
+          "explain_md": "A plain ascending sort would put Jon's NULL first; the leading CASE key pushes NULLs last in both dialects.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary\nFROM employees\nORDER BY CASE WHEN salary IS NULL THEN 1 ELSE 0 END,\n         salary,\n         emp_id;",
+          "tsql": "SELECT name, salary\nFROM employees\nORDER BY CASE WHEN salary IS NULL THEN 1 ELSE 0 END,\n         salary,\n         emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Gus",
+                "80000"
+              ],
+              [
+                "Hal",
+                "80000"
+              ],
+              [
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Eli",
+                "95000"
+              ],
+              [
+                "Fay",
+                "110000"
+              ],
+              [
+                "Dev",
+                "120000"
+              ],
+              [
+                "Ben",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000"
+              ],
+              [
+                "Ana",
+                "250000"
+              ],
+              [
+                "Jon",
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "order-pinned-first",
+          "title": "Pin one value to the top",
+          "explain_md": "Sales first, then everything else alphabetically by department, then by id.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept, name\nFROM employees\nORDER BY CASE WHEN dept = 'Sales' THEN 0 ELSE 1 END, dept, emp_id;",
+          "tsql": "SELECT dept, name\nFROM employees\nORDER BY CASE WHEN dept = 'Sales' THEN 0 ELSE 1 END, dept, emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "dept",
+              "name"
+            ],
+            "rows": [
+              [
+                "Sales",
+                "Fay"
+              ],
+              [
+                "Sales",
+                "Gus"
+              ],
+              [
+                "Sales",
+                "Hal"
+              ],
+              [
+                "Engineering",
+                "Ben"
+              ],
+              [
+                "Engineering",
+                "Cara"
+              ],
+              [
+                "Engineering",
+                "Dev"
+              ],
+              [
+                "Engineering",
+                "Eli"
+              ],
+              [
+                "Exec",
+                "Ana"
+              ],
+              [
+                "Marketing",
+                "Ivy"
+              ],
+              [
+                "Marketing",
+                "Jon"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    }
+  ]
+}

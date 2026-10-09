@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "import": "node scripts/import.mjs starter_pac shoplite && node scripts/import.mjs sets/campus campus",
+    "import": "node scripts/import.mjs starter_pac shoplite && node scripts/import.mjs sets/campus campus && node scripts/build_content.mjs",
     "serve": "python -m http.server 8130 --directory site",
-    "gen:campus": "python scripts/authoring/gen_campus.py"
+    "gen:campus": "python scripts/authoring/gen_campus.py",
+    "verify": "python scripts/verify/verify_mysql.py && node scripts/verify/engine_check.mjs"
   }
 }

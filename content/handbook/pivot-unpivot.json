@@ -1,0 +1,977 @@
+{
+  "id": "pivot-unpivot",
+  "title": "Pivot and unpivot",
+  "group": "Patterns",
+  "order": 2,
+  "summary_md": "Turn rows into columns with conditional aggregation (portable) or SQL Server PIVOT, turn columns back into rows, and know why dynamic columns need generated SQL.",
+  "sections": [
+    {
+      "id": "conditional-aggregation",
+      "heading": "Conditional aggregation pivot (works everywhere)",
+      "body_md": "- **Rows to columns**: one output column per category value, each a `SUM(CASE WHEN category = 'x' THEN value END)`.\n- `GROUP BY` the row key (here the date); the CASE routes each source row to its column.\n- `ELSE 0` vs no ELSE is a choice: **0** says 'no sales', **NULL** says 'no data'. Without ELSE the sum of nothing is NULL.\n- Works in MySQL, SQL Server and every other engine; the column list is fixed in the SQL text.",
+      "syntax": {
+        "mysql": "SELECT key,\n       SUM(CASE WHEN cat = 'A' THEN val ELSE 0 END) AS a,\n       SUM(CASE WHEN cat = 'B' THEN val ELSE 0 END) AS b\nFROM t\nGROUP BY key;",
+        "tsql": "SELECT key,\n       SUM(CASE WHEN cat = 'A' THEN val ELSE 0 END) AS a,\n       SUM(CASE WHEN cat = 'B' THEN val ELSE 0 END) AS b\nFROM t\nGROUP BY key;"
+      },
+      "args": [
+        {
+          "name": "key",
+          "meaning": "The row identity of the result (what you GROUP BY)."
+        },
+        {
+          "name": "cat = 'A'",
+          "meaning": "Which source rows feed this output column."
+        },
+        {
+          "name": "val",
+          "meaning": "The value being aggregated."
+        },
+        {
+          "name": "ELSE 0",
+          "meaning": "Omit for NULL-when-absent; include for 0-when-absent."
+        }
+      ],
+      "examples": [
+        {
+          "id": "pivot-regions-zero",
+          "title": "Revenue per date, one column per region",
+          "explain_md": "East and West become columns. West has no row on 03-04, so `ELSE 0` yields 0 there.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date,\n       SUM(CASE WHEN region = 'East' THEN revenue ELSE 0 END) AS east,\n       SUM(CASE WHEN region = 'West' THEN revenue ELSE 0 END) AS west\nFROM daily_sales\nWHERE sale_date <= '2024-03-05'\nGROUP BY sale_date\nORDER BY sale_date;",
+          "tsql": "SELECT sale_date,\n       SUM(CASE WHEN region = 'East' THEN revenue ELSE 0 END) AS east,\n       SUM(CASE WHEN region = 'West' THEN revenue ELSE 0 END) AS west\nFROM daily_sales\nWHERE sale_date <= '2024-03-05'\nGROUP BY sale_date\nORDER BY sale_date;",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "east",
+              "west"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "100.00",
+                "50.00"
+              ],
+              [
+                "2024-03-02",
+                "120.00",
+                "70.00"
+              ],
+              [
+                "2024-03-03",
+                "90.00",
+                "60.00"
+              ],
+              [
+                "2024-03-04",
+                "150.00",
+                "0.00"
+              ],
+              [
+                "2024-03-05",
+                "110.00",
+                "90.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "pivot-regions-null",
+          "title": "Same pivot with NULL for missing",
+          "explain_md": "Dropping `ELSE 0` makes the missing West day (03-04) NULL, which keeps 'no data' distinct from 'zero revenue'.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date,\n       SUM(CASE WHEN region = 'East' THEN revenue END) AS east,\n       SUM(CASE WHEN region = 'West' THEN revenue END) AS west\nFROM daily_sales\nWHERE sale_date <= '2024-03-05'\nGROUP BY sale_date\nORDER BY sale_date;",
+          "tsql": "SELECT sale_date,\n       SUM(CASE WHEN region = 'East' THEN revenue END) AS east,\n       SUM(CASE WHEN region = 'West' THEN revenue END) AS west\nFROM daily_sales\nWHERE sale_date <= '2024-03-05'\nGROUP BY sale_date\nORDER BY sale_date;",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "east",
+              "west"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "100.00",
+                "50.00"
+              ],
+              [
+                "2024-03-02",
+                "120.00",
+                "70.00"
+              ],
+              [
+                "2024-03-03",
+                "90.00",
+                "60.00"
+              ],
+              [
+                "2024-03-04",
+                "150.00",
+                null
+              ],
+              [
+                "2024-03-05",
+                "110.00",
+                "90.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "pivot-month-by-year",
+          "title": "Month x year comparison",
+          "explain_md": "Months become rows and each year becomes a column: a compact year-over-year table.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT MONTH(month_start) AS month_num,\n       SUM(CASE WHEN YEAR(month_start) = 2023 THEN revenue END) AS rev_2023,\n       SUM(CASE WHEN YEAR(month_start) = 2024 THEN revenue END) AS rev_2024\nFROM monthly_revenue\nWHERE MONTH(month_start) <= 6\nGROUP BY MONTH(month_start)\nORDER BY month_num;",
+          "tsql": "SELECT MONTH(month_start) AS month_num,\n       SUM(CASE WHEN YEAR(month_start) = 2023 THEN revenue END) AS rev_2023,\n       SUM(CASE WHEN YEAR(month_start) = 2024 THEN revenue END) AS rev_2024\nFROM monthly_revenue\nWHERE MONTH(month_start) <= 6\nGROUP BY MONTH(month_start)\nORDER BY month_num;",
+          "expected": {
+            "columns": [
+              "month_num",
+              "rev_2023",
+              "rev_2024"
+            ],
+            "rows": [
+              [
+                "1",
+                "10000.00",
+                "12000.00"
+              ],
+              [
+                "2",
+                "11000.00",
+                "12100.00"
+              ],
+              [
+                "3",
+                "10500.00",
+                "13650.00"
+              ],
+              [
+                "4",
+                "12000.00",
+                "13200.00"
+              ],
+              [
+                "5",
+                "12500.00",
+                "15000.00"
+              ],
+              [
+                "6",
+                "13000.00",
+                "15600.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Selecting a column that is neither grouped nor aggregated breaks `ONLY_FULL_GROUP_BY` (MySQL) and errors outright in SQL Server."
+      ]
+    },
+    {
+      "id": "pivot-variants",
+      "heading": "Variants: COUNT, MAX and shares",
+      "body_md": "- **Counts**: `COUNT(CASE WHEN x THEN 1 END)` (COUNT skips the NULLs the CASE yields) or `SUM(CASE WHEN x THEN 1 ELSE 0 END)`.\n- **Text or dates** in cells: use `MAX(CASE ...)` (or `MIN`): SUM does not work on strings, and MAX picks the one value when there is exactly one per cell.\n- **Shares**: divide one conditional sum by the total.\n- MySQL-only shorthand: `SUM(status = 'completed')` (booleans are 0/1). Not valid in SQL Server.",
+      "examples": [
+        {
+          "id": "pivot-event-counts",
+          "title": "Event counts per user",
+          "explain_md": "One row per user, one column per event type.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT user_id,\n       COUNT(CASE WHEN event_type = 'view' THEN 1 END) AS views,\n       COUNT(CASE WHEN event_type = 'add_to_cart' THEN 1 END) AS carts,\n       COUNT(CASE WHEN event_type = 'purchase' THEN 1 END) AS purchases\nFROM events\nGROUP BY user_id\nORDER BY user_id;",
+          "tsql": "SELECT user_id,\n       COUNT(CASE WHEN event_type = 'view' THEN 1 END) AS views,\n       COUNT(CASE WHEN event_type = 'add_to_cart' THEN 1 END) AS carts,\n       COUNT(CASE WHEN event_type = 'purchase' THEN 1 END) AS purchases\nFROM events\nGROUP BY user_id\nORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "views",
+              "carts",
+              "purchases"
+            ],
+            "rows": [
+              [
+                "1",
+                "2",
+                "1",
+                "1"
+              ],
+              [
+                "2",
+                "2",
+                "1",
+                "0"
+              ],
+              [
+                "3",
+                "3",
+                "0",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "pivot-status-amounts",
+          "title": "Order value by status per customer",
+          "explain_md": "Three amount columns per customer plus a grand total, from a single scan.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id,\n       SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) AS completed,\n       SUM(CASE WHEN status = 'cancelled' THEN amount ELSE 0 END) AS cancelled,\n       SUM(CASE WHEN status = 'refunded'  THEN amount ELSE 0 END) AS refunded,\n       SUM(amount) AS all_orders\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id,\n       SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) AS completed,\n       SUM(CASE WHEN status = 'cancelled' THEN amount ELSE 0 END) AS cancelled,\n       SUM(CASE WHEN status = 'refunded'  THEN amount ELSE 0 END) AS refunded,\n       SUM(amount) AS all_orders\nFROM orders\nGROUP BY customer_id\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "completed",
+              "cancelled",
+              "refunded",
+              "all_orders"
+            ],
+            "rows": [
+              [
+                "1",
+                "305.00",
+                "80.00",
+                "0.00",
+                "385.00"
+              ],
+              [
+                "2",
+                "150.50",
+                "0.00",
+                "0.00",
+                "150.50"
+              ],
+              [
+                "3",
+                "250.00",
+                "0.00",
+                "0.00",
+                "250.00"
+              ],
+              [
+                "4",
+                "110.00",
+                "0.00",
+                "75.25",
+                "185.25"
+              ],
+              [
+                "5",
+                "300.00",
+                "90.00",
+                "0.00",
+                "390.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "pivot-max-case",
+          "title": "MAX(CASE ...) for non-additive values",
+          "explain_md": "Latest timestamp per event type per user; NULL where the user never did that action.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT user_id,\n       MAX(CASE WHEN event_type = 'view' THEN event_ts END) AS last_view,\n       MAX(CASE WHEN event_type = 'purchase' THEN event_ts END) AS last_purchase\nFROM events\nGROUP BY user_id\nORDER BY user_id;",
+          "tsql": "SELECT user_id,\n       MAX(CASE WHEN event_type = 'view' THEN event_ts END) AS last_view,\n       MAX(CASE WHEN event_type = 'purchase' THEN event_ts END) AS last_purchase\nFROM events\nGROUP BY user_id\nORDER BY user_id;",
+          "expected": {
+            "columns": [
+              "user_id",
+              "last_view",
+              "last_purchase"
+            ],
+            "rows": [
+              [
+                "1",
+                "2024-05-01 09:55:00",
+                "2024-05-01 10:05:00"
+              ],
+              [
+                "2",
+                "2024-05-01 12:00:00",
+                null
+              ],
+              [
+                "3",
+                "2024-05-05 07:45:00",
+                "2024-05-03 19:00:00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "pivot-share",
+          "title": "Share of total via a conditional sum",
+          "explain_md": "East's percentage of the day's revenue; the conditional `SUM` is the numerator, plain `SUM` the denominator.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date,\n       ROUND(100.0 * SUM(CASE WHEN region = 'East' THEN revenue ELSE 0 END) / SUM(revenue), 1) AS east_pct\nFROM daily_sales\nWHERE sale_date <= '2024-03-05'\nGROUP BY sale_date\nORDER BY sale_date;",
+          "tsql": "SELECT sale_date,\n       ROUND(100.0 * SUM(CASE WHEN region = 'East' THEN revenue ELSE 0 END) / SUM(revenue), 1) AS east_pct\nFROM daily_sales\nWHERE sale_date <= '2024-03-05'\nGROUP BY sale_date\nORDER BY sale_date;",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "east_pct"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "66.7"
+              ],
+              [
+                "2024-03-02",
+                "63.2"
+              ],
+              [
+                "2024-03-03",
+                "60.0"
+              ],
+              [
+                "2024-03-04",
+                "100.0"
+              ],
+              [
+                "2024-03-05",
+                "55.0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "sqlserver-pivot",
+      "heading": "SQL Server PIVOT (and why conditional aggregation still wins)",
+      "body_md": "- `PIVOT` is SQL Server (and Oracle) sugar for conditional aggregation. **MySQL has no PIVOT keyword**: use the previous sections.\n- Shape: `FROM (source subquery) AS s PIVOT (AGG(value) FOR category IN ([A], [B])) AS p`.\n- The `IN` list is **hard-coded literals** (bracketed names); it cannot be a subquery.\n- Select **only the three needed columns** in the source subquery; any extra column silently becomes a grouping key.\n- One aggregate only, with no CASE logic; missing combinations come back as NULL.\n- Interview tip: write the conditional-aggregation form (portable), then mention PIVOT as the SQL Server shortcut.",
+      "syntax": {
+        "mysql": "-- no PIVOT in MySQL: use SUM(CASE WHEN ...) per output column",
+        "tsql": "SELECT key, [A], [B]\nFROM (SELECT key, cat, val FROM t) AS src\nPIVOT (SUM(val) FOR cat IN ([A], [B])) AS p;"
+      },
+      "args": [
+        {
+          "name": "(SELECT key, cat, val ...) AS src",
+          "meaning": "Source rows: exactly the row key, the pivot column and the value. Extra columns become extra grouping keys."
+        },
+        {
+          "name": "SUM(val)",
+          "meaning": "The single aggregate (SUM, COUNT, MAX ...)."
+        },
+        {
+          "name": "FOR cat",
+          "meaning": "The column whose distinct values become new columns."
+        },
+        {
+          "name": "IN ([A], [B])",
+          "meaning": "The literal values to turn into columns; unlisted values are dropped."
+        },
+        {
+          "name": "AS p",
+          "meaning": "Alias is mandatory."
+        }
+      ],
+      "examples": [
+        {
+          "id": "pivot-keyword",
+          "title": "The same result as the first example, with PIVOT",
+          "explain_md": "MySQL uses conditional aggregation without ELSE (NULL for missing); SQL Server's PIVOT returns the identical grid.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date,\n       SUM(CASE WHEN region = 'East' THEN revenue END) AS East,\n       SUM(CASE WHEN region = 'West' THEN revenue END) AS West\nFROM daily_sales\nWHERE sale_date <= '2024-03-05'\nGROUP BY sale_date\nORDER BY sale_date;",
+          "tsql": "SELECT sale_date, [East], [West]\nFROM (SELECT sale_date, region, revenue\n      FROM daily_sales\n      WHERE sale_date <= '2024-03-05') AS src\nPIVOT (SUM(revenue) FOR region IN ([East], [West])) AS p\nORDER BY sale_date;",
+          "dialect_note_md": "MySQL has no `PIVOT`; the MySQL query is the portable equivalent.",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "East",
+              "West"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "100.00",
+                "50.00"
+              ],
+              [
+                "2024-03-02",
+                "120.00",
+                "70.00"
+              ],
+              [
+                "2024-03-03",
+                "90.00",
+                "60.00"
+              ],
+              [
+                "2024-03-04",
+                "150.00",
+                null
+              ],
+              [
+                "2024-03-05",
+                "110.00",
+                "90.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Forgetting the narrowing subquery and pivoting a whole table gives one row per unique combination of all other columns.",
+        "Values missing from the `IN` list vanish without an error."
+      ]
+    },
+    {
+      "id": "unpivot",
+      "heading": "Unpivot (columns to rows)",
+      "body_md": "- **Portable**: one `SELECT` per column glued with `UNION ALL`, adding a label column. Keeps NULLs unless you filter them.\n- **Lookup join**: cross join the table with a small list of labels and pick the column with `CASE`; one scan instead of N.\n- **SQL Server** also has `UNPIVOT` (drops NULL values) and `CROSS APPLY (VALUES ...)`. MySQL has neither.\n- Long format is what you want before grouping, charting or window functions across the former columns.",
+      "syntax": {
+        "mysql": "SELECT id, 'Q1' AS label, q1 AS value FROM t\nUNION ALL SELECT id, 'Q2', q2 FROM t\nUNION ALL SELECT id, 'Q3', q3 FROM t;   -- ORDER BY after the last SELECT",
+        "tsql": "-- UNPIVOT\nSELECT id, label, value\nFROM t\nUNPIVOT (value FOR label IN (q1, q2, q3)) AS u;\n\n-- or CROSS APPLY\nSELECT t.id, v.label, v.value\nFROM t CROSS APPLY (VALUES ('Q1', q1), ('Q2', q2), ('Q3', q3)) AS v(label, value);"
+      },
+      "args": [
+        {
+          "name": "'Q1' AS label",
+          "meaning": "Literal that records which column the value came from."
+        },
+        {
+          "name": "q1 AS value",
+          "meaning": "The wide column being turned into a row value. All value columns must share a type."
+        },
+        {
+          "name": "UNPIVOT (value FOR label IN (...))",
+          "meaning": "SQL Server: `value` = new value column, `label` = new name column, list = source columns."
+        },
+        {
+          "name": "ORDER BY",
+          "meaning": "Applies to the whole UNION; use output column names."
+        }
+      ],
+      "examples": [
+        {
+          "id": "unpivot-union-all",
+          "title": "UNION ALL unpivot",
+          "explain_md": "Twelve rows, one per product and quarter, including the NULL cells for Widget Q3 and Gadget Q2.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "quarterly_sales",
+              "description_md": "Wide table: one row per product, one column per quarter. `NULL` means no sales figure was recorded.",
+              "columns": [
+                {
+                  "name": "product",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "q1",
+                  "type": "INT"
+                },
+                {
+                  "name": "q2",
+                  "type": "INT"
+                },
+                {
+                  "name": "q3",
+                  "type": "INT"
+                },
+                {
+                  "name": "q4",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  "Widget",
+                  100,
+                  120,
+                  null,
+                  150
+                ],
+                [
+                  "Gadget",
+                  80,
+                  null,
+                  95,
+                  110
+                ],
+                [
+                  "Gizmo",
+                  50,
+                  60,
+                  70,
+                  80
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT product, 'Q1' AS qtr, q1 AS units FROM quarterly_sales\nUNION ALL\nSELECT product, 'Q2', q2 FROM quarterly_sales\nUNION ALL\nSELECT product, 'Q3', q3 FROM quarterly_sales\nUNION ALL\nSELECT product, 'Q4', q4 FROM quarterly_sales\nORDER BY product, qtr;",
+          "tsql": "SELECT product, 'Q1' AS qtr, q1 AS units FROM quarterly_sales\nUNION ALL\nSELECT product, 'Q2', q2 FROM quarterly_sales\nUNION ALL\nSELECT product, 'Q3', q3 FROM quarterly_sales\nUNION ALL\nSELECT product, 'Q4', q4 FROM quarterly_sales\nORDER BY product, qtr;",
+          "expected": {
+            "columns": [
+              "product",
+              "qtr",
+              "units"
+            ],
+            "rows": [
+              [
+                "Gadget",
+                "Q1",
+                "80"
+              ],
+              [
+                "Gadget",
+                "Q2",
+                null
+              ],
+              [
+                "Gadget",
+                "Q3",
+                "95"
+              ],
+              [
+                "Gadget",
+                "Q4",
+                "110"
+              ],
+              [
+                "Gizmo",
+                "Q1",
+                "50"
+              ],
+              [
+                "Gizmo",
+                "Q2",
+                "60"
+              ],
+              [
+                "Gizmo",
+                "Q3",
+                "70"
+              ],
+              [
+                "Gizmo",
+                "Q4",
+                "80"
+              ],
+              [
+                "Widget",
+                "Q1",
+                "100"
+              ],
+              [
+                "Widget",
+                "Q2",
+                "120"
+              ],
+              [
+                "Widget",
+                "Q3",
+                null
+              ],
+              [
+                "Widget",
+                "Q4",
+                "150"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "unpivot-drop-nulls",
+          "title": "Drop the NULL cells",
+          "explain_md": "Filtering `units IS NOT NULL` reproduces what SQL Server's UNPIVOT does automatically: 10 rows.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "quarterly_sales",
+              "description_md": "Wide table: one row per product, one column per quarter. `NULL` means no sales figure was recorded.",
+              "columns": [
+                {
+                  "name": "product",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "q1",
+                  "type": "INT"
+                },
+                {
+                  "name": "q2",
+                  "type": "INT"
+                },
+                {
+                  "name": "q3",
+                  "type": "INT"
+                },
+                {
+                  "name": "q4",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  "Widget",
+                  100,
+                  120,
+                  null,
+                  150
+                ],
+                [
+                  "Gadget",
+                  80,
+                  null,
+                  95,
+                  110
+                ],
+                [
+                  "Gizmo",
+                  50,
+                  60,
+                  70,
+                  80
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT product, qtr, units\nFROM (SELECT product, 'Q1' AS qtr, q1 AS units FROM quarterly_sales\n      UNION ALL SELECT product, 'Q2', q2 FROM quarterly_sales\n      UNION ALL SELECT product, 'Q3', q3 FROM quarterly_sales\n      UNION ALL SELECT product, 'Q4', q4 FROM quarterly_sales) AS u\nWHERE units IS NOT NULL\nORDER BY product, qtr;",
+          "tsql": "SELECT product, qtr, units\nFROM (SELECT product, 'Q1' AS qtr, q1 AS units FROM quarterly_sales\n      UNION ALL SELECT product, 'Q2', q2 FROM quarterly_sales\n      UNION ALL SELECT product, 'Q3', q3 FROM quarterly_sales\n      UNION ALL SELECT product, 'Q4', q4 FROM quarterly_sales) AS u\nWHERE units IS NOT NULL\nORDER BY product, qtr;",
+          "expected": {
+            "columns": [
+              "product",
+              "qtr",
+              "units"
+            ],
+            "rows": [
+              [
+                "Gadget",
+                "Q1",
+                "80"
+              ],
+              [
+                "Gadget",
+                "Q3",
+                "95"
+              ],
+              [
+                "Gadget",
+                "Q4",
+                "110"
+              ],
+              [
+                "Gizmo",
+                "Q1",
+                "50"
+              ],
+              [
+                "Gizmo",
+                "Q2",
+                "60"
+              ],
+              [
+                "Gizmo",
+                "Q3",
+                "70"
+              ],
+              [
+                "Gizmo",
+                "Q4",
+                "80"
+              ],
+              [
+                "Widget",
+                "Q1",
+                "100"
+              ],
+              [
+                "Widget",
+                "Q2",
+                "120"
+              ],
+              [
+                "Widget",
+                "Q4",
+                "150"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "unpivot-cross-join",
+          "title": "Cross join with a label list",
+          "explain_md": "One scan of the wide table; the `CASE` picks the matching column for each label. Same 12 rows as the UNION ALL version.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "quarterly_sales",
+              "description_md": "Wide table: one row per product, one column per quarter. `NULL` means no sales figure was recorded.",
+              "columns": [
+                {
+                  "name": "product",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "q1",
+                  "type": "INT"
+                },
+                {
+                  "name": "q2",
+                  "type": "INT"
+                },
+                {
+                  "name": "q3",
+                  "type": "INT"
+                },
+                {
+                  "name": "q4",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  "Widget",
+                  100,
+                  120,
+                  null,
+                  150
+                ],
+                [
+                  "Gadget",
+                  80,
+                  null,
+                  95,
+                  110
+                ],
+                [
+                  "Gizmo",
+                  50,
+                  60,
+                  70,
+                  80
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT s.product, k.qtr,\n       CASE k.qtr WHEN 'Q1' THEN s.q1 WHEN 'Q2' THEN s.q2 WHEN 'Q3' THEN s.q3 ELSE s.q4 END AS units\nFROM quarterly_sales s\nCROSS JOIN (SELECT 'Q1' AS qtr UNION ALL SELECT 'Q2' UNION ALL SELECT 'Q3' UNION ALL SELECT 'Q4') AS k\nORDER BY s.product, k.qtr;",
+          "tsql": "SELECT s.product, k.qtr,\n       CASE k.qtr WHEN 'Q1' THEN s.q1 WHEN 'Q2' THEN s.q2 WHEN 'Q3' THEN s.q3 ELSE s.q4 END AS units\nFROM quarterly_sales s\nCROSS JOIN (SELECT 'Q1' AS qtr UNION ALL SELECT 'Q2' UNION ALL SELECT 'Q3' UNION ALL SELECT 'Q4') AS k\nORDER BY s.product, k.qtr;",
+          "expected": {
+            "columns": [
+              "product",
+              "qtr",
+              "units"
+            ],
+            "rows": [
+              [
+                "Gadget",
+                "Q1",
+                "80"
+              ],
+              [
+                "Gadget",
+                "Q2",
+                null
+              ],
+              [
+                "Gadget",
+                "Q3",
+                "95"
+              ],
+              [
+                "Gadget",
+                "Q4",
+                "110"
+              ],
+              [
+                "Gizmo",
+                "Q1",
+                "50"
+              ],
+              [
+                "Gizmo",
+                "Q2",
+                "60"
+              ],
+              [
+                "Gizmo",
+                "Q3",
+                "70"
+              ],
+              [
+                "Gizmo",
+                "Q4",
+                "80"
+              ],
+              [
+                "Widget",
+                "Q1",
+                "100"
+              ],
+              [
+                "Widget",
+                "Q2",
+                "120"
+              ],
+              [
+                "Widget",
+                "Q3",
+                null
+              ],
+              [
+                "Widget",
+                "Q4",
+                "150"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "unpivot-then-aggregate",
+          "title": "Why long format helps: total per quarter",
+          "explain_md": "After unpivoting, a normal GROUP BY totals each quarter (SUM skips the NULLs).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "quarterly_sales",
+              "description_md": "Wide table: one row per product, one column per quarter. `NULL` means no sales figure was recorded.",
+              "columns": [
+                {
+                  "name": "product",
+                  "type": "VARCHAR(10)"
+                },
+                {
+                  "name": "q1",
+                  "type": "INT"
+                },
+                {
+                  "name": "q2",
+                  "type": "INT"
+                },
+                {
+                  "name": "q3",
+                  "type": "INT"
+                },
+                {
+                  "name": "q4",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  "Widget",
+                  100,
+                  120,
+                  null,
+                  150
+                ],
+                [
+                  "Gadget",
+                  80,
+                  null,
+                  95,
+                  110
+                ],
+                [
+                  "Gizmo",
+                  50,
+                  60,
+                  70,
+                  80
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT qtr, SUM(units) AS total_units\nFROM (SELECT 'Q1' AS qtr, q1 AS units FROM quarterly_sales\n      UNION ALL SELECT 'Q2', q2 FROM quarterly_sales\n      UNION ALL SELECT 'Q3', q3 FROM quarterly_sales\n      UNION ALL SELECT 'Q4', q4 FROM quarterly_sales) AS u\nGROUP BY qtr\nORDER BY qtr;",
+          "tsql": "SELECT qtr, SUM(units) AS total_units\nFROM (SELECT 'Q1' AS qtr, q1 AS units FROM quarterly_sales\n      UNION ALL SELECT 'Q2', q2 FROM quarterly_sales\n      UNION ALL SELECT 'Q3', q3 FROM quarterly_sales\n      UNION ALL SELECT 'Q4', q4 FROM quarterly_sales) AS u\nGROUP BY qtr\nORDER BY qtr;",
+          "expected": {
+            "columns": [
+              "qtr",
+              "total_units"
+            ],
+            "rows": [
+              [
+                "Q1",
+                "230"
+              ],
+              [
+                "Q2",
+                "180"
+              ],
+              [
+                "Q3",
+                "165"
+              ],
+              [
+                "Q4",
+                "340"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`UNION` (without ALL) would also de-duplicate identical rows and sort: almost never what you want here.",
+        "UNPIVOT skips NULL cells; `UNION ALL` keeps them. Say which you want."
+      ]
+    },
+    {
+      "id": "dynamic",
+      "heading": "Dynamic columns",
+      "body_md": "- SQL needs the output column list at **parse time**, so a pivot over unknown values cannot be a single static query.\n- Options: (1) pivot in the application or BI tool, (2) return **long format** and let the client reshape, (3) generate the SQL text and run it as dynamic SQL.\n- Dynamic SQL recipe: build the `CASE` list from `SELECT DISTINCT`, concatenate it into the full statement, execute it.\n  - MySQL: `GROUP_CONCAT` -> `SET @sql = ...; PREPARE s FROM @sql; EXECUTE s;`\n  - SQL Server: `STRING_AGG` (2017+) or `STUFF(... FOR XML PATH)` -> `EXEC sp_executesql @sql;`\n- Raise `group_concat_max_len` (default 1024) in MySQL if the generated list is long. Quote identifiers (`QUOTENAME` in SQL Server) to avoid injection.",
+      "syntax": {
+        "mysql": "SET @sql = CONCAT('SELECT sale_date, ', @cols, ' FROM daily_sales GROUP BY sale_date');\nPREPARE stmt FROM @sql;\nEXECUTE stmt;\nDEALLOCATE PREPARE stmt;",
+        "tsql": "DECLARE @sql NVARCHAR(MAX) = N'SELECT sale_date, ' + @cols + N' FROM daily_sales GROUP BY sale_date';\nEXEC sp_executesql @sql;"
+      },
+      "args": [
+        {
+          "name": "@cols",
+          "meaning": "The generated column list from the query above."
+        },
+        {
+          "name": "PREPARE / EXECUTE",
+          "meaning": "MySQL's dynamic SQL; inside stored routines or the client session."
+        },
+        {
+          "name": "sp_executesql",
+          "meaning": "SQL Server's parameter-safe dynamic SQL executor."
+        }
+      ],
+      "examples": [
+        {
+          "id": "generate-case-list",
+          "title": "Generate the pivot column list from the data",
+          "explain_md": "Builds the `SUM(CASE ...)` fragments for every distinct region; this string is what you would splice into the final SELECT before executing it.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT GROUP_CONCAT(frag ORDER BY frag SEPARATOR ', ') AS pivot_cols\nFROM (SELECT DISTINCT CONCAT('SUM(CASE WHEN region = ''', region, ''' THEN revenue END) AS ', region) AS frag\n      FROM daily_sales) AS f;",
+          "tsql": "SELECT STRING_AGG(frag, ', ') WITHIN GROUP (ORDER BY frag) AS pivot_cols\nFROM (SELECT DISTINCT 'SUM(CASE WHEN region = ''' + region + ''' THEN revenue END) AS ' + region AS frag\n      FROM daily_sales) AS f;",
+          "dialect_note_md": "MySQL: `GROUP_CONCAT(expr ORDER BY ... SEPARATOR ...)`. SQL Server 2017+: `STRING_AGG(..., sep) WITHIN GROUP (ORDER BY ...)`; de-duplicate in a subquery first.",
+          "expected": {
+            "columns": [
+              "pivot_cols"
+            ],
+            "rows": [
+              [
+                "SUM(CASE WHEN region = 'East' THEN revenue END) AS East, SUM(CASE WHEN region = 'West' THEN revenue END) AS West"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Dynamic SQL built from data values is an injection risk: whitelist or quote identifiers.",
+        "Interview answer: 'column list must be known at parse time, so I would reshape downstream or generate the SQL'."
+      ]
+    }
+  ]
+}

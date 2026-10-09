@@ -1,0 +1,872 @@
+{
+  "id": "rolling-windows",
+  "title": "Rolling windows and moving averages",
+  "group": "Window functions",
+  "order": 5,
+  "summary_md": "Moving averages and rolling sums: ROWS frames, why N rows is not N days, date spines for gaps, MySQL RANGE INTERVAL, full-windows-only and rolling distinct counts.",
+  "sections": [
+    {
+      "id": "moving-average-rows",
+      "heading": "Moving average over N rows",
+      "body_md": "- Trailing 3-row average: `AVG(x) OVER (ORDER BY d ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)`. Window size N = `N-1 PRECEDING`.\n- The first N-1 rows have a smaller frame, so their average uses fewer values. Hide or NULL them if that matters (see full windows below).\n- Centred average: `ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING`.\n- `WHERE` on the date range **before** windowing starves the first rows of history. Window in a CTE, then filter outside.",
+      "syntax": {
+        "mysql": "AVG(expr) OVER (\n  [PARTITION BY ...]\n  ORDER BY date_col\n  ROWS BETWEEN <N-1> PRECEDING AND CURRENT ROW\n)",
+        "tsql": "AVG(expr) OVER (\n  [PARTITION BY ...]\n  ORDER BY date_col\n  ROWS BETWEEN <N-1> PRECEDING AND CURRENT ROW\n)"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "Value averaged."
+        },
+        {
+          "name": "PARTITION BY ...",
+          "meaning": "Optional: independent moving average per group (e.g. per region)."
+        },
+        {
+          "name": "ORDER BY date_col",
+          "meaning": "Time order; the frame follows this order."
+        },
+        {
+          "name": "N-1 PRECEDING",
+          "meaning": "Number of earlier rows included; with CURRENT ROW the window holds N rows."
+        }
+      ],
+      "examples": [
+        {
+          "id": "ma-monthly",
+          "title": "3-month moving average (filter after the window)",
+          "explain_md": "Computed over the full 2023-2024 history, then trimmed to Jan-Jun 2024. January's average therefore uses Nov and Dec 2023 and `months_in_window` is 3.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH m AS (\n  SELECT month_start, revenue,\n         ROUND(AVG(revenue) OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS ma_3,\n         COUNT(*)           OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)    AS months_in_window\n  FROM monthly_revenue\n)\nSELECT month_start, revenue, ma_3, months_in_window\nFROM m\nWHERE month_start BETWEEN '2024-01-01' AND '2024-06-01'\nORDER BY month_start;",
+          "tsql": "WITH m AS (\n  SELECT month_start, revenue,\n         ROUND(AVG(revenue) OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS ma_3,\n         COUNT(*)           OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)    AS months_in_window\n  FROM monthly_revenue\n)\nSELECT month_start, revenue, ma_3, months_in_window\nFROM m\nWHERE month_start BETWEEN '2024-01-01' AND '2024-06-01'\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "ma_3",
+              "months_in_window"
+            ],
+            "rows": [
+              [
+                "2024-01-01",
+                "12000.00",
+                "15333.33",
+                "3"
+              ],
+              [
+                "2024-02-01",
+                "12100.00",
+                "14033.33",
+                "3"
+              ],
+              [
+                "2024-03-01",
+                "13650.00",
+                "12583.33",
+                "3"
+              ],
+              [
+                "2024-04-01",
+                "13200.00",
+                "12983.33",
+                "3"
+              ],
+              [
+                "2024-05-01",
+                "15000.00",
+                "13950.00",
+                "3"
+              ],
+              [
+                "2024-06-01",
+                "15600.00",
+                "14600.00",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "ma-where-first",
+          "title": "Same query with WHERE inside: partial windows",
+          "explain_md": "Filtering before the window drops the 2023 rows, so Jan 2024 averages one month and Feb two. Compare with the previous example.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT month_start, revenue,\n       ROUND(AVG(revenue) OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS ma_3,\n       COUNT(*)           OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)    AS months_in_window\nFROM monthly_revenue\nWHERE month_start BETWEEN '2024-01-01' AND '2024-06-01'\nORDER BY month_start;",
+          "tsql": "SELECT month_start, revenue,\n       ROUND(AVG(revenue) OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS ma_3,\n       COUNT(*)           OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)    AS months_in_window\nFROM monthly_revenue\nWHERE month_start BETWEEN '2024-01-01' AND '2024-06-01'\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "ma_3",
+              "months_in_window"
+            ],
+            "rows": [
+              [
+                "2024-01-01",
+                "12000.00",
+                "12000.00",
+                "1"
+              ],
+              [
+                "2024-02-01",
+                "12100.00",
+                "12050.00",
+                "2"
+              ],
+              [
+                "2024-03-01",
+                "13650.00",
+                "12583.33",
+                "3"
+              ],
+              [
+                "2024-04-01",
+                "13200.00",
+                "12983.33",
+                "3"
+              ],
+              [
+                "2024-05-01",
+                "15000.00",
+                "13950.00",
+                "3"
+              ],
+              [
+                "2024-06-01",
+                "15600.00",
+                "14600.00",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "ma-centred",
+          "title": "Trailing vs centred",
+          "explain_md": "Trailing uses the current and previous two months; centred uses previous, current and next. Edges have fewer rows in both.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT month_start, revenue,\n       ROUND(AVG(revenue) OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS trailing_3,\n       ROUND(AVG(revenue) OVER (ORDER BY month_start ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), 2) AS centred_3\nFROM monthly_revenue\nWHERE month_start BETWEEN '2023-01-01' AND '2023-06-01'\nORDER BY month_start;",
+          "tsql": "SELECT month_start, revenue,\n       ROUND(AVG(revenue) OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS trailing_3,\n       ROUND(AVG(revenue) OVER (ORDER BY month_start ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), 2) AS centred_3\nFROM monthly_revenue\nWHERE month_start BETWEEN '2023-01-01' AND '2023-06-01'\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "trailing_3",
+              "centred_3"
+            ],
+            "rows": [
+              [
+                "2023-01-01",
+                "10000.00",
+                "10000.00",
+                "10500.00"
+              ],
+              [
+                "2023-02-01",
+                "11000.00",
+                "10500.00",
+                "10500.00"
+              ],
+              [
+                "2023-03-01",
+                "10500.00",
+                "10500.00",
+                "11166.67"
+              ],
+              [
+                "2023-04-01",
+                "12000.00",
+                "11166.67",
+                "11666.67"
+              ],
+              [
+                "2023-05-01",
+                "12500.00",
+                "11666.67",
+                "12500.00"
+              ],
+              [
+                "2023-06-01",
+                "13000.00",
+                "12500.00",
+                "12750.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "rows-vs-calendar",
+      "heading": "N rows is not N days",
+      "body_md": "- `ROWS BETWEEN 6 PRECEDING` means 7 **rows**. If days are missing (no sales, closed shop), those 7 rows reach back further than 7 days.\n- West has no rows on 03-04 and 03-07. On 03-09 the '7-row' window starts on 03-01 (9 days back).\n- Tell-tale: `MIN(date) OVER (same frame)` shows where the window really starts; `COUNT(*)` shows how many rows it holds.\n- Three ways to get true calendar windows: date spine (next section), MySQL `RANGE INTERVAL`, or a self-join on a date range.",
+      "examples": [
+        {
+          "id": "cal-rows-window",
+          "title": "What a 7-row window really covers",
+          "explain_md": "From 03-09 the window starts at 03-01, which is more than 7 days back, so `sum_7_rows` mixes in old days.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date, revenue,\n       SUM(revenue)   OVER (ORDER BY sale_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS sum_7_rows,\n       COUNT(*)       OVER (ORDER BY sale_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rows_in_window,\n       MIN(sale_date) OVER (ORDER BY sale_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS window_starts\nFROM daily_sales\nWHERE region = 'West'\nORDER BY sale_date;",
+          "tsql": "SELECT sale_date, revenue,\n       SUM(revenue)   OVER (ORDER BY sale_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS sum_7_rows,\n       COUNT(*)       OVER (ORDER BY sale_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rows_in_window,\n       MIN(sale_date) OVER (ORDER BY sale_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS window_starts\nFROM daily_sales\nWHERE region = 'West'\nORDER BY sale_date;",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "revenue",
+              "sum_7_rows",
+              "rows_in_window",
+              "window_starts"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "50.00",
+                "50.00",
+                "1",
+                "2024-03-01"
+              ],
+              [
+                "2024-03-02",
+                "70.00",
+                "120.00",
+                "2",
+                "2024-03-01"
+              ],
+              [
+                "2024-03-03",
+                "60.00",
+                "180.00",
+                "3",
+                "2024-03-01"
+              ],
+              [
+                "2024-03-05",
+                "90.00",
+                "270.00",
+                "4",
+                "2024-03-01"
+              ],
+              [
+                "2024-03-06",
+                "40.00",
+                "310.00",
+                "5",
+                "2024-03-01"
+              ],
+              [
+                "2024-03-08",
+                "75.00",
+                "385.00",
+                "6",
+                "2024-03-01"
+              ],
+              [
+                "2024-03-09",
+                "65.00",
+                "450.00",
+                "7",
+                "2024-03-01"
+              ],
+              [
+                "2024-03-10",
+                "85.00",
+                "485.00",
+                "7",
+                "2024-03-02"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cal-self-join",
+          "title": "True 7-calendar-day sum with a self-join",
+          "explain_md": "Each row joins every row of the same region in the 7 days ending on it. Works in any engine, no window needed (but O(n * window) work).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT a.sale_date, a.revenue,\n       SUM(b.revenue) AS sum_7_days,\n       COUNT(*)       AS days_with_sales\nFROM daily_sales a\nJOIN daily_sales b\n  ON b.region = a.region\n AND b.sale_date BETWEEN a.sale_date - INTERVAL 6 DAY AND a.sale_date\nWHERE a.region = 'West'\nGROUP BY a.sale_date, a.revenue\nORDER BY a.sale_date;",
+          "tsql": "SELECT a.sale_date, a.revenue,\n       SUM(b.revenue) AS sum_7_days,\n       COUNT(*)       AS days_with_sales\nFROM daily_sales a\nJOIN daily_sales b\n  ON b.region = a.region\n AND b.sale_date BETWEEN DATEADD(DAY, -6, a.sale_date) AND a.sale_date\nWHERE a.region = 'West'\nGROUP BY a.sale_date, a.revenue\nORDER BY a.sale_date;",
+          "dialect_note_md": "Date arithmetic differs: MySQL `d - INTERVAL 6 DAY`, SQL Server `DATEADD(DAY, -6, d)`.",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "revenue",
+              "sum_7_days",
+              "days_with_sales"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "50.00",
+                "50.00",
+                "1"
+              ],
+              [
+                "2024-03-02",
+                "70.00",
+                "120.00",
+                "2"
+              ],
+              [
+                "2024-03-03",
+                "60.00",
+                "180.00",
+                "3"
+              ],
+              [
+                "2024-03-05",
+                "90.00",
+                "270.00",
+                "4"
+              ],
+              [
+                "2024-03-06",
+                "40.00",
+                "310.00",
+                "5"
+              ],
+              [
+                "2024-03-08",
+                "75.00",
+                "335.00",
+                "5"
+              ],
+              [
+                "2024-03-09",
+                "65.00",
+                "330.00",
+                "5"
+              ],
+              [
+                "2024-03-10",
+                "85.00",
+                "355.00",
+                "5"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "date-spine",
+      "heading": "Fix gaps with a date spine",
+      "body_md": "- Build a calendar with a recursive CTE, `LEFT JOIN` the facts onto it, `COALESCE(x, 0)` the missing days, then use a plain `ROWS` window: now 1 row = 1 day.\n- For several groups: `CROSS JOIN` the distinct groups with the calendar, then `LEFT JOIN` facts and `PARTITION BY` the group in the window.\n- MySQL: `WITH RECURSIVE cal(d) AS (SELECT DATE '2024-03-01' UNION ALL SELECT d + INTERVAL 1 DAY FROM cal WHERE d < '2024-03-10')`.\n- SQL Server: no `RECURSIVE` keyword; `DATEADD(DAY, 1, d)`; default recursion limit is 100 rows, add `OPTION (MAXRECURSION 0)` for longer calendars.\n- Decide what a missing day means: zero revenue (use 0) or unknown (leave NULL; then `AVG` skips it).",
+      "syntax": {
+        "mysql": "WITH RECURSIVE cal (d) AS (\n  SELECT DATE 'start'                      -- anchor: first calendar day\n  UNION ALL\n  SELECT d + INTERVAL 1 DAY FROM cal WHERE d < 'end'   -- step until the last day\n)\nSELECT ... FROM cal LEFT JOIN facts ON facts.dt = cal.d",
+        "tsql": "WITH cal AS (\n  SELECT CAST('start' AS DATE) AS d\n  UNION ALL\n  SELECT DATEADD(DAY, 1, d) FROM cal WHERE d < 'end'\n)\nSELECT ... FROM cal LEFT JOIN facts ON facts.dt = cal.d [OPTION (MAXRECURSION 0)]"
+      },
+      "args": [
+        {
+          "name": "cal (d)",
+          "meaning": "Name of the recursive CTE and its single date column."
+        },
+        {
+          "name": "anchor SELECT",
+          "meaning": "Row(s) the recursion starts from: the first day of the calendar."
+        },
+        {
+          "name": "recursive SELECT",
+          "meaning": "Adds one day to the previous row; stops when the WHERE condition fails."
+        },
+        {
+          "name": "LEFT JOIN facts",
+          "meaning": "Keep every calendar day even when the fact table has no row; missing measures arrive as NULL."
+        }
+      ],
+      "examples": [
+        {
+          "id": "spine-west",
+          "title": "West revenue with every day present",
+          "explain_md": "03-04 and 03-07 now appear with revenue 0. `sum_3_days` is a true 3-calendar-day sum and `avg_3_days` divides by 3 days including the zero-revenue days.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH RECURSIVE cal (d) AS (\n  SELECT DATE '2024-03-01'\n  UNION ALL\n  SELECT d + INTERVAL 1 DAY FROM cal WHERE d < '2024-03-10'\n)\nSELECT cal.d AS cal_date,\n       COALESCE(w.revenue, 0) AS revenue,\n       SUM(COALESCE(w.revenue, 0)) OVER (ORDER BY cal.d ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS sum_3_days,\n       ROUND(AVG(COALESCE(w.revenue, 0)) OVER (ORDER BY cal.d ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS avg_3_days\nFROM cal\nLEFT JOIN daily_sales w ON w.sale_date = cal.d AND w.region = 'West'\nORDER BY cal.d;",
+          "tsql": "WITH cal AS (\n  SELECT DISTINCT sale_date AS d FROM daily_sales\n)\nSELECT cal.d AS cal_date,\n       COALESCE(w.revenue, 0) AS revenue,\n       SUM(COALESCE(w.revenue, 0)) OVER (ORDER BY cal.d ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS sum_3_days,\n       ROUND(AVG(COALESCE(w.revenue, 0)) OVER (ORDER BY cal.d ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS avg_3_days\nFROM cal\nLEFT JOIN daily_sales w ON w.sale_date = cal.d AND w.region = 'West'\nORDER BY cal.d;",
+          "dialect_note_md": "SQL Server has no `RECURSIVE` keyword: `WITH cal AS (SELECT CAST('2024-03-01' AS DATE) AS d UNION ALL SELECT DATEADD(DAY, 1, d) FROM cal WHERE d < '2024-03-10')`. The T-SQL above takes the calendar from the distinct dates already in `daily_sales` (East has every day) because the in-browser engine cannot run SQL Server recursive CTEs; use the recursive form for real work.",
+          "expected": {
+            "columns": [
+              "cal_date",
+              "revenue",
+              "sum_3_days",
+              "avg_3_days"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "50.00",
+                "50.00",
+                "50.00"
+              ],
+              [
+                "2024-03-02",
+                "70.00",
+                "120.00",
+                "60.00"
+              ],
+              [
+                "2024-03-03",
+                "60.00",
+                "180.00",
+                "60.00"
+              ],
+              [
+                "2024-03-04",
+                "0.00",
+                "130.00",
+                "43.33"
+              ],
+              [
+                "2024-03-05",
+                "90.00",
+                "150.00",
+                "50.00"
+              ],
+              [
+                "2024-03-06",
+                "40.00",
+                "130.00",
+                "43.33"
+              ],
+              [
+                "2024-03-07",
+                "0.00",
+                "130.00",
+                "43.33"
+              ],
+              [
+                "2024-03-08",
+                "75.00",
+                "115.00",
+                "38.33"
+              ],
+              [
+                "2024-03-09",
+                "65.00",
+                "140.00",
+                "46.67"
+              ],
+              [
+                "2024-03-10",
+                "85.00",
+                "225.00",
+                "75.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "spine-multi-region",
+          "title": "One spine for every region",
+          "explain_md": "Distinct regions CROSS JOIN the calendar, then facts are left-joined. `PARTITION BY region` keeps each region's window separate. Shown for the last four days.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH RECURSIVE cal (d) AS (\n  SELECT DATE '2024-03-01'\n  UNION ALL\n  SELECT d + INTERVAL 1 DAY FROM cal WHERE d < '2024-03-10'\n),\nfilled AS (\n  SELECT r.region, cal.d AS cal_date, COALESCE(s.revenue, 0) AS revenue,\n         SUM(COALESCE(s.revenue, 0)) OVER (PARTITION BY r.region ORDER BY cal.d\n                                           ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS sum_3_days\n  FROM (SELECT DISTINCT region FROM daily_sales) r\n  CROSS JOIN cal\n  LEFT JOIN daily_sales s ON s.sale_date = cal.d AND s.region = r.region\n)\nSELECT region, cal_date, revenue, sum_3_days\nFROM filled\nWHERE cal_date >= '2024-03-07'\nORDER BY region, cal_date;",
+          "tsql": "WITH cal AS (\n  SELECT DISTINCT sale_date AS d FROM daily_sales\n),\nfilled AS (\n  SELECT r.region, cal.d AS cal_date, COALESCE(s.revenue, 0) AS revenue,\n         SUM(COALESCE(s.revenue, 0)) OVER (PARTITION BY r.region ORDER BY cal.d\n                                           ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS sum_3_days\n  FROM (SELECT DISTINCT region FROM daily_sales) r\n  CROSS JOIN cal\n  LEFT JOIN daily_sales s ON s.sale_date = cal.d AND s.region = r.region\n)\nSELECT region, cal_date, revenue, sum_3_days\nFROM filled\nWHERE cal_date >= '2024-03-07'\nORDER BY region, cal_date;",
+          "dialect_note_md": "Same calendar note as the previous example: real SQL Server code would use the recursive `WITH cal AS (... UNION ALL SELECT DATEADD(DAY, 1, d) ...)` form shown in the syntax block.",
+          "expected": {
+            "columns": [
+              "region",
+              "cal_date",
+              "revenue",
+              "sum_3_days"
+            ],
+            "rows": [
+              [
+                "East",
+                "2024-03-07",
+                "80.00",
+                "320.00"
+              ],
+              [
+                "East",
+                "2024-03-08",
+                "160.00",
+                "370.00"
+              ],
+              [
+                "East",
+                "2024-03-09",
+                "140.00",
+                "380.00"
+              ],
+              [
+                "East",
+                "2024-03-10",
+                "100.00",
+                "400.00"
+              ],
+              [
+                "West",
+                "2024-03-07",
+                "0.00",
+                "130.00"
+              ],
+              [
+                "West",
+                "2024-03-08",
+                "75.00",
+                "115.00"
+              ],
+              [
+                "West",
+                "2024-03-09",
+                "65.00",
+                "140.00"
+              ],
+              [
+                "West",
+                "2024-03-10",
+                "85.00",
+                "225.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "mysql-range-interval",
+      "heading": "MySQL alternative: RANGE INTERVAL",
+      "body_md": "- No spine needed: `RANGE BETWEEN INTERVAL 6 DAY PRECEDING AND CURRENT ROW` selects rows by date.\n- Limitation: it only evaluates on dates that have a row. Missing days produce no output row, so you still lack 03-04 / 03-07 in the results.\n- `AVG` over such a frame averages the days **with** rows; for 'per calendar day' divide `SUM` by the number of days instead.\n- SQL Server has no equivalent: use the date spine or the self-join.",
+      "examples": [
+        {
+          "id": "range-3-days",
+          "title": "3-day sum: RANGE vs ROWS",
+          "explain_md": "On 03-05 the RANGE frame covers 03-03..03-05 (60 + 90 = 150, 03-04 has no row); the ROWS frame takes the three latest rows 02, 03, 05 (70 + 60 + 90 = 220).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date, revenue,\n       SUM(revenue) OVER (ORDER BY sale_date RANGE BETWEEN INTERVAL 2 DAY PRECEDING AND CURRENT ROW) AS sum_3_days,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS  BETWEEN 2 PRECEDING AND CURRENT ROW)              AS sum_3_rows\nFROM daily_sales\nWHERE region = 'West'\nORDER BY sale_date;",
+          "tsql": null,
+          "dialect_note_md": "MySQL only (SQL Server rejects RANGE with an offset). Use the date-spine or self-join examples above.",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "revenue",
+              "sum_3_days",
+              "sum_3_rows"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "50.00",
+                "50.00",
+                "50.00"
+              ],
+              [
+                "2024-03-02",
+                "70.00",
+                "120.00",
+                "120.00"
+              ],
+              [
+                "2024-03-03",
+                "60.00",
+                "180.00",
+                "180.00"
+              ],
+              [
+                "2024-03-05",
+                "90.00",
+                "150.00",
+                "220.00"
+              ],
+              [
+                "2024-03-06",
+                "40.00",
+                "130.00",
+                "190.00"
+              ],
+              [
+                "2024-03-08",
+                "75.00",
+                "115.00",
+                "205.00"
+              ],
+              [
+                "2024-03-09",
+                "65.00",
+                "140.00",
+                "180.00"
+              ],
+              [
+                "2024-03-10",
+                "85.00",
+                "225.00",
+                "225.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "range-avg-per-day",
+          "title": "7-day average: AVG vs SUM / 7",
+          "explain_md": "`avg_of_days_with_sales` averages only existing rows; `avg_per_calendar_day` divides by 7. They differ because West has no-sale days, and early days (fewer than 7 days of history) are under-averaged by the `/ 7` form.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT region, sale_date, revenue,\n       ROUND(AVG(revenue) OVER (PARTITION BY region ORDER BY sale_date\n             RANGE BETWEEN INTERVAL 6 DAY PRECEDING AND CURRENT ROW), 2)       AS avg_of_days_with_sales,\n       ROUND(SUM(revenue) OVER (PARTITION BY region ORDER BY sale_date\n             RANGE BETWEEN INTERVAL 6 DAY PRECEDING AND CURRENT ROW) / 7, 2)   AS avg_per_calendar_day\nFROM daily_sales\nWHERE sale_date >= '2024-03-07'\nORDER BY region, sale_date;",
+          "tsql": null,
+          "dialect_note_md": "MySQL only. Note the `WHERE` here trims the history; filter in a CTE if the window should see earlier days.",
+          "expected": {
+            "columns": [
+              "region",
+              "sale_date",
+              "revenue",
+              "avg_of_days_with_sales",
+              "avg_per_calendar_day"
+            ],
+            "rows": [
+              [
+                "East",
+                "2024-03-07",
+                "80.00",
+                "80.00",
+                "11.43"
+              ],
+              [
+                "East",
+                "2024-03-08",
+                "160.00",
+                "120.00",
+                "34.29"
+              ],
+              [
+                "East",
+                "2024-03-09",
+                "140.00",
+                "126.67",
+                "54.29"
+              ],
+              [
+                "East",
+                "2024-03-10",
+                "100.00",
+                "120.00",
+                "68.57"
+              ],
+              [
+                "West",
+                "2024-03-08",
+                "75.00",
+                "75.00",
+                "10.71"
+              ],
+              [
+                "West",
+                "2024-03-09",
+                "65.00",
+                "70.00",
+                "20.00"
+              ],
+              [
+                "West",
+                "2024-03-10",
+                "85.00",
+                "75.00",
+                "32.14"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "full-windows-only",
+      "heading": "Rolling sums and full windows only",
+      "body_md": "- Rolling sum = same frame with `SUM`: 3-month `ROWS BETWEEN 2 PRECEDING AND CURRENT ROW`, trailing twelve months `ROWS BETWEEN 11 PRECEDING AND CURRENT ROW`.\n- Only complete windows: `COUNT(*) OVER (same frame) = N`. Use it in a `CASE` to return NULL for partial windows, or in a CTE to drop those rows.\n- This only guarantees N **rows**; it guarantees N months/days only if there are no gaps.",
+      "examples": [
+        {
+          "id": "full-case",
+          "title": "NULL until the window is full",
+          "explain_md": "The first two months have fewer than 3 rows in the frame, so the sum is withheld.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT month_start, revenue,\n       CASE WHEN COUNT(*) OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) = 3\n            THEN SUM(revenue) OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)\n       END AS rolling_3m_sum\nFROM monthly_revenue\nWHERE month_start <= '2023-06-01'\nORDER BY month_start;",
+          "tsql": "SELECT month_start, revenue,\n       CASE WHEN COUNT(*) OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) = 3\n            THEN SUM(revenue) OVER (ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)\n       END AS rolling_3m_sum\nFROM monthly_revenue\nWHERE month_start <= '2023-06-01'\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "rolling_3m_sum"
+            ],
+            "rows": [
+              [
+                "2023-01-01",
+                "10000.00",
+                null
+              ],
+              [
+                "2023-02-01",
+                "11000.00",
+                null
+              ],
+              [
+                "2023-03-01",
+                "10500.00",
+                "31500.00"
+              ],
+              [
+                "2023-04-01",
+                "12000.00",
+                "33500.00"
+              ],
+              [
+                "2023-05-01",
+                "12500.00",
+                "35000.00"
+              ],
+              [
+                "2023-06-01",
+                "13000.00",
+                "37500.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "full-ttm",
+          "title": "Trailing twelve months, full windows only",
+          "explain_md": "Computed over everything, then filtered to rows whose frame holds all 12 months. Dec 2023 is the first full year.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH r AS (\n  SELECT month_start, revenue,\n         SUM(revenue) OVER (ORDER BY month_start ROWS BETWEEN 11 PRECEDING AND CURRENT ROW) AS ttm,\n         COUNT(*)     OVER (ORDER BY month_start ROWS BETWEEN 11 PRECEDING AND CURRENT ROW) AS n_months\n  FROM monthly_revenue\n)\nSELECT month_start, ttm\nFROM r\nWHERE n_months = 12 AND month_start <= '2024-03-01'\nORDER BY month_start;",
+          "tsql": "WITH r AS (\n  SELECT month_start, revenue,\n         SUM(revenue) OVER (ORDER BY month_start ROWS BETWEEN 11 PRECEDING AND CURRENT ROW) AS ttm,\n         COUNT(*)     OVER (ORDER BY month_start ROWS BETWEEN 11 PRECEDING AND CURRENT ROW) AS n_months\n  FROM monthly_revenue\n)\nSELECT month_start, ttm\nFROM r\nWHERE n_months = 12 AND month_start <= '2024-03-01'\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "ttm"
+            ],
+            "rows": [
+              [
+                "2023-12-01",
+                "158500.00"
+              ],
+              [
+                "2024-01-01",
+                "160500.00"
+              ],
+              [
+                "2024-02-01",
+                "161600.00"
+              ],
+              [
+                "2024-03-01",
+                "164750.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "rolling-distinct",
+      "heading": "Rolling distinct counts",
+      "body_md": "- `COUNT(DISTINCT x) OVER (...)` is **not supported** in MySQL or SQL Server, with or without a frame.\n- Use a self-join on the date range with `COUNT(DISTINCT ...)` and `GROUP BY` (the result is correct, the cost grows with the window).\n- Alternative for 'new vs returning': flag each customer's first appearance with `ROW_NUMBER() OVER (PARTITION BY customer ORDER BY date) = 1`, then a plain rolling `SUM` of the flag counts customers first seen in the window.",
+      "examples": [
+        {
+          "id": "distinct-self-join",
+          "title": "Distinct customers in the 30 days up to each order",
+          "explain_md": "Each order is joined to all orders in the preceding 30 days (inclusive); distinct customers are counted per order.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT o1.order_id, o1.order_date,\n       COUNT(DISTINCT o2.customer_id) AS customers_last_30d\nFROM orders o1\nJOIN orders o2\n  ON o2.order_date BETWEEN o1.order_date - INTERVAL 29 DAY AND o1.order_date\nGROUP BY o1.order_id, o1.order_date\nORDER BY o1.order_id;",
+          "tsql": "SELECT o1.order_id, o1.order_date,\n       COUNT(DISTINCT o2.customer_id) AS customers_last_30d\nFROM orders o1\nJOIN orders o2\n  ON o2.order_date BETWEEN DATEADD(DAY, -29, o1.order_date) AND o1.order_date\nGROUP BY o1.order_id, o1.order_date\nORDER BY o1.order_id;",
+          "dialect_note_md": "Date arithmetic: MySQL `d - INTERVAL 29 DAY`, SQL Server `DATEADD(DAY, -29, d)`.",
+          "expected": {
+            "columns": [
+              "order_id",
+              "order_date",
+              "customers_last_30d"
+            ],
+            "rows": [
+              [
+                "101",
+                "2024-01-06",
+                "1"
+              ],
+              [
+                "102",
+                "2024-01-21",
+                "2"
+              ],
+              [
+                "103",
+                "2024-02-02",
+                "2"
+              ],
+              [
+                "104",
+                "2024-02-03",
+                "2"
+              ],
+              [
+                "105",
+                "2024-02-03",
+                "2"
+              ],
+              [
+                "106",
+                "2024-02-14",
+                "3"
+              ],
+              [
+                "107",
+                "2024-03-03",
+                "3"
+              ],
+              [
+                "108",
+                "2024-03-09",
+                "3"
+              ],
+              [
+                "109",
+                "2024-03-16",
+                "3"
+              ],
+              [
+                "110",
+                "2024-04-01",
+                "4"
+              ],
+              [
+                "111",
+                "2024-04-20",
+                "2"
+              ],
+              [
+                "112",
+                "2024-05-05",
+                "2"
+              ],
+              [
+                "113",
+                "2024-06-11",
+                "1"
+              ],
+              [
+                "114",
+                "2024-06-30",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    }
+  ]
+}

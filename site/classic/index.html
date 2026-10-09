@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQLpedia</title>
+<meta name="description" content="SQLpedia — the SQL problem encyclopedia. Problem statements, schemas, data and expected outputs, with a practice tracker.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cellipse cx='20' cy='9' rx='13' ry='5' fill='none' stroke='%23202122' stroke-width='2'/%3E%3Cpath d='M7 9v22c0 2.8 5.8 5 13 5s13-2.2 13-5V9' fill='none' stroke='%23202122' stroke-width='2'/%3E%3Ctext x='20' y='29' font-family='Georgia,serif' font-size='16' text-anchor='middle' fill='%23202122'%3ES%3C/text%3E%3C/svg%3E">
+<script>
+  // Apply saved appearance before first paint (no flash).
+  try {
+    const a = JSON.parse(localStorage.getItem("sqlpedia.appearance") || "{}");
+    if (a.theme && a.theme !== "auto") document.documentElement.dataset.theme = a.theme;
+    if (a.fontsize) document.documentElement.dataset.fontsize = a.fontsize;
+    if (a.width) document.documentElement.dataset.width = a.width;
+  } catch (e) {}
+</script>
+<link rel="stylesheet" href="css/wiki.css">
+</head>
+<body>
+<a class="skip-link" href="#content">Jump to content</a>
+
+<header class="vector-header">
+  <div class="vector-header-start">
+    <button class="mw-icon-btn" id="sidebarToggle" title="Main menu" aria-label="Main menu" aria-expanded="true" aria-controls="sidebar">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1 3h18v2H1V3zm0 6h18v2H1V9zm0 6h18v2H1v-2z"/></svg>
+    </button>
+    <a class="wordmark" href="#/">
+      <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
+        <ellipse cx="20" cy="9" rx="13" ry="5" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".7"/>
+        <path d="M7 9v22c0 2.8 5.8 5 13 5s13-2.2 13-5V9" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".7"/>
+        <path d="M7 16.5c0 2.8 5.8 5 13 5s13-2.2 13-5" fill="none" stroke="currentColor" stroke-width="1" opacity=".35"/>
+        <text x="20" y="31" font-family="Georgia,serif" font-size="14" text-anchor="middle" fill="currentColor">S</text>
+      </svg>
+      <span class="name">SQLpedia<span class="tag">The SQL problem encyclopedia</span></span>
+    </a>
+  </div>
+
+  <form class="vector-search" id="searchForm" role="search" autocomplete="off">
+    <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.2 13.6a7 7 0 111.4-1.4l5.1 5.1-1.4 1.4-5.1-5.1zM8 13A5 5 0 108 3a5 5 0 000 10z"/></svg>
+    <input type="search" id="searchBox" placeholder="Search SQLpedia" aria-label="Search SQLpedia" aria-controls="searchResults" aria-autocomplete="list">
+    <button class="mw-btn search-btn" type="submit">Search</button>
+    <div class="search-results" id="searchResults" role="listbox"></div>
+  </form>
+
+  <div class="vector-header-end">
+    <label class="visually-hidden" for="sectionSelect">Go to section</label>
+    <select class="section-select" id="sectionSelect"></select>
+    <a class="streak-chip" id="streakChip" href="#/progress"></a>
+    <a class="mw-btn quiet" href="../" title="Switch to the new SQLpedia with the in-browser editor and handbook">New version</a>
+  </div>
+</header>
+
+<div class="mw-page-container">
+  <nav class="vector-sidebar" id="sidebar" aria-label="Main menu">
+    <div id="sidebarNav"></div>
+    <div class="vector-toc" id="toc" hidden>
+      <p class="toc-title">Contents</p>
+      <ul id="tocList"></ul>
+    </div>
+  </nav>
+
+  <main class="mw-content-container" id="content" tabindex="-1">
+    <div class="vector-page-titlebar" id="titlebar"></div>
+    <article class="mw-body" id="page"><p class="loading">Loading…</p></article>
+  </main>
+
+  <aside class="vector-page-tools" id="tools" aria-label="Tools">
+    <div class="tools-group" id="pageTools"></div>
+    <div class="tools-group">
+      <h3>Appearance</h3>
+      <div class="appearance-row">
+        <div class="label" id="lblText">Text</div>
+        <div class="seg" role="group" aria-labelledby="lblText" data-pref="fontsize">
+          <button type="button" data-v="small">Small</button>
+          <button type="button" data-v="">Standard</button>
+          <button type="button" data-v="large">Large</button>
+        </div>
+      </div>
+      <div class="appearance-row">
+        <div class="label" id="lblWidth">Width</div>
+        <div class="seg" role="group" aria-labelledby="lblWidth" data-pref="width">
+          <button type="button" data-v="">Standard</button>
+          <button type="button" data-v="wide">Wide</button>
+        </div>
+      </div>
+      <div class="appearance-row">
+        <div class="label" id="lblColor">Color</div>
+        <div class="seg" role="group" aria-labelledby="lblColor" data-pref="theme">
+          <button type="button" data-v="auto">Auto</button>
+          <button type="button" data-v="light">Light</button>
+          <button type="button" data-v="dark">Dark</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<footer class="mw-footer">
+  <p>SQLpedia is a personal practice wiki. Queries are written and run in MySQL Workbench against MySQL 8.0; this site shows the problems and tracks your practice.</p>
+  <p>Practice progress is stored in this browser. Export it regularly from the <a href="#/progress">Progress</a> page.</p>
+  <ul>
+    <li><a href="#/">Main page</a></li>
+    <li><a href="#/all">All problems</a></li>
+    <li><a href="#/progress">Progress</a></li>
+  </ul>
+</footer>
+
+<div class="mw-notification" id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,740 @@
+{
+  "id": "filtering",
+  "title": "Filtering rows",
+  "group": "Foundations",
+  "order": 2,
+  "summary_md": "WHERE toolkit: comparisons and NULL, AND/OR precedence, IN, BETWEEN and half-open date ranges, LIKE, DISTINCT, and row limiting in both dialects.",
+  "sections": [
+    {
+      "id": "comparison-null",
+      "heading": "Comparison operators and NULL",
+      "body_md": "- `=`  `<>` (also `!=`)  `<`  `<=`  `>`  `>=`\n- Any comparison with NULL yields **UNKNOWN**, and WHERE keeps only TRUE. So `salary <> 80000` silently drops NULL salaries.\n- Test NULL with `IS NULL` / `IS NOT NULL`, never `= NULL`.\n- MySQL has the NULL-safe equal `a <=> b`; SQL Server 2022+ has `a IS NOT DISTINCT FROM b`. Otherwise write `a = b OR (a IS NULL AND b IS NULL)`.\n- Three-valued logic: `NOT UNKNOWN` is UNKNOWN, `FALSE AND UNKNOWN` is FALSE, `TRUE OR UNKNOWN` is TRUE.",
+      "examples": [
+        {
+          "id": "cmp-basic",
+          "title": "Plain comparisons",
+          "explain_md": "Both conditions must hold. Jon (NULL salary) fails `salary >= 100000`, so he is dropped.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, salary\nFROM employees\nWHERE salary >= 100000 AND dept <> 'Sales'\nORDER BY emp_id;",
+          "tsql": "SELECT name, dept, salary\nFROM employees\nWHERE salary >= 100000 AND dept <> 'Sales'\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "Exec",
+                "250000"
+              ],
+              [
+                "Ben",
+                "Engineering",
+                "150000"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "150000"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "120000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cmp-null-trap",
+          "title": "NULL silently excluded by <>",
+          "explain_md": "Gus and Hal (80000) are rightly excluded. Jon's NULL salary is not 'different', it is unknown, so he vanishes too.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary\nFROM employees\nWHERE salary <> 80000\nORDER BY emp_id;",
+          "tsql": "SELECT name, salary\nFROM employees\nWHERE salary <> 80000\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000"
+              ],
+              [
+                "Ben",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000"
+              ],
+              [
+                "Dev",
+                "120000"
+              ],
+              [
+                "Eli",
+                "95000"
+              ],
+              [
+                "Fay",
+                "110000"
+              ],
+              [
+                "Ivy",
+                "90000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cmp-null-fix",
+          "title": "Keep the NULLs deliberately",
+          "explain_md": "Add an explicit IS NULL branch (or COALESCE) when NULL rows should count as 'not 80000'.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary\nFROM employees\nWHERE salary <> 80000 OR salary IS NULL\nORDER BY emp_id;",
+          "tsql": "SELECT name, salary\nFROM employees\nWHERE salary <> 80000 OR salary IS NULL\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000"
+              ],
+              [
+                "Ben",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000"
+              ],
+              [
+                "Dev",
+                "120000"
+              ],
+              [
+                "Eli",
+                "95000"
+              ],
+              [
+                "Fay",
+                "110000"
+              ],
+              [
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Jon",
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`WHERE col = NULL` returns zero rows, always.",
+        "`NOT (a = 1)` also excludes NULL rows; negating a condition does not make it the complement."
+      ]
+    },
+    {
+      "id": "and-or",
+      "heading": "AND / OR precedence",
+      "body_md": "- `NOT` binds tighter than `AND`, which binds tighter than `OR`.\n- `a OR b AND c` means `a OR (b AND c)`. Add parentheses whenever you mix them.\n- Rewrite long OR chains on one column as `IN (...)`.",
+      "examples": [
+        {
+          "id": "andor-wrong",
+          "title": "Missing parentheses",
+          "explain_md": "Reads as `Sales` (all) OR (`Marketing` AND salary > 85000). Sales rows below 85000 sneak in.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, salary\nFROM employees\nWHERE dept = 'Sales' OR dept = 'Marketing' AND salary > 85000\nORDER BY emp_id;",
+          "tsql": "SELECT name, dept, salary\nFROM employees\nWHERE dept = 'Sales' OR dept = 'Marketing' AND salary > 85000\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Fay",
+                "Sales",
+                "110000"
+              ],
+              [
+                "Gus",
+                "Sales",
+                "80000"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "80000"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "90000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "andor-right",
+          "title": "Parentheses state the intent",
+          "explain_md": "Now the salary test applies to both departments: Gus and Hal (80000) drop out.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, salary\nFROM employees\nWHERE (dept = 'Sales' OR dept = 'Marketing') AND salary > 85000\nORDER BY emp_id;",
+          "tsql": "SELECT name, dept, salary\nFROM employees\nWHERE (dept = 'Sales' OR dept = 'Marketing') AND salary > 85000\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Fay",
+                "Sales",
+                "110000"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "90000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Precedence bugs return plausible-looking rows. Always parenthesize AND inside OR."
+      ]
+    },
+    {
+      "id": "in-list",
+      "heading": "IN and NOT IN",
+      "body_md": "- `x IN (a, b, c)` is shorthand for `x = a OR x = b OR x = c`. The list may also be a subquery.\n- `NOT IN` with a NULL in the list/subquery returns **no rows** (every comparison becomes UNKNOWN). Filter NULLs out of the subquery or use `NOT EXISTS`.",
+      "examples": [
+        {
+          "id": "in-list",
+          "title": "IN with a list",
+          "explain_md": "Short, readable replacement for an OR chain.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept\nFROM employees\nWHERE dept IN ('Sales', 'Marketing')\nORDER BY emp_id;",
+          "tsql": "SELECT name, dept\nFROM employees\nWHERE dept IN ('Sales', 'Marketing')\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "dept"
+            ],
+            "rows": [
+              [
+                "Fay",
+                "Sales"
+              ],
+              [
+                "Gus",
+                "Sales"
+              ],
+              [
+                "Hal",
+                "Sales"
+              ],
+              [
+                "Ivy",
+                "Marketing"
+              ],
+              [
+                "Jon",
+                "Marketing"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "not-in-null",
+          "title": "NOT IN meets a NULL",
+          "explain_md": "Ana's `manager_id` is NULL, so the subquery contains a NULL and `NOT IN` can never be TRUE: the 'who manages nobody?' query returns no rows.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name\nFROM employees\nWHERE emp_id NOT IN (SELECT manager_id FROM employees)\nORDER BY emp_id;",
+          "tsql": "SELECT name\nFROM employees\nWHERE emp_id NOT IN (SELECT manager_id FROM employees)\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [],
+            "rows": []
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "not-in-fixed",
+          "title": "Fix: NOT EXISTS (NULL-safe)",
+          "explain_md": "Employees who are nobody's manager: Dev, Eli, Gus, Hal, Jon.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name\nFROM employees AS e\nWHERE NOT EXISTS (SELECT 1 FROM employees AS m WHERE m.manager_id = e.emp_id)\nORDER BY emp_id;",
+          "tsql": "SELECT name\nFROM employees AS e\nWHERE NOT EXISTS (SELECT 1 FROM employees AS m WHERE m.manager_id = e.emp_id)\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name"
+            ],
+            "rows": [
+              [
+                "Dev"
+              ],
+              [
+                "Eli"
+              ],
+              [
+                "Gus"
+              ],
+              [
+                "Hal"
+              ],
+              [
+                "Jon"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`NOT IN (subquery)` is the single most common NULL trap in interviews; prefer NOT EXISTS."
+      ]
+    },
+    {
+      "id": "between",
+      "heading": "BETWEEN and date ranges",
+      "body_md": "- `x BETWEEN lo AND hi` is `x >= lo AND x <= hi`: **both ends inclusive**. `lo` must be the smaller value or you get zero rows.\n- For dates and timestamps prefer a **half-open range**: `>= start AND < next_start`. It works for DATE and DATETIME and never double-counts boundaries.\n- Monthly range: `>= '2024-02-01' AND < '2024-03-01'` (no need to know whether February has 28 or 29 days).",
+      "examples": [
+        {
+          "id": "between-datetime",
+          "title": "BETWEEN on timestamps loses the last day",
+          "explain_md": "`BETWEEN '2024-05-01' AND '2024-05-02'` means up to 2024-05-02 00:00:00, so the 08:30 event on May 2 is missed (6 rows instead of 7).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT COUNT(*) AS n_events\nFROM events\nWHERE event_ts BETWEEN '2024-05-01' AND '2024-05-02';",
+          "tsql": "SELECT COUNT(*) AS n_events\nFROM events\nWHERE event_ts BETWEEN '2024-05-01' AND '2024-05-02';",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "n_events"
+            ],
+            "rows": [
+              [
+                "7"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "half-open",
+          "title": "Half-open range gets all of May 1-2",
+          "explain_md": "`>= start AND < day-after-end` is correct for any time precision.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT COUNT(*) AS n_events\nFROM events\nWHERE event_ts >= '2024-05-01' AND event_ts < '2024-05-03';",
+          "tsql": "SELECT COUNT(*) AS n_events\nFROM events\nWHERE event_ts >= '2024-05-01' AND event_ts < '2024-05-03';",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "n_events"
+            ],
+            "rows": [
+              [
+                "9"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`BETWEEN 'a' AND 'b'` on strings is inclusive and collation-dependent.",
+        "`DATE(event_ts) = '2024-05-01'` works but wraps the column in a function, which blocks index use; the half-open form is both correct and index-friendly."
+      ]
+    },
+    {
+      "id": "like",
+      "heading": "LIKE, wildcards and ESCAPE",
+      "body_md": "- `%` matches any run of characters (including none); `_` matches exactly one character.\n- Case sensitivity follows the column collation. MySQL and SQL Server defaults are both case-insensitive.\n- Leading wildcard (`'%abc'`) cannot use a normal index; trailing (`'abc%'`) can.\n- To match a literal `%` or `_`, pick an escape character and declare it: `LIKE '50!%%' ESCAPE '!'`.\n- SQL Server also supports `[abc]` character classes and `[^abc]` in LIKE; MySQL does not (use REGEXP).\n- `NOT LIKE` drops NULLs just like any other comparison.",
+      "syntax": {
+        "mysql": "expr [NOT] LIKE pattern [ESCAPE esc_char]",
+        "tsql": "expr [NOT] LIKE pattern [ESCAPE esc_char]"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "The string column or expression being tested."
+        },
+        {
+          "name": "pattern",
+          "meaning": "Text with wildcards: `%` any run, `_` one char (T-SQL also `[ ]`)."
+        },
+        {
+          "name": "ESCAPE esc_char",
+          "meaning": "Single character that makes the next `%` or `_` in the pattern literal."
+        }
+      ],
+      "examples": [
+        {
+          "id": "like-suffix",
+          "title": "Ends with a domain",
+          "explain_md": "Matches the two `shop.com` accounts. Note customer 6's email has a trailing space, so a `LIKE '%.org'` pattern would miss it: hidden whitespace matters.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, email\nFROM customers\nWHERE email LIKE '%@shop.com'\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id, email\nFROM customers\nWHERE email LIKE '%@shop.com'\nORDER BY customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "email"
+            ],
+            "rows": [
+              [
+                "1",
+                "maya@shop.com"
+              ],
+              [
+                "3",
+                "olga@shop.com"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "like-underscore",
+          "title": "_ is exactly one character",
+          "explain_md": "`'_a%'` = any first letter, then `a`. Matches names whose second letter is a: Cara, Fay, Hal.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name\nFROM employees\nWHERE name LIKE '_a%'\nORDER BY emp_id;",
+          "tsql": "SELECT name\nFROM employees\nWHERE name LIKE '_a%'\nORDER BY emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name"
+            ],
+            "rows": [
+              [
+                "Cara"
+              ],
+              [
+                "Fay"
+              ],
+              [
+                "Hal"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "like-escape",
+          "title": "ESCAPE for a literal percent sign",
+          "explain_md": "Without ESCAPE the `%` in the pattern is a wildcard and would also match '50 off'. Here only the string with a real `%` matches.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT label\nFROM (\n  SELECT '50% off' AS label\n  UNION ALL SELECT '50 off'\n  UNION ALL SELECT '5000 off'\n) AS t\nWHERE label LIKE '50!% %' ESCAPE '!'\nORDER BY label;",
+          "tsql": "SELECT label\nFROM (\n  SELECT '50% off' AS label\n  UNION ALL SELECT '50 off'\n  UNION ALL SELECT '5000 off'\n) AS t\nWHERE label LIKE '50!% %' ESCAPE '!'\nORDER BY label;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "label"
+            ],
+            "rows": [
+              [
+                "50% off"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "MySQL treats backslash as an escape inside string literals, so `'\\_'` behaves differently from SQL Server; the explicit ESCAPE clause is portable.",
+        "`=` ignores trailing spaces in SQL Server but not in MySQL 8 default collations; dirty whitespace is a classic dedupe trap."
+      ]
+    },
+    {
+      "id": "distinct",
+      "heading": "DISTINCT",
+      "body_md": "- `SELECT DISTINCT a, b` removes duplicate **rows** of the whole (a, b) pair, not duplicates of `a` alone.\n- NULLs are treated as equal to each other here (one NULL row survives).\n- `DISTINCT` is not a function: `SELECT DISTINCT(a), b` still dedupes the pair.\n- `COUNT(DISTINCT x)` counts distinct non-NULL values.\n- If you reach for DISTINCT to hide duplicates after a join, you probably have a fan-out; fix the join instead.",
+      "examples": [
+        {
+          "id": "distinct-col",
+          "title": "Distinct values of one column",
+          "explain_md": "One row per department.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT DISTINCT dept\nFROM employees\nORDER BY dept;",
+          "tsql": "SELECT DISTINCT dept\nFROM employees\nORDER BY dept;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "dept"
+            ],
+            "rows": [
+              [
+                "Engineering"
+              ],
+              [
+                "Exec"
+              ],
+              [
+                "Marketing"
+              ],
+              [
+                "Sales"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "distinct-pair",
+          "title": "Distinct pairs",
+          "explain_md": "Customer 1 and 2 each appear once per distinct status they have, not once per order.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT DISTINCT customer_id, status\nFROM orders\nORDER BY customer_id, status;",
+          "tsql": "SELECT DISTINCT customer_id, status\nFROM orders\nORDER BY customer_id, status;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "status"
+            ],
+            "rows": [
+              [
+                "1",
+                "cancelled"
+              ],
+              [
+                "1",
+                "completed"
+              ],
+              [
+                "2",
+                "completed"
+              ],
+              [
+                "3",
+                "completed"
+              ],
+              [
+                "4",
+                "completed"
+              ],
+              [
+                "4",
+                "refunded"
+              ],
+              [
+                "5",
+                "cancelled"
+              ],
+              [
+                "5",
+                "completed"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "distinct-null",
+          "title": "DISTINCT keeps one NULL",
+          "explain_md": "Olga's NULL city appears once.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT DISTINCT city\nFROM customers\nORDER BY city;",
+          "tsql": "SELECT DISTINCT city\nFROM customers\nORDER BY city;",
+          "dialect_note_md": "MySQL sorts NULL first in ascending order, and so does SQL Server.",
+          "expected": {
+            "columns": [
+              "city"
+            ],
+            "rows": [
+              [
+                null
+              ],
+              [
+                "Austin"
+              ],
+              [
+                "Boston"
+              ],
+              [
+                "Denver"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "limit-top",
+      "heading": "Limiting rows: LIMIT, TOP, OFFSET-FETCH",
+      "body_md": "| Need | MySQL | SQL Server |\n|---|---|---|\n| First n rows | `LIMIT n` (at the end) | `SELECT TOP n ...` (after SELECT) |\n| Skip m, take n | `LIMIT n OFFSET m` (or `LIMIT m, n`) | `ORDER BY ... OFFSET m ROWS FETCH NEXT n ROWS ONLY` |\n| Include ties | emulate with `RANK()` | `TOP n WITH TIES` (needs ORDER BY) |\n\n- Always pair with a deterministic `ORDER BY`; otherwise \"first n\" is arbitrary.\n- T-SQL `OFFSET ... FETCH` requires an `ORDER BY`. `TOP` can be used without one but should not be.\n- `TOP n PERCENT` also exists in T-SQL.\n- Large OFFSETs are slow (rows are still read and discarded); keyset pagination (`WHERE id > last_id`) scales better.",
+      "syntax": {
+        "mysql": "SELECT ... ORDER BY o LIMIT row_count [OFFSET skip]",
+        "tsql": "SELECT [TOP (n) [WITH TIES]] ... ORDER BY o [OFFSET skip ROWS FETCH NEXT n ROWS ONLY]"
+      },
+      "args": [
+        {
+          "name": "LIMIT row_count",
+          "meaning": "Maximum rows to return."
+        },
+        {
+          "name": "OFFSET skip",
+          "meaning": "Rows to discard from the sorted result first."
+        },
+        {
+          "name": "TOP (n)",
+          "meaning": "Maximum rows, written right after SELECT."
+        },
+        {
+          "name": "FETCH NEXT n ROWS ONLY",
+          "meaning": "Rows to return after the OFFSET; requires ORDER BY."
+        }
+      ],
+      "examples": [
+        {
+          "id": "limit-n",
+          "title": "Top 3 earners",
+          "explain_md": "Ben and Cara tie at 150000; the `emp_id` tiebreak puts Ben before Cara.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary DESC, emp_id\nLIMIT 3;",
+          "tsql": "SELECT TOP 3 name, salary\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary DESC, emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000"
+              ],
+              [
+                "Ben",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "limit-offset",
+          "title": "Page 2 (rows 4-6)",
+          "explain_md": "OFFSET skips the first 3 sorted rows, FETCH/LIMIT takes the next 3.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT emp_id, name, salary\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary DESC, emp_id\nLIMIT 3 OFFSET 3;",
+          "tsql": "SELECT emp_id, name, salary\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary DESC, emp_id\nOFFSET 3 ROWS FETCH NEXT 3 ROWS ONLY;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "emp_id",
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "4",
+                "Dev",
+                "120000"
+              ],
+              [
+                "6",
+                "Fay",
+                "110000"
+              ],
+              [
+                "5",
+                "Eli",
+                "95000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "top-ties",
+          "title": "Top 2 salaries including ties",
+          "explain_md": "`LIMIT 2` would pick Ana plus one of the 150000 pair; with ties you get all three. The portable form is RANK() then filter; SQL Server also has TOP WITH TIES.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary\nFROM (\n  SELECT name, salary, emp_id,\n         RANK() OVER (ORDER BY salary DESC) AS rk\n  FROM employees\n) AS r\nWHERE rk <= 2\nORDER BY salary DESC, emp_id;",
+          "tsql": "SELECT name, salary\nFROM (\n  SELECT name, salary, emp_id,\n         RANK() OVER (ORDER BY salary DESC) AS rk\n  FROM employees\n) AS r\nWHERE rk <= 2\nORDER BY salary DESC, emp_id;",
+          "dialect_note_md": "SQL Server also has the shortcut `SELECT TOP 2 WITH TIES name, salary FROM employees ORDER BY salary DESC;` (ties are decided on the ORDER BY columns only; adding a tiebreak column removes the ties). The RANK() form works in both dialects.",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000"
+              ],
+              [
+                "Ben",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "MySQL `LIMIT a, b` is offset-first (skip a, take b) - the reverse of what many expect.",
+        "No ORDER BY + LIMIT/TOP = nondeterministic. Interviewers watch for this."
+      ]
+    }
+  ]
+}

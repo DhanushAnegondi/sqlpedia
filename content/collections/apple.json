@@ -1,0 +1,6272 @@
+{
+  "id": "apple",
+  "title": "Apple SDE – Data prep",
+  "description_md": "Your 60-question pattern bank from the Apple SDE–Data preparation, each question with its own tiny tables. Ordered from core semantics to dates, sequences and data-engineering patterns.",
+  "problems": [
+    {
+      "id": "A01",
+      "slug": "filter-rows-with-several-conditions",
+      "title": "Filter rows with several conditions",
+      "difficulty": "Easy",
+      "topics": [
+        "Filtering"
+      ],
+      "statement_md": "Return employee_id and name for department A employees with salary at least 80. Sort by employee_id.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one qualifying employee."
+      ],
+      "notes_md": "**Pattern family:** WHERE + AND / OR\n\n**Grain:** one row = one qualifying employee.\n\n**Watch out:** NULL salary does not satisfy salary >= 80; parenthesize mixed AND/OR rules.",
+      "solutions": [
+        {
+          "label": "WHERE + AND / OR",
+          "explain_md": "Both predicates must hold on the same employee row.",
+          "sql": "SELECT employee_id, name\nFROM employees\nWHERE dept = 'A' AND salary >= 80\nORDER BY employee_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "employee_id",
+          "name"
+        ],
+        "rows": [
+          [
+            "1",
+            "Ana"
+          ],
+          [
+            "2",
+            "Ben"
+          ],
+          [
+            "3",
+            "Cara"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A02",
+      "slug": "distinct-values",
+      "title": "Distinct values",
+      "difficulty": "Easy",
+      "topics": [
+        "Filtering",
+        "NULL handling"
+      ],
+      "statement_md": "Return unique non-NULL cities, sorted alphabetically.",
+      "tables": [
+        {
+          "name": "customers",
+          "description_md": "One row per customer. city may be NULL.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "SF"
+            ],
+            [
+              2,
+              "Ben",
+              "LA"
+            ],
+            [
+              3,
+              "Cara",
+              "SF"
+            ],
+            [
+              4,
+              "Dan",
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one city."
+      ],
+      "notes_md": "**Pattern family:** DISTINCT\n\n**Grain:** one row = one city.\n\n**Watch out:** DISTINCT applies to the entire selected row, not just its first column.",
+      "solutions": [
+        {
+          "label": "DISTINCT",
+          "explain_md": "Two customers live in SF, but SF appears once.",
+          "sql": "SELECT DISTINCT city\nFROM customers\nWHERE city IS NOT NULL\nORDER BY city;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "city"
+        ],
+        "rows": [
+          [
+            "LA"
+          ],
+          [
+            "SF"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A03",
+      "slug": "find-missing-values",
+      "title": "Find missing values",
+      "difficulty": "Easy",
+      "topics": [
+        "NULL handling"
+      ],
+      "statement_md": "Return employee_id for employees with unknown salary, ordered by ID.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one employee with missing salary."
+      ],
+      "notes_md": "**Pattern family:** IS NULL\n\n**Grain:** one row = one employee with missing salary.\n\n**Watch out:** salary = NULL is never TRUE; zero salary and unknown salary are different.",
+      "solutions": [
+        {
+          "label": "IS NULL",
+          "explain_md": "Finn has an unknown salary.",
+          "sql": "SELECT employee_id FROM employees\nWHERE salary IS NULL ORDER BY employee_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "employee_id"
+        ],
+        "rows": [
+          [
+            "6"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A04",
+      "slug": "count-variations",
+      "title": "COUNT variations",
+      "difficulty": "Easy",
+      "topics": [
+        "Filtering",
+        "Aggregation"
+      ],
+      "statement_md": "Return total_rows, known_salaries, distinct_salaries for all employees.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one summary row."
+      ],
+      "notes_md": "**Pattern family:** COUNT(*) / COUNT(column) / COUNT(DISTINCT column)\n\n**Grain:** one row = one summary row.\n\n**Watch out:** COUNT(column) and COUNT(DISTINCT column) exclude NULL.",
+      "solutions": [
+        {
+          "label": "COUNT(*) / COUNT(column) / COUNT(DISTINCT column)",
+          "explain_md": "Six employees, five known salaries, and four distinct known salaries.",
+          "sql": "SELECT COUNT(*) AS total_rows, COUNT(salary) AS known_salaries,\n       COUNT(DISTINCT salary) AS distinct_salaries\nFROM employees;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "total_rows",
+          "known_salaries",
+          "distinct_salaries"
+        ],
+        "rows": [
+          [
+            "6",
+            "5",
+            "4"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A05",
+      "slug": "group-and-aggregate",
+      "title": "Group and aggregate",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation"
+      ],
+      "statement_md": "Return dept, employee_count and total_salary by department, sorted by dept. Unknown salary contributes nothing to the sum.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one department."
+      ],
+      "notes_md": "**Pattern family:** GROUP BY\n\n**Grain:** one row = one department.\n\n**Watch out:** SUM ignores NULL; an entirely NULL group would produce NULL, not zero.",
+      "solutions": [
+        {
+          "label": "GROUP BY",
+          "explain_md": "GROUP BY collapses three employee rows into each department row.",
+          "sql": "SELECT dept, COUNT(*) AS employee_count, SUM(salary) AS total_salary\nFROM employees GROUP BY dept ORDER BY dept;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "dept",
+          "employee_count",
+          "total_salary"
+        ],
+        "rows": [
+          [
+            "A",
+            "3",
+            "260"
+          ],
+          [
+            "B",
+            "3",
+            "150"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A06",
+      "slug": "filter-groups",
+      "title": "Filter groups",
+      "difficulty": "Easy",
+      "topics": [
+        "Filtering",
+        "Aggregation"
+      ],
+      "statement_md": "Return customer_id and paid_total for customers whose paid orders total at least 100. Sort by customer_id.",
+      "tables": [
+        {
+          "name": "orders",
+          "description_md": "One row per order. All fields non-NULL. customer_id references customers; one customer can have many orders.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              100,
+              "paid"
+            ],
+            [
+              102,
+              1,
+              50,
+              "paid"
+            ],
+            [
+              103,
+              2,
+              80,
+              "cancelled"
+            ],
+            [
+              104,
+              3,
+              40,
+              "paid"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one qualifying customer."
+      ],
+      "notes_md": "**Pattern family:** HAVING\n\n**Grain:** one row = one qualifying customer.\n\n**Watch out:** WHERE filters input rows; HAVING filters aggregate groups.",
+      "solutions": [
+        {
+          "label": "HAVING",
+          "explain_md": "Filter paid rows first; then filter grouped totals.",
+          "sql": "SELECT customer_id, SUM(amount) AS paid_total\nFROM orders WHERE status = 'paid'\nGROUP BY customer_id HAVING SUM(amount) >= 100\nORDER BY customer_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "paid_total"
+        ],
+        "rows": [
+          [
+            "1",
+            "150"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A07",
+      "slug": "conditional-aggregation",
+      "title": "Conditional aggregation",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation",
+        "Conditional aggregation"
+      ],
+      "statement_md": "Return customer_id, paid_count and cancelled_count for every customer represented in orders, sorted by customer_id.",
+      "tables": [
+        {
+          "name": "orders",
+          "description_md": "One row per order. All fields non-NULL. customer_id references customers; one customer can have many orders.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              100,
+              "paid"
+            ],
+            [
+              102,
+              1,
+              50,
+              "paid"
+            ],
+            [
+              103,
+              2,
+              80,
+              "cancelled"
+            ],
+            [
+              104,
+              3,
+              40,
+              "paid"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one customer represented in orders."
+      ],
+      "notes_md": "**Pattern family:** SUM(CASE ...)\n\n**Grain:** one row = one customer represented in orders.\n\n**Watch out:** Customers with no orders require a separate customer table and LEFT JOIN.",
+      "solutions": [
+        {
+          "label": "SUM(CASE ...)",
+          "explain_md": "Each status contributes a one or zero within its customer's group.",
+          "sql": "SELECT customer_id,\n SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid_count,\n SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count\nFROM orders GROUP BY customer_id ORDER BY customer_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "paid_count",
+          "cancelled_count"
+        ],
+        "rows": [
+          [
+            "1",
+            "2",
+            "0"
+          ],
+          [
+            "2",
+            "0",
+            "1"
+          ],
+          [
+            "3",
+            "1",
+            "0"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A08",
+      "slug": "top-n-rows-with-deterministic-ties",
+      "title": "Top N rows with deterministic ties",
+      "difficulty": "Medium",
+      "topics": [
+        "Ranking"
+      ],
+      "statement_md": "Return employee_id and salary for exactly three highest-paid employees. Exclude unknown salary; break salary ties by employee_id ascending.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one selected employee."
+      ],
+      "notes_md": "**Pattern family:** ORDER BY + LIMIT\n\n**Grain:** one row = one selected employee.\n\n**Watch out:** LIMIT 3 does not include every salary tie; use ranking when ties must be retained.",
+      "solutions": [
+        {
+          "label": "ORDER BY + LIMIT",
+          "explain_md": "The 80 tie is resolved by smaller employee_id.",
+          "sql": "SELECT employee_id, salary FROM employees\nWHERE salary IS NOT NULL\nORDER BY salary DESC, employee_id ASC LIMIT 3;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "employee_id",
+          "salary"
+        ],
+        "rows": [
+          [
+            "1",
+            "100"
+          ],
+          [
+            "4",
+            "90"
+          ],
+          [
+            "2",
+            "80"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A09",
+      "slug": "normalize-and-find-duplicates",
+      "title": "Normalize and find duplicates",
+      "difficulty": "Medium",
+      "topics": [
+        "Aggregation",
+        "NULL handling",
+        "Deduplication",
+        "String functions"
+      ],
+      "statement_md": "Ignore NULL emails. Return normalized_email and copies for normalized emails appearing more than once. Normalize by trimming spaces and lowercasing; sort by normalized_email.",
+      "tables": [
+        {
+          "name": "contacts",
+          "description_md": "One row per contact. Emails may be NULL; normalized duplicates are allowed.",
+          "columns": [
+            {
+              "name": "contact_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR(60)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              " a@x.com "
+            ],
+            [
+              2,
+              "A@X.COM"
+            ],
+            [
+              3,
+              "b@y.com"
+            ],
+            [
+              4,
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one duplicated normalized email."
+      ],
+      "notes_md": "**Pattern family:** LOWER + TRIM + HAVING\n\n**Grain:** one row = one duplicated normalized email.\n\n**Watch out:** Define normalization before counting; this contract does not remove internal whitespace.",
+      "solutions": [
+        {
+          "label": "LOWER + TRIM + HAVING",
+          "explain_md": "Both spellings become a@x.com.",
+          "sql": "SELECT LOWER(TRIM(email)) AS normalized_email, COUNT(*) AS copies\nFROM contacts WHERE email IS NOT NULL\nGROUP BY LOWER(TRIM(email)) HAVING COUNT(*) > 1\nORDER BY normalized_email;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "normalized_email",
+          "copies"
+        ],
+        "rows": [
+          [
+            "a@x.com",
+            "2"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A10",
+      "slug": "classify-rows",
+      "title": "Classify rows",
+      "difficulty": "Easy",
+      "topics": [
+        "Conditional aggregation",
+        "NULL handling"
+      ],
+      "statement_md": "Return employee_id and band: unknown for NULL salary, high for salary >= 90, otherwise regular. Sort by ID.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one employee."
+      ],
+      "notes_md": "**Pattern family:** CASE\n\n**Grain:** one row = one employee.\n\n**Watch out:** Do not silently classify NULL as a measured low value.",
+      "solutions": [
+        {
+          "label": "CASE",
+          "explain_md": "CASE checks branches in order; missing values receive an explicit label.",
+          "sql": "SELECT employee_id,\n CASE WHEN salary IS NULL THEN 'unknown'\n      WHEN salary >= 90 THEN 'high' ELSE 'regular' END AS band\nFROM employees ORDER BY employee_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "employee_id",
+          "band"
+        ],
+        "rows": [
+          [
+            "1",
+            "high"
+          ],
+          [
+            "2",
+            "regular"
+          ],
+          [
+            "3",
+            "regular"
+          ],
+          [
+            "4",
+            "high"
+          ],
+          [
+            "5",
+            "regular"
+          ],
+          [
+            "6",
+            "unknown"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A11",
+      "slug": "join-matching-rows",
+      "title": "Join matching rows",
+      "difficulty": "Easy",
+      "topics": [
+        "Joins"
+      ],
+      "statement_md": "Return paid order_id, customer name and amount, ordered by order_id.",
+      "tables": [
+        {
+          "name": "customers",
+          "description_md": "One row per customer. city may be NULL.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "SF"
+            ],
+            [
+              2,
+              "Ben",
+              "LA"
+            ],
+            [
+              3,
+              "Cara",
+              "SF"
+            ],
+            [
+              4,
+              "Dan",
+              null
+            ]
+          ]
+        },
+        {
+          "name": "orders",
+          "description_md": "One row per order. All fields non-NULL. customer_id references customers; one customer can have many orders.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              100,
+              "paid"
+            ],
+            [
+              102,
+              1,
+              50,
+              "paid"
+            ],
+            [
+              103,
+              2,
+              80,
+              "cancelled"
+            ],
+            [
+              104,
+              3,
+              40,
+              "paid"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one paid order."
+      ],
+      "notes_md": "**Pattern family:** INNER JOIN\n\n**Grain:** one row = one paid order.\n\n**Watch out:** A customer may repeat: the result is at order grain, not customer grain.",
+      "solutions": [
+        {
+          "label": "INNER JOIN",
+          "explain_md": "Each order matches at most one customer because customer_id is unique in customers.",
+          "sql": "SELECT o.order_id, c.name, o.amount\nFROM orders o JOIN customers c ON c.customer_id = o.customer_id\nWHERE o.status = 'paid' ORDER BY o.order_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "order_id",
+          "name",
+          "amount"
+        ],
+        "rows": [
+          [
+            "101",
+            "Ana",
+            "100"
+          ],
+          [
+            "102",
+            "Ana",
+            "50"
+          ],
+          [
+            "104",
+            "Cara",
+            "40"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A12",
+      "slug": "include-customers-with-zero-orders",
+      "title": "Include customers with zero orders",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation",
+        "Joins"
+      ],
+      "statement_md": "Return every customer_id and paid_orders, including zero, ordered by customer_id.",
+      "tables": [
+        {
+          "name": "customers",
+          "description_md": "One row per customer. city may be NULL.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "SF"
+            ],
+            [
+              2,
+              "Ben",
+              "LA"
+            ],
+            [
+              3,
+              "Cara",
+              "SF"
+            ],
+            [
+              4,
+              "Dan",
+              null
+            ]
+          ]
+        },
+        {
+          "name": "orders",
+          "description_md": "One row per order. All fields non-NULL. customer_id references customers; one customer can have many orders.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              100,
+              "paid"
+            ],
+            [
+              102,
+              1,
+              50,
+              "paid"
+            ],
+            [
+              103,
+              2,
+              80,
+              "cancelled"
+            ],
+            [
+              104,
+              3,
+              40,
+              "paid"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one customer."
+      ],
+      "notes_md": "**Pattern family:** LEFT JOIN + COUNT(child key)\n\n**Grain:** one row = one customer.\n\n**Watch out:** Putting o.status in WHERE removes unmatched customers; COUNT(*) wrongly counts their placeholder.",
+      "solutions": [
+        {
+          "label": "LEFT JOIN + COUNT(child key)",
+          "explain_md": "A LEFT JOIN retains all four customers; counting the child key ignores unmatched NULL placeholders.",
+          "sql": "SELECT c.customer_id, COUNT(o.order_id) AS paid_orders\nFROM customers c\nLEFT JOIN orders o ON o.customer_id = c.customer_id AND o.status = 'paid'\nGROUP BY c.customer_id ORDER BY c.customer_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "paid_orders"
+        ],
+        "rows": [
+          [
+            "1",
+            "2"
+          ],
+          [
+            "2",
+            "0"
+          ],
+          [
+            "3",
+            "1"
+          ],
+          [
+            "4",
+            "0"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A13",
+      "slug": "customers-who-never-paid",
+      "title": "Customers who never paid",
+      "difficulty": "Medium",
+      "topics": [
+        "Anti-joins",
+        "Subqueries"
+      ],
+      "statement_md": "Return customer_id for customers with no paid orders, sorted by ID.",
+      "tables": [
+        {
+          "name": "customers",
+          "description_md": "One row per customer. city may be NULL.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "SF"
+            ],
+            [
+              2,
+              "Ben",
+              "LA"
+            ],
+            [
+              3,
+              "Cara",
+              "SF"
+            ],
+            [
+              4,
+              "Dan",
+              null
+            ]
+          ]
+        },
+        {
+          "name": "orders",
+          "description_md": "One row per order. All fields non-NULL. customer_id references customers; one customer can have many orders.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              100,
+              "paid"
+            ],
+            [
+              102,
+              1,
+              50,
+              "paid"
+            ],
+            [
+              103,
+              2,
+              80,
+              "cancelled"
+            ],
+            [
+              104,
+              3,
+              40,
+              "paid"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one customer without a paid order."
+      ],
+      "notes_md": "**Pattern family:** NOT EXISTS\n\n**Grain:** one row = one customer without a paid order.\n\n**Watch out:** NOT IN can eliminate all results if its subquery contains NULL.",
+      "solutions": [
+        {
+          "label": "NOT EXISTS",
+          "explain_md": "Ben has only a cancelled order; Dan has no orders.",
+          "sql": "SELECT c.customer_id FROM customers c\nWHERE NOT EXISTS (SELECT 1 FROM orders o\n WHERE o.customer_id = c.customer_id AND o.status = 'paid')\nORDER BY c.customer_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "customer_id"
+        ],
+        "rows": [
+          [
+            "2"
+          ],
+          [
+            "4"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A14",
+      "slug": "customers-who-paid-at-least-once",
+      "title": "Customers who paid at least once",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Subqueries"
+      ],
+      "statement_md": "Return each customer_id that has at least one paid order exactly once, sorted by ID.",
+      "tables": [
+        {
+          "name": "customers",
+          "description_md": "One row per customer. city may be NULL.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "SF"
+            ],
+            [
+              2,
+              "Ben",
+              "LA"
+            ],
+            [
+              3,
+              "Cara",
+              "SF"
+            ],
+            [
+              4,
+              "Dan",
+              null
+            ]
+          ]
+        },
+        {
+          "name": "orders",
+          "description_md": "One row per order. All fields non-NULL. customer_id references customers; one customer can have many orders.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              100,
+              "paid"
+            ],
+            [
+              102,
+              1,
+              50,
+              "paid"
+            ],
+            [
+              103,
+              2,
+              80,
+              "cancelled"
+            ],
+            [
+              104,
+              3,
+              40,
+              "paid"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one qualifying customer."
+      ],
+      "notes_md": "**Pattern family:** EXISTS / semijoin\n\n**Grain:** one row = one qualifying customer.\n\n**Watch out:** Joining directly returns Ana twice unless you explicitly reduce the result.",
+      "solutions": [
+        {
+          "label": "EXISTS / semijoin",
+          "explain_md": "EXISTS tests presence without multiplying customer rows.",
+          "sql": "SELECT c.customer_id FROM customers c\nWHERE EXISTS (SELECT 1 FROM orders o\n WHERE o.customer_id = c.customer_id AND o.status = 'paid')\nORDER BY c.customer_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "customer_id"
+        ],
+        "rows": [
+          [
+            "1"
+          ],
+          [
+            "3"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A15",
+      "slug": "compare-employee-with-manager",
+      "title": "Compare employee with manager",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Self-joins",
+        "Dates"
+      ],
+      "statement_md": "For every direct report with both their own and their manager's salary known, return employee_id, manager_id and exceeds_or_equals (1 when employee salary >= manager salary, otherwise 0). Sort by employee_id.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one direct report with both salaries known."
+      ],
+      "notes_md": "**Pattern family:** Self join\n\n**Grain:** one row = one direct report with both salaries known.\n\n**Watch out:** A missing manager or unknown salary is excluded by the stated contract.",
+      "solutions": [
+        {
+          "label": "Self join",
+          "explain_md": "Two aliases give the employee and manager separate roles; all three known direct-report salaries are below their managers.",
+          "sql": "SELECT e.employee_id, e.manager_id,\n CASE WHEN e.salary >= m.salary THEN 1 ELSE 0 END AS exceeds_or_equals\nFROM employees e JOIN employees m ON m.employee_id = e.manager_id\nWHERE e.salary IS NOT NULL AND m.salary IS NOT NULL\nORDER BY e.employee_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "employee_id",
+          "manager_id",
+          "exceeds_or_equals"
+        ],
+        "rows": [
+          [
+            "2",
+            "1",
+            "0"
+          ],
+          [
+            "3",
+            "1",
+            "0"
+          ],
+          [
+            "5",
+            "4",
+            "0"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A16",
+      "slug": "above-department-average",
+      "title": "Above department average",
+      "difficulty": "Medium",
+      "topics": [
+        "Subqueries",
+        "Dates"
+      ],
+      "statement_md": "Return employee_id and salary for employees earning strictly above their own department's average known salary; sort by ID.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one qualifying employee."
+      ],
+      "notes_md": "**Pattern family:** Correlated subquery\n\n**Grain:** one row = one qualifying employee.\n\n**Watch out:** A global average answers a different question.",
+      "solutions": [
+        {
+          "label": "Correlated subquery",
+          "explain_md": "A averages 260/3; B averages 150/2 because NULL is excluded.",
+          "sql": "SELECT e.employee_id, e.salary FROM employees e\nWHERE e.salary > (SELECT AVG(x.salary) FROM employees x WHERE x.dept=e.dept)\nORDER BY e.employee_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "employee_id",
+          "salary"
+        ],
+        "rows": [
+          [
+            "1",
+            "100"
+          ],
+          [
+            "4",
+            "90"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A17",
+      "slug": "avoid-multiplying-two-child-tables",
+      "title": "Avoid multiplying two child tables",
+      "difficulty": "Medium",
+      "topics": [
+        "Aggregation",
+        "Joins"
+      ],
+      "statement_md": "For orders 101 and 102 return order_id, item_total and payment_total, sorted by order_id.",
+      "tables": [
+        {
+          "name": "orders",
+          "description_md": "One row per order. All fields non-NULL. customer_id references customers; one customer can have many orders.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              100,
+              "paid"
+            ],
+            [
+              102,
+              1,
+              50,
+              "paid"
+            ],
+            [
+              103,
+              2,
+              80,
+              "cancelled"
+            ],
+            [
+              104,
+              3,
+              40,
+              "paid"
+            ]
+          ]
+        },
+        {
+          "name": "items",
+          "description_md": "One row per line item; many items per order. Amount is the whole line value.",
+          "columns": [
+            {
+              "name": "item_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              101,
+              60
+            ],
+            [
+              2,
+              101,
+              40
+            ],
+            [
+              3,
+              102,
+              50
+            ]
+          ]
+        },
+        {
+          "name": "payments",
+          "description_md": "One row per payment. Orphan order 999 is deliberately allowed.",
+          "columns": [
+            {
+              "name": "payment_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              101,
+              70
+            ],
+            [
+              2,
+              101,
+              30
+            ],
+            [
+              3,
+              102,
+              40
+            ],
+            [
+              4,
+              999,
+              5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one order."
+      ],
+      "notes_md": "**Pattern family:** Pre-aggregate before joining\n\n**Grain:** one row = one order.\n\n**Watch out:** Order 101 has two items and two payments: a raw join makes four rows and doubles both sums.",
+      "solutions": [
+        {
+          "label": "Pre-aggregate before joining",
+          "explain_md": "Reduce both many-side tables to one row per order before combining them.",
+          "sql": "WITH i AS (\n SELECT order_id, SUM(amount) AS item_total FROM items GROUP BY order_id\n), p AS (\n SELECT order_id, SUM(amount) AS payment_total FROM payments GROUP BY order_id\n)\nSELECT o.order_id, COALESCE(i.item_total,0) AS item_total,\n COALESCE(p.payment_total,0) AS payment_total\nFROM orders o LEFT JOIN i ON i.order_id=o.order_id\nLEFT JOIN p ON p.order_id=o.order_id\nWHERE o.order_id IN (101,102) ORDER BY o.order_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "order_id",
+          "item_total",
+          "payment_total"
+        ],
+        "rows": [
+          [
+            "101",
+            "100",
+            "100"
+          ],
+          [
+            "102",
+            "50",
+            "40"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A18",
+      "slug": "find-orphan-records",
+      "title": "Find orphan records",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Anti-joins"
+      ],
+      "statement_md": "Return payment_id and order_id for payments with no matching order, sorted by payment_id.",
+      "tables": [
+        {
+          "name": "orders",
+          "description_md": "One row per order. All fields non-NULL. customer_id references customers; one customer can have many orders.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              100,
+              "paid"
+            ],
+            [
+              102,
+              1,
+              50,
+              "paid"
+            ],
+            [
+              103,
+              2,
+              80,
+              "cancelled"
+            ],
+            [
+              104,
+              3,
+              40,
+              "paid"
+            ]
+          ]
+        },
+        {
+          "name": "payments",
+          "description_md": "One row per payment. Orphan order 999 is deliberately allowed.",
+          "columns": [
+            {
+              "name": "payment_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              101,
+              70
+            ],
+            [
+              2,
+              101,
+              30
+            ],
+            [
+              3,
+              102,
+              40
+            ],
+            [
+              4,
+              999,
+              5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one orphan payment."
+      ],
+      "notes_md": "**Pattern family:** Anti join\n\n**Grain:** one row = one orphan payment.\n\n**Watch out:** Check a nonnullable parent key for missingness, not a nullable descriptive field.",
+      "solutions": [
+        {
+          "label": "Anti join",
+          "explain_md": "Payment 4 points to absent order 999.",
+          "sql": "SELECT p.payment_id, p.order_id FROM payments p\nLEFT JOIN orders o ON o.order_id=p.order_id\nWHERE o.order_id IS NULL ORDER BY p.payment_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "payment_id",
+          "order_id"
+        ],
+        "rows": [
+          [
+            "4",
+            "999"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A19",
+      "slug": "customers-who-bought-every-required-product",
+      "title": "Customers who bought every required product",
+      "difficulty": "Hard",
+      "topics": [
+        "Aggregation",
+        "Relational division"
+      ],
+      "statement_md": "Return customer_id for customers who purchased every product in required_products, sorted by ID. Repeated purchases do not count as different products.",
+      "tables": [
+        {
+          "name": "purchases",
+          "description_md": "One row per purchase; repeated customer/product combinations are allowed.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_id",
+              "type": "VARCHAR(5)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "A"
+            ],
+            [
+              1,
+              "A"
+            ],
+            [
+              1,
+              "B"
+            ],
+            [
+              2,
+              "A"
+            ],
+            [
+              3,
+              "B"
+            ]
+          ]
+        },
+        {
+          "name": "required_products",
+          "description_md": "Nonempty set of required products, one row per product.",
+          "columns": [
+            {
+              "name": "product_id",
+              "type": "VARCHAR(5) PRIMARY KEY"
+            }
+          ],
+          "rows": [
+            [
+              "A"
+            ],
+            [
+              "B"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one qualifying customer."
+      ],
+      "notes_md": "**Pattern family:** Relational division\n\n**Grain:** one row = one qualifying customer.\n\n**Watch out:** This contract assumes a nonempty required set. For an empty set and all customers, use customers plus double NOT EXISTS.",
+      "solutions": [
+        {
+          "label": "Relational division",
+          "explain_md": "Customer 1 has A and B; repeating A alone is insufficient.",
+          "sql": "SELECT p.customer_id FROM purchases p\nJOIN required_products r ON r.product_id=p.product_id\nGROUP BY p.customer_id\nHAVING COUNT(DISTINCT p.product_id) = (SELECT COUNT(*) FROM required_products)\nORDER BY p.customer_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "customer_id"
+        ],
+        "rows": [
+          [
+            "1"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A20",
+      "slug": "combine-sources-without-losing-duplicates",
+      "title": "Combine sources without losing duplicates",
+      "difficulty": "Easy",
+      "topics": [
+        "Set operations",
+        "Deduplication"
+      ],
+      "statement_md": "Return source, order_id for every orders row and every payments row, using source labels order and payment. Sort by source then order_id. Preserve repeated payment order IDs.",
+      "tables": [
+        {
+          "name": "orders",
+          "description_md": "One row per order. All fields non-NULL. customer_id references customers; one customer can have many orders.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              100,
+              "paid"
+            ],
+            [
+              102,
+              1,
+              50,
+              "paid"
+            ],
+            [
+              103,
+              2,
+              80,
+              "cancelled"
+            ],
+            [
+              104,
+              3,
+              40,
+              "paid"
+            ]
+          ]
+        },
+        {
+          "name": "payments",
+          "description_md": "One row per payment. Orphan order 999 is deliberately allowed.",
+          "columns": [
+            {
+              "name": "payment_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              101,
+              70
+            ],
+            [
+              2,
+              101,
+              30
+            ],
+            [
+              3,
+              102,
+              40
+            ],
+            [
+              4,
+              999,
+              5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one source record."
+      ],
+      "notes_md": "**Pattern family:** UNION ALL versus UNION\n\n**Grain:** one row = one source record.\n\n**Watch out:** UNION removes duplicate selected rows even if they represent different underlying records.",
+      "solutions": [
+        {
+          "label": "UNION ALL versus UNION",
+          "explain_md": "UNION ALL preserves the two separate payments for 101.",
+          "sql": "SELECT 'order' AS source, order_id FROM orders\nUNION ALL\nSELECT 'payment' AS source, order_id FROM payments\nORDER BY source, order_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "source",
+          "order_id"
+        ],
+        "rows": [
+          [
+            "order",
+            "101"
+          ],
+          [
+            "order",
+            "102"
+          ],
+          [
+            "order",
+            "103"
+          ],
+          [
+            "order",
+            "104"
+          ],
+          [
+            "payment",
+            "101"
+          ],
+          [
+            "payment",
+            "101"
+          ],
+          [
+            "payment",
+            "102"
+          ],
+          [
+            "payment",
+            "999"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A21",
+      "slug": "second-highest-distinct-salary",
+      "title": "Second-highest distinct salary",
+      "difficulty": "Easy",
+      "topics": [
+        "Filtering",
+        "NULL handling",
+        "Ranking"
+      ],
+      "statement_md": "Return the second-highest distinct known salary as second_salary. Always return one row; return NULL if it does not exist.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one summary row."
+      ],
+      "notes_md": "**Pattern family:** DENSE_RANK\n\n**Grain:** one row = one summary row.\n\n**Watch out:** The second employee row is not necessarily the second distinct salary.",
+      "solutions": [
+        {
+          "label": "DENSE_RANK",
+          "explain_md": "DENSE_RANK numbers distinct salaries without gaps; the final aggregate guarantees one row.",
+          "sql": "WITH r AS (\n SELECT salary, DENSE_RANK() OVER (ORDER BY salary DESC) AS salary_rank\n FROM employees WHERE salary IS NOT NULL\n)\nSELECT MAX(CASE WHEN salary_rank=2 THEN salary END) AS second_salary FROM r;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "second_salary"
+        ],
+        "rows": [
+          [
+            "90"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A22",
+      "slug": "top-two-salary-levels-per-department",
+      "title": "Top two salary levels per department",
+      "difficulty": "Medium",
+      "topics": [
+        "Filtering",
+        "Ranking"
+      ],
+      "statement_md": "Return dept, employee_id and salary for the top two distinct known salary levels in each department, including all ties. Sort by dept, salary descending, employee_id.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one qualifying employee."
+      ],
+      "notes_md": "**Pattern family:** DENSE_RANK PARTITION BY\n\n**Grain:** one row = one qualifying employee.\n\n**Watch out:** ROW_NUMBER would return at most two employees per department and drop a tied employee.",
+      "solutions": [
+        {
+          "label": "DENSE_RANK PARTITION BY",
+          "explain_md": "Partition resets the ranking for each department. Both A employees at 80 qualify.",
+          "sql": "WITH r AS (\n SELECT *, DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS salary_rank\n FROM employees WHERE salary IS NOT NULL\n)\nSELECT dept, employee_id, salary FROM r WHERE salary_rank<=2\nORDER BY dept, salary DESC, employee_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "dept",
+          "employee_id",
+          "salary"
+        ],
+        "rows": [
+          [
+            "A",
+            "1",
+            "100"
+          ],
+          [
+            "A",
+            "2",
+            "80"
+          ],
+          [
+            "A",
+            "3",
+            "80"
+          ],
+          [
+            "B",
+            "4",
+            "90"
+          ],
+          [
+            "B",
+            "5",
+            "60"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A23",
+      "slug": "exactly-one-best-employee-per-group",
+      "title": "Exactly one best employee per group",
+      "difficulty": "Medium",
+      "topics": [
+        "Ranking"
+      ],
+      "statement_md": "Return dept and employee_id for the highest-known-salary employee per department. Break ties by smallest employee_id; sort by dept.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one department with known salary."
+      ],
+      "notes_md": "**Pattern family:** ROW_NUMBER\n\n**Grain:** one row = one department with known salary.\n\n**Watch out:** Do not add employee_id to DENSE_RANK when salary ties must share rank.",
+      "solutions": [
+        {
+          "label": "ROW_NUMBER",
+          "explain_md": "ROW_NUMBER plus a unique tie-breaker selects exactly one row.",
+          "sql": "WITH r AS (\n SELECT *, ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC, employee_id) AS rn\n FROM employees WHERE salary IS NOT NULL\n)\nSELECT dept, employee_id FROM r WHERE rn=1 ORDER BY dept;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "dept",
+          "employee_id"
+        ],
+        "rows": [
+          [
+            "A",
+            "1"
+          ],
+          [
+            "B",
+            "4"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A24",
+      "slug": "understand-ranking-gaps",
+      "title": "Understand ranking gaps",
+      "difficulty": "Easy",
+      "topics": [
+        "Ranking"
+      ],
+      "statement_md": "Return employee_id, salary, competition_rank and dense_rank_value for known salaries, sorted by salary descending then employee_id.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one employee with known salary."
+      ],
+      "notes_md": "**Pattern family:** RANK versus DENSE_RANK\n\n**Grain:** one row = one employee with known salary.\n\n**Watch out:** ORDER BY outside OVER controls display; ORDER BY inside OVER defines the ranking.",
+      "solutions": [
+        {
+          "label": "RANK versus DENSE_RANK",
+          "explain_md": "The tie at rank 3 consumes two positions for RANK, so the next rank is 5.",
+          "sql": "SELECT employee_id, salary,\n RANK() OVER (ORDER BY salary DESC) AS competition_rank,\n DENSE_RANK() OVER (ORDER BY salary DESC) AS dense_rank_value\nFROM employees WHERE salary IS NOT NULL\nORDER BY salary DESC, employee_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "employee_id",
+          "salary",
+          "competition_rank",
+          "dense_rank_value"
+        ],
+        "rows": [
+          [
+            "1",
+            "100",
+            "1",
+            "1"
+          ],
+          [
+            "4",
+            "90",
+            "2",
+            "2"
+          ],
+          [
+            "2",
+            "80",
+            "3",
+            "3"
+          ],
+          [
+            "3",
+            "80",
+            "3",
+            "3"
+          ],
+          [
+            "5",
+            "60",
+            "5",
+            "4"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A25",
+      "slug": "latest-state-with-a-tie-breaker",
+      "title": "Latest state with a tie-breaker",
+      "difficulty": "Medium",
+      "topics": [
+        "Ranking",
+        "Dates",
+        "Deduplication",
+        "Slowly changing dimensions"
+      ],
+      "statement_md": "Return event_id, version_id and status for the newest version of every event. Compare updated_at first, then larger version_id; sort by event_id.",
+      "tables": [
+        {
+          "name": "versions",
+          "description_md": "One row per version. Use larger version_id to break equal updated_at ties.",
+          "columns": [
+            {
+              "name": "event_id",
+              "type": "INT"
+            },
+            {
+              "name": "version_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "updated_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-01-01 10:00:00",
+              "open"
+            ],
+            [
+              1,
+              2,
+              "2026-01-02 10:00:00",
+              "closed"
+            ],
+            [
+              1,
+              3,
+              "2026-01-02 10:00:00",
+              "fixed"
+            ],
+            [
+              2,
+              4,
+              "2026-01-01 12:00:00",
+              "open"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one logical event."
+      ],
+      "notes_md": "**Pattern family:** Deduplication + ROW_NUMBER\n\n**Grain:** one row = one logical event.\n\n**Watch out:** MAX(updated_at) joined back can return multiple rows; filter status after choosing latest if asking for current status.",
+      "solutions": [
+        {
+          "label": "Deduplication + ROW_NUMBER",
+          "explain_md": "Version 3 wins the timestamp tie for event 1.",
+          "sql": "WITH r AS (\n SELECT *, ROW_NUMBER() OVER (\n PARTITION BY event_id ORDER BY updated_at DESC, version_id DESC) AS rn\n FROM versions\n)\nSELECT event_id, version_id, status FROM r WHERE rn=1 ORDER BY event_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "event_id",
+          "version_id",
+          "status"
+        ],
+        "rows": [
+          [
+            "1",
+            "3",
+            "fixed"
+          ],
+          [
+            "2",
+            "4",
+            "open"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A26",
+      "slug": "running-total",
+      "title": "Running total",
+      "difficulty": "Easy",
+      "topics": [
+        "Aggregation",
+        "Window functions",
+        "Running totals",
+        "Dates"
+      ],
+      "statement_md": "Return day, revenue and running_total from daily, sorted by day.",
+      "tables": [
+        {
+          "name": "daily",
+          "description_md": "One row per date; these four dates are consecutive. Revenue is non-NULL.",
+          "columns": [
+            {
+              "name": "day",
+              "type": "DATE PRIMARY KEY"
+            },
+            {
+              "name": "revenue",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2026-01-01",
+              10
+            ],
+            [
+              "2026-01-02",
+              20
+            ],
+            [
+              "2026-01-03",
+              0
+            ],
+            [
+              "2026-01-04",
+              40
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one date."
+      ],
+      "notes_md": "**Pattern family:** SUM OVER + explicit ROWS frame\n\n**Grain:** one row = one date.\n\n**Watch out:** Aggregate to daily grain first if the input is transaction-level.",
+      "solutions": [
+        {
+          "label": "SUM OVER + explicit ROWS frame",
+          "explain_md": "The window preserves daily rows while accumulating all earlier revenue.",
+          "sql": "SELECT day, revenue,\n SUM(revenue) OVER (ORDER BY day ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total\nFROM daily ORDER BY day;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "day",
+          "revenue",
+          "running_total"
+        ],
+        "rows": [
+          [
+            "2026-01-01",
+            "10",
+            "10"
+          ],
+          [
+            "2026-01-02",
+            "20",
+            "30"
+          ],
+          [
+            "2026-01-03",
+            "0",
+            "30"
+          ],
+          [
+            "2026-01-04",
+            "40",
+            "70"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A27",
+      "slug": "compare-with-previous-row",
+      "title": "Compare with previous row",
+      "difficulty": "Medium",
+      "topics": [
+        "NULL handling",
+        "Window functions",
+        "Value functions",
+        "Dates"
+      ],
+      "statement_md": "Return day, revenue and change_from_previous; first change is NULL. Sort by day.",
+      "tables": [
+        {
+          "name": "daily",
+          "description_md": "One row per date; these four dates are consecutive. Revenue is non-NULL.",
+          "columns": [
+            {
+              "name": "day",
+              "type": "DATE PRIMARY KEY"
+            },
+            {
+              "name": "revenue",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2026-01-01",
+              10
+            ],
+            [
+              "2026-01-02",
+              20
+            ],
+            [
+              "2026-01-03",
+              0
+            ],
+            [
+              "2026-01-04",
+              40
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one date."
+      ],
+      "notes_md": "**Pattern family:** LAG\n\n**Grain:** one row = one date.\n\n**Watch out:** On sparse dates LAG means previous observed date, not necessarily yesterday.",
+      "solutions": [
+        {
+          "label": "LAG",
+          "explain_md": "LAG reads the previous ordered row.",
+          "sql": "SELECT day, revenue,\n revenue - LAG(revenue) OVER (ORDER BY day) AS change_from_previous\nFROM daily ORDER BY day;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "day",
+          "revenue",
+          "change_from_previous"
+        ],
+        "rows": [
+          [
+            "2026-01-01",
+            "10",
+            null
+          ],
+          [
+            "2026-01-02",
+            "20",
+            "10"
+          ],
+          [
+            "2026-01-03",
+            "0",
+            "-20"
+          ],
+          [
+            "2026-01-04",
+            "40",
+            "40"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A28",
+      "slug": "find-next-purchase",
+      "title": "Find next purchase",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Value functions",
+        "Dates"
+      ],
+      "statement_md": "For every date_orders row return customer_id, order_id and next_order_id. Within a customer order by ordered_at then order_id; display by customer_id and ordered_at.",
+      "tables": [
+        {
+          "name": "date_orders",
+          "description_md": "One row per order. All timestamps are UTC DATETIME; no implicit timezone conversion. Complete history for this fixture.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "ordered_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2024-02-28 23:00:00",
+              10
+            ],
+            [
+              2,
+              1,
+              "2024-02-29 12:00:00",
+              20
+            ],
+            [
+              3,
+              2,
+              "2024-03-01 00:00:00",
+              30
+            ],
+            [
+              4,
+              2,
+              "2024-03-03 15:00:00",
+              40
+            ],
+            [
+              5,
+              3,
+              "2024-03-03 23:59:59",
+              50
+            ],
+            [
+              6,
+              1,
+              "2024-03-04 00:00:00",
+              60
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one order."
+      ],
+      "notes_md": "**Pattern family:** LEAD\n\n**Grain:** one row = one order.\n\n**Watch out:** A window result must be filtered in an outer query or CTE in MySQL.",
+      "solutions": [
+        {
+          "label": "LEAD",
+          "explain_md": "Partition prevents reading another customer's order; the last order has no successor.",
+          "sql": "SELECT customer_id, order_id,\n LEAD(order_id) OVER (PARTITION BY customer_id ORDER BY ordered_at, order_id) AS next_order_id\nFROM date_orders ORDER BY customer_id, ordered_at, order_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "order_id",
+          "next_order_id"
+        ],
+        "rows": [
+          [
+            "1",
+            "1",
+            "2"
+          ],
+          [
+            "1",
+            "2",
+            "6"
+          ],
+          [
+            "1",
+            "6",
+            null
+          ],
+          [
+            "2",
+            "3",
+            "4"
+          ],
+          [
+            "2",
+            "4",
+            null
+          ],
+          [
+            "3",
+            "5",
+            null
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A29",
+      "slug": "share-of-total",
+      "title": "Share of total",
+      "difficulty": "Medium",
+      "topics": [
+        "Aggregation",
+        "Window functions",
+        "Statistics"
+      ],
+      "statement_md": "Return dept, total_salary and pct_of_total rounded to two decimal places. Use known salaries only; sort by dept.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one department."
+      ],
+      "notes_md": "**Pattern family:** Aggregate then window total\n\n**Grain:** one row = one department.\n\n**Watch out:** An empty OVER means one overall window; PARTITION BY dept here would give each department 100%.",
+      "solutions": [
+        {
+          "label": "Aggregate then window total",
+          "explain_md": "Department totals are divided by 410, the total across departments.",
+          "sql": "WITH d AS (\n SELECT dept, SUM(salary) AS total_salary FROM employees GROUP BY dept\n)\nSELECT dept, total_salary,\n ROUND(100.0*total_salary/NULLIF(SUM(total_salary) OVER (),0),2) AS pct_of_total\nFROM d ORDER BY dept;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "dept",
+          "total_salary",
+          "pct_of_total"
+        ],
+        "rows": [
+          [
+            "A",
+            "260",
+            "63.41"
+          ],
+          [
+            "B",
+            "150",
+            "36.59"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A30",
+      "slug": "median-without-a-percentile-aggregate",
+      "title": "Median without a percentile aggregate",
+      "difficulty": "Hard",
+      "topics": [
+        "Aggregation",
+        "NULL handling",
+        "Ranking",
+        "Window functions"
+      ],
+      "statement_md": "Return median_score as the middle score for odd counts or average of the two middle scores for even counts. Scores are non-NULL.",
+      "tables": [
+        {
+          "name": "scores",
+          "description_md": "One row per observation; duplicate scores would be valid.",
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "score",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              10
+            ],
+            [
+              2,
+              20
+            ],
+            [
+              3,
+              30
+            ],
+            [
+              4,
+              100
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one summary row."
+      ],
+      "notes_md": "**Pattern family:** ROW_NUMBER + COUNT OVER\n\n**Grain:** one row = one summary row.\n\n**Watch out:** MySQL 8 does not offer PERCENTILE_CONT as a built-in window function.",
+      "solutions": [
+        {
+          "label": "ROW_NUMBER + COUNT OVER",
+          "explain_md": "For four values, positions 2 and 3 are 20 and 30, averaging to 25.",
+          "sql": "WITH r AS (\n SELECT score, ROW_NUMBER() OVER (ORDER BY score, id) AS rn,\n COUNT(*) OVER () AS n FROM scores\n)\nSELECT AVG(score) AS median_score FROM r\nWHERE rn IN (FLOOR((n+1)/2), FLOOR((n+2)/2));"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "median_score"
+        ],
+        "rows": [
+          [
+            "25.0000"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A31",
+      "slug": "all-timestamps-on-a-calendar-day",
+      "title": "All timestamps on a calendar day",
+      "difficulty": "Easy",
+      "topics": [
+        "Dates"
+      ],
+      "statement_md": "Return order_id for orders on March 3, 2024 UTC, sorted by ID. Include every time on that date.",
+      "tables": [
+        {
+          "name": "date_orders",
+          "description_md": "One row per order. All timestamps are UTC DATETIME; no implicit timezone conversion. Complete history for this fixture.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "ordered_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2024-02-28 23:00:00",
+              10
+            ],
+            [
+              2,
+              1,
+              "2024-02-29 12:00:00",
+              20
+            ],
+            [
+              3,
+              2,
+              "2024-03-01 00:00:00",
+              30
+            ],
+            [
+              4,
+              2,
+              "2024-03-03 15:00:00",
+              40
+            ],
+            [
+              5,
+              3,
+              "2024-03-03 23:59:59",
+              50
+            ],
+            [
+              6,
+              1,
+              "2024-03-04 00:00:00",
+              60
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one order on the requested day."
+      ],
+      "notes_md": "**Pattern family:** Half-open day range\n\n**Grain:** one row = one order on the requested day.\n\n**Watch out:** BETWEEN '2024-03-03' AND '2024-03-03 23:59:59' can miss fractional seconds.",
+      "solutions": [
+        {
+          "label": "Half-open day range",
+          "explain_md": "The interval includes March 3 midnight and excludes March 4 midnight.",
+          "sql": "SELECT order_id FROM date_orders\nWHERE ordered_at >= '2024-03-03' AND ordered_at < '2024-03-04'\nORDER BY order_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "order_id"
+        ],
+        "rows": [
+          [
+            "4"
+          ],
+          [
+            "5"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A32",
+      "slug": "previous-calendar-month-in-a-leap-year",
+      "title": "Previous calendar month in a leap year",
+      "difficulty": "Medium",
+      "topics": [
+        "Value functions",
+        "Dates"
+      ],
+      "statement_md": "As of March 15, 2024, return order_id for all orders in the previous calendar month, sorted by ID.",
+      "tables": [
+        {
+          "name": "date_orders",
+          "description_md": "One row per order. All timestamps are UTC DATETIME; no implicit timezone conversion. Complete history for this fixture.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "ordered_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2024-02-28 23:00:00",
+              10
+            ],
+            [
+              2,
+              1,
+              "2024-02-29 12:00:00",
+              20
+            ],
+            [
+              3,
+              2,
+              "2024-03-01 00:00:00",
+              30
+            ],
+            [
+              4,
+              2,
+              "2024-03-03 15:00:00",
+              40
+            ],
+            [
+              5,
+              3,
+              "2024-03-03 23:59:59",
+              50
+            ],
+            [
+              6,
+              1,
+              "2024-03-04 00:00:00",
+              60
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one February order."
+      ],
+      "notes_md": "**Pattern family:** Month-start boundaries\n\n**Grain:** one row = one February order.\n\n**Watch out:** Previous calendar month is not the latest 30 days.",
+      "solutions": [
+        {
+          "label": "Month-start boundaries",
+          "explain_md": "The range is February 1 through, but not including, March 1; leap day is naturally included.",
+          "sql": "WITH anchor AS (SELECT CAST('2024-03-15' AS DATE) AS as_of_day),\nbounds AS (SELECT CAST(DATE_FORMAT(as_of_day,'%Y-%m-01') AS DATE) AS month_start FROM anchor)\nSELECT o.order_id FROM date_orders o CROSS JOIN bounds b\nWHERE o.ordered_at >= DATE_SUB(b.month_start, INTERVAL 1 MONTH)\n AND o.ordered_at < b.month_start ORDER BY o.order_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "order_id"
+        ],
+        "rows": [
+          [
+            "1"
+          ],
+          [
+            "2"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A33",
+      "slug": "last-three-completed-calendar-days",
+      "title": "Last three completed calendar days",
+      "difficulty": "Medium",
+      "topics": [
+        "Dates"
+      ],
+      "statement_md": "As of March 4, 2024 at midnight UTC, return order_id from the three completed calendar days March 1–3. Exclude March 4; sort by ID.",
+      "tables": [
+        {
+          "name": "date_orders",
+          "description_md": "One row per order. All timestamps are UTC DATETIME; no implicit timezone conversion. Complete history for this fixture.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "ordered_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2024-02-28 23:00:00",
+              10
+            ],
+            [
+              2,
+              1,
+              "2024-02-29 12:00:00",
+              20
+            ],
+            [
+              3,
+              2,
+              "2024-03-01 00:00:00",
+              30
+            ],
+            [
+              4,
+              2,
+              "2024-03-03 15:00:00",
+              40
+            ],
+            [
+              5,
+              3,
+              "2024-03-03 23:59:59",
+              50
+            ],
+            [
+              6,
+              1,
+              "2024-03-04 00:00:00",
+              60
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one order in the range."
+      ],
+      "notes_md": "**Pattern family:** DATE_SUB with exclusive today\n\n**Grain:** one row = one order in the range.\n\n**Watch out:** Including today changes both the window definition and its upper endpoint.",
+      "solutions": [
+        {
+          "label": "DATE_SUB with exclusive today",
+          "explain_md": "The interval is March 1 00:00 through March 4 00:00 exclusive.",
+          "sql": "SELECT order_id FROM date_orders\nWHERE ordered_at >= DATE_SUB(CAST('2024-03-04' AS DATE), INTERVAL 3 DAY)\n AND ordered_at < '2024-03-04'\nORDER BY order_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "order_id"
+        ],
+        "rows": [
+          [
+            "3"
+          ],
+          [
+            "4"
+          ],
+          [
+            "5"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A34",
+      "slug": "calendar-days-versus-elapsed-hours",
+      "title": "Calendar days versus elapsed hours",
+      "difficulty": "Medium",
+      "topics": [
+        "NULL handling",
+        "Dates"
+      ],
+      "statement_md": "For every job return id, calendar_days and full_hours. Keep NULL for unfinished jobs; sort by id.",
+      "tables": [
+        {
+          "name": "durations",
+          "description_md": "One row per job. ended_at may be NULL for unfinished jobs.",
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "started_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "ended_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2024-02-28 23:30:00",
+              "2024-02-29 00:15:00"
+            ],
+            [
+              2,
+              "2024-02-28 10:00:00",
+              "2024-02-29 10:00:00"
+            ],
+            [
+              3,
+              "2024-02-28 10:00:00",
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one job."
+      ],
+      "notes_md": "**Pattern family:** DATEDIFF versus TIMESTAMPDIFF\n\n**Grain:** one row = one job.\n\n**Watch out:** DATEDIFF takes end,start and ignores time; TIMESTAMPDIFF takes unit,start,end and counts whole elapsed units.",
+      "solutions": [
+        {
+          "label": "DATEDIFF versus TIMESTAMPDIFF",
+          "explain_md": "Job 1 crosses midnight but lasts only 45 minutes. Job 2 lasts 24 hours.",
+          "sql": "SELECT id, DATEDIFF(ended_at,started_at) AS calendar_days,\n TIMESTAMPDIFF(HOUR,started_at,ended_at) AS full_hours\nFROM durations ORDER BY id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "id",
+          "calendar_days",
+          "full_hours"
+        ],
+        "rows": [
+          [
+            "1",
+            "1",
+            "0"
+          ],
+          [
+            "2",
+            "1",
+            "24"
+          ],
+          [
+            "3",
+            null,
+            null
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A35",
+      "slug": "monthly-totals-without-mixing-years",
+      "title": "Monthly totals without mixing years",
+      "difficulty": "Medium",
+      "topics": [
+        "Dates"
+      ],
+      "statement_md": "Return month_key in YYYY-MM format and revenue from date_orders, sorted by month_key.",
+      "tables": [
+        {
+          "name": "date_orders",
+          "description_md": "One row per order. All timestamps are UTC DATETIME; no implicit timezone conversion. Complete history for this fixture.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "ordered_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2024-02-28 23:00:00",
+              10
+            ],
+            [
+              2,
+              1,
+              "2024-02-29 12:00:00",
+              20
+            ],
+            [
+              3,
+              2,
+              "2024-03-01 00:00:00",
+              30
+            ],
+            [
+              4,
+              2,
+              "2024-03-03 15:00:00",
+              40
+            ],
+            [
+              5,
+              3,
+              "2024-03-03 23:59:59",
+              50
+            ],
+            [
+              6,
+              1,
+              "2024-03-04 00:00:00",
+              60
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one year-month."
+      ],
+      "notes_md": "**Pattern family:** Year-month bucket\n\n**Grain:** one row = one year-month.\n\n**Watch out:** Grouping by MONTH alone mixes January of different years.",
+      "solutions": [
+        {
+          "label": "Year-month bucket",
+          "explain_md": "Both February orders total 30; the four March orders total 180.",
+          "sql": "SELECT DATE_FORMAT(ordered_at,'%Y-%m') AS month_key, SUM(amount) AS revenue\nFROM date_orders GROUP BY DATE_FORMAT(ordered_at,'%Y-%m')\nORDER BY month_key;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "month_key",
+          "revenue"
+        ],
+        "rows": [
+          [
+            "2024-02",
+            "30"
+          ],
+          [
+            "2024-03",
+            "180"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A36",
+      "slug": "find-month-end-dates",
+      "title": "Find month-end dates",
+      "difficulty": "Medium",
+      "topics": [
+        "Dates"
+      ],
+      "statement_md": "Return order_id and month_end for orders whose UTC calendar date is the last date of their month, sorted by ID.",
+      "tables": [
+        {
+          "name": "date_orders",
+          "description_md": "One row per order. All timestamps are UTC DATETIME; no implicit timezone conversion. Complete history for this fixture.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "ordered_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2024-02-28 23:00:00",
+              10
+            ],
+            [
+              2,
+              1,
+              "2024-02-29 12:00:00",
+              20
+            ],
+            [
+              3,
+              2,
+              "2024-03-01 00:00:00",
+              30
+            ],
+            [
+              4,
+              2,
+              "2024-03-03 15:00:00",
+              40
+            ],
+            [
+              5,
+              3,
+              "2024-03-03 23:59:59",
+              50
+            ],
+            [
+              6,
+              1,
+              "2024-03-04 00:00:00",
+              60
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one month-end order."
+      ],
+      "notes_md": "**Pattern family:** LAST_DAY\n\n**Grain:** one row = one month-end order.\n\n**Watch out:** Month-end is not always the 30th or 31st; functions on indexed columns can affect access paths.",
+      "solutions": [
+        {
+          "label": "LAST_DAY",
+          "explain_md": "February 29 is the last day of February 2024.",
+          "sql": "SELECT order_id, LAST_DAY(ordered_at) AS month_end FROM date_orders\nWHERE DATE(ordered_at)=LAST_DAY(ordered_at) ORDER BY order_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "order_id",
+          "month_end"
+        ],
+        "rows": [
+          [
+            "2",
+            "2024-02-29"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A37",
+      "slug": "week-start-and-iso-week-year",
+      "title": "Week start and ISO week-year",
+      "difficulty": "Medium",
+      "topics": [
+        "Dates"
+      ],
+      "statement_md": "Return day, monday_start and iso_yearweek for week_dates, ordered by day. Weeks start Monday; ISO week 1 follows the four-day rule.",
+      "tables": [
+        {
+          "name": "week_dates",
+          "description_md": "One row per date, covering an ISO week-year boundary.",
+          "columns": [
+            {
+              "name": "day",
+              "type": "DATE PRIMARY KEY"
+            }
+          ],
+          "rows": [
+            [
+              "2020-12-31"
+            ],
+            [
+              "2021-01-01"
+            ],
+            [
+              "2021-01-04"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one date."
+      ],
+      "notes_md": "**Pattern family:** WEEKDAY + YEARWEEK mode 3\n\n**Grain:** one row = one date.\n\n**Watch out:** YEAR(day) plus WEEK(day) can label a year-boundary week incorrectly; WEEKDAY returns Monday=0.",
+      "solutions": [
+        {
+          "label": "WEEKDAY + YEARWEEK mode 3",
+          "explain_md": "January 1, 2021 belongs to ISO week 53 of 2020.",
+          "sql": "SELECT day, DATE_SUB(day, INTERVAL WEEKDAY(day) DAY) AS monday_start,\n YEARWEEK(day,3) AS iso_yearweek\nFROM week_dates ORDER BY day;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "day",
+          "monday_start",
+          "iso_yearweek"
+        ],
+        "rows": [
+          [
+            "2020-12-31",
+            "2020-12-28",
+            "202053"
+          ],
+          [
+            "2021-01-01",
+            "2020-12-28",
+            "202053"
+          ],
+          [
+            "2021-01-04",
+            "2021-01-04",
+            "202101"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A38",
+      "slug": "parse-date-text",
+      "title": "Parse date text",
+      "difficulty": "Medium",
+      "topics": [
+        "Dates",
+        "String functions"
+      ],
+      "statement_md": "Return id and parsed_date from DD/MM/YYYY text, sorted by id. Inputs are guaranteed valid.",
+      "tables": [
+        {
+          "name": "date_text",
+          "description_md": "One row per text record. Both strings are valid DD/MM/YYYY dates.",
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "raw_date",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "29/02/2024"
+            ],
+            [
+              2,
+              "01/03/2024"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one text record."
+      ],
+      "notes_md": "**Pattern family:** STR_TO_DATE\n\n**Grain:** one row = one text record.\n\n**Watch out:** STR_TO_DATE is not a complete cross-version validation strategy for arbitrary malformed dates; this exercise guarantees valid inputs.",
+      "solutions": [
+        {
+          "label": "STR_TO_DATE",
+          "explain_md": "The format states day before month; output is a real date.",
+          "sql": "SELECT id, STR_TO_DATE(raw_date,'%d/%m/%Y') AS parsed_date\nFROM date_text ORDER BY id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "id",
+          "parsed_date"
+        ],
+        "rows": [
+          [
+            "1",
+            "2024-02-29"
+          ],
+          [
+            "2",
+            "2024-03-01"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A39",
+      "slug": "age-as-of-a-fixed-date",
+      "title": "Age as of a fixed date",
+      "difficulty": "Medium",
+      "topics": [
+        "Dates"
+      ],
+      "statement_md": "Return id and age_years on March 1, 2024, sorted by id.",
+      "tables": [
+        {
+          "name": "birthdays",
+          "description_md": "One row per person; dates are non-NULL.",
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "birth_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2000-03-01"
+            ],
+            [
+              2,
+              "2000-03-02"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one person."
+      ],
+      "notes_md": "**Pattern family:** TIMESTAMPDIFF YEAR\n\n**Grain:** one row = one person.\n\n**Watch out:** Subtracting the birth year from the current year overstates age before the birthday.",
+      "solutions": [
+        {
+          "label": "TIMESTAMPDIFF YEAR",
+          "explain_md": "Person 2's birthday has not happened yet in 2024.",
+          "sql": "SELECT id, TIMESTAMPDIFF(YEAR,birth_date,'2024-03-01') AS age_years\nFROM birthdays ORDER BY id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "id",
+          "age_years"
+        ],
+        "rows": [
+          [
+            "1",
+            "24"
+          ],
+          [
+            "2",
+            "23"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A40",
+      "slug": "convert-utc-before-assigning-business-date",
+      "title": "Convert UTC before assigning business date",
+      "difficulty": "Hard",
+      "topics": [
+        "Dates"
+      ],
+      "statement_md": "Using a fixed business offset of UTC−08:00, return order_id and business_day for order IDs 3 and 6. Sort by ID. This is a fixed-offset exercise, not a daylight-saving timezone.",
+      "tables": [
+        {
+          "name": "date_orders",
+          "description_md": "One row per order. All timestamps are UTC DATETIME; no implicit timezone conversion. Complete history for this fixture.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "ordered_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2024-02-28 23:00:00",
+              10
+            ],
+            [
+              2,
+              1,
+              "2024-02-29 12:00:00",
+              20
+            ],
+            [
+              3,
+              2,
+              "2024-03-01 00:00:00",
+              30
+            ],
+            [
+              4,
+              2,
+              "2024-03-03 15:00:00",
+              40
+            ],
+            [
+              5,
+              3,
+              "2024-03-03 23:59:59",
+              50
+            ],
+            [
+              6,
+              1,
+              "2024-03-04 00:00:00",
+              60
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one selected order."
+      ],
+      "notes_md": "**Pattern family:** CONVERT_TZ then DATE\n\n**Grain:** one row = one selected order.\n\n**Watch out:** Real America/Los_Angeles reporting needs named-zone rules and loaded timezone tables; a fixed offset cannot model daylight saving.",
+      "solutions": [
+        {
+          "label": "CONVERT_TZ then DATE",
+          "explain_md": "UTC midnight becomes 16:00 on the prior local date.",
+          "sql": "SELECT order_id, DATE(CONVERT_TZ(ordered_at,'+00:00','-08:00')) AS business_day\nFROM date_orders WHERE order_id IN (3,6) ORDER BY order_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "order_id",
+          "business_day"
+        ],
+        "rows": [
+          [
+            "3",
+            "2024-02-29"
+          ],
+          [
+            "6",
+            "2024-03-03"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A41",
+      "slug": "fill-dates-that-have-no-sales",
+      "title": "Fill dates that have no sales",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "NULL handling",
+        "Dates",
+        "Recursive CTEs"
+      ],
+      "statement_md": "Return day and revenue for every date January 1–8, 2026. Missing sales mean zero; sort by day.",
+      "tables": [
+        {
+          "name": "sales_days",
+          "description_md": "One row per sale; multiple sales per day. No sales outside the displayed fixture.",
+          "columns": [
+            {
+              "name": "day",
+              "type": "DATE"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2026-01-01",
+              10
+            ],
+            [
+              "2026-01-03",
+              20
+            ],
+            [
+              "2026-01-03",
+              5
+            ],
+            [
+              "2026-01-08",
+              30
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one calendar date."
+      ],
+      "notes_md": "**Pattern family:** Recursive calendar + LEFT JOIN\n\n**Grain:** one row = one calendar date.\n\n**Watch out:** Joining raw sales creates two January 3 rows; recursion needs a stopping condition.",
+      "solutions": [
+        {
+          "label": "Recursive calendar + LEFT JOIN",
+          "explain_md": "Generate eight dates, aggregate sales at date grain, then attach totals.",
+          "sql": "WITH RECURSIVE calendar AS (\n SELECT CAST('2026-01-01' AS DATE) AS day\n UNION ALL SELECT DATE_ADD(day, INTERVAL 1 DAY) FROM calendar WHERE day<'2026-01-08'\n), daily AS (\n SELECT day, SUM(amount) AS revenue FROM sales_days GROUP BY day\n), filled AS (\n SELECT c.day, COALESCE(d.revenue,0) AS revenue\n FROM calendar c LEFT JOIN daily d ON d.day=c.day\n)\nSELECT day,revenue FROM filled ORDER BY day;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "day",
+          "revenue"
+        ],
+        "rows": [
+          [
+            "2026-01-01",
+            "10"
+          ],
+          [
+            "2026-01-02",
+            "0"
+          ],
+          [
+            "2026-01-03",
+            "25"
+          ],
+          [
+            "2026-01-04",
+            "0"
+          ],
+          [
+            "2026-01-05",
+            "0"
+          ],
+          [
+            "2026-01-06",
+            "0"
+          ],
+          [
+            "2026-01-07",
+            "0"
+          ],
+          [
+            "2026-01-08",
+            "30"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A42",
+      "slug": "trailing-seven-calendar-days",
+      "title": "Trailing seven calendar days",
+      "difficulty": "Medium",
+      "topics": [
+        "Filtering",
+        "Window functions",
+        "Rolling windows",
+        "Dates"
+      ],
+      "statement_md": "Return day and rolling_7d only for January 7 and 8, 2026. Each total covers that day and the prior six calendar days. There are no earlier sales.",
+      "tables": [
+        {
+          "name": "sales_days",
+          "description_md": "One row per sale; multiple sales per day. No sales outside the displayed fixture.",
+          "columns": [
+            {
+              "name": "day",
+              "type": "DATE"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2026-01-01",
+              10
+            ],
+            [
+              "2026-01-03",
+              20
+            ],
+            [
+              "2026-01-03",
+              5
+            ],
+            [
+              "2026-01-08",
+              30
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one displayed date."
+      ],
+      "notes_md": "**Pattern family:** Date spine + window + outer display filter\n\n**Grain:** one row = one displayed date.\n\n**Watch out:** Filtering to the displayed dates before the window loses required history. Seven rows means seven days only after filling dates.",
+      "solutions": [
+        {
+          "label": "Date spine + window + outer display filter",
+          "explain_md": "January 7 includes Jan 1's 10 and Jan 3's 25; January 8 excludes Jan 1 and includes Jan 8's 30.",
+          "sql": "WITH RECURSIVE calendar AS (\n SELECT CAST('2026-01-01' AS DATE) AS day\n UNION ALL SELECT DATE_ADD(day, INTERVAL 1 DAY) FROM calendar WHERE day<'2026-01-08'\n), daily AS (\n SELECT day, SUM(amount) AS revenue FROM sales_days GROUP BY day\n), filled AS (\n SELECT c.day, COALESCE(d.revenue,0) AS revenue\n FROM calendar c LEFT JOIN daily d ON d.day=c.day\n),\nrolled AS (\n SELECT day, SUM(revenue) OVER (\n ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rolling_7d FROM filled\n)\nSELECT day,rolling_7d FROM rolled\nWHERE day>='2026-01-07' ORDER BY day;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "day",
+          "rolling_7d"
+        ],
+        "rows": [
+          [
+            "2026-01-07",
+            "35"
+          ],
+          [
+            "2026-01-08",
+            "55"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A43",
+      "slug": "consecutive-activity-streaks",
+      "title": "Consecutive activity streaks",
+      "difficulty": "Hard",
+      "topics": [
+        "Dates",
+        "Gaps and islands",
+        "Deduplication"
+      ],
+      "statement_md": "Return user_id, start_day, end_day and streak_days for all streaks of at least two consecutive active dates. Ignore duplicate events on the same date; sort by user_id, start_day.",
+      "tables": [
+        {
+          "name": "activity",
+          "description_md": "One row per activity event; duplicate user/day pairs are valid.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "day",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-01-01"
+            ],
+            [
+              1,
+              "2026-01-01"
+            ],
+            [
+              1,
+              "2026-01-02"
+            ],
+            [
+              1,
+              "2026-01-03"
+            ],
+            [
+              1,
+              "2026-01-05"
+            ],
+            [
+              2,
+              "2026-01-01"
+            ],
+            [
+              2,
+              "2026-01-03"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one qualifying streak."
+      ],
+      "notes_md": "**Pattern family:** Gaps and islands\n\n**Grain:** one row = one qualifying streak.\n\n**Watch out:** Deduplicate user/day first; duplicate events otherwise break the date-minus-row-number technique.",
+      "solutions": [
+        {
+          "label": "Gaps and islands",
+          "explain_md": "Subtracting consecutive row numbers from consecutive dates produces one constant key.",
+          "sql": "WITH d AS (SELECT DISTINCT user_id,day FROM activity),\nr AS (SELECT user_id,day,ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day) AS rn FROM d),\ng AS (SELECT user_id,day,DATE_SUB(day, INTERVAL rn DAY) AS island_key FROM r)\nSELECT user_id,MIN(day) AS start_day,MAX(day) AS end_day,COUNT(*) AS streak_days\nFROM g GROUP BY user_id,island_key HAVING COUNT(*)>=2\nORDER BY user_id,start_day;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "user_id",
+          "start_day",
+          "end_day",
+          "streak_days"
+        ],
+        "rows": [
+          [
+            "1",
+            "2026-01-01",
+            "2026-01-03",
+            "3"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A44",
+      "slug": "sessionize-event-streams",
+      "title": "Sessionize event streams",
+      "difficulty": "Hard",
+      "topics": [
+        "Aggregation",
+        "Window functions",
+        "Running totals",
+        "Value functions"
+      ],
+      "statement_md": "Return event_id, user_id and session_no. A session starts on the first event or after an inactivity gap strictly greater than 30 minutes. Exactly 30 minutes stays in the same session. Sort by user_id,event_at,event_id.",
+      "tables": [
+        {
+          "name": "sessions",
+          "description_md": "One row per event. Order within a user by event_at, then event_id.",
+          "columns": [
+            {
+              "name": "event_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "event_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-01-01 10:00:00"
+            ],
+            [
+              2,
+              1,
+              "2026-01-01 10:30:00"
+            ],
+            [
+              3,
+              1,
+              "2026-01-01 11:00:01"
+            ],
+            [
+              4,
+              2,
+              "2026-01-01 09:00:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one event."
+      ],
+      "notes_md": "**Pattern family:** LAG + break flag + cumulative SUM\n\n**Grain:** one row = one event.\n\n**Watch out:** TIMESTAMPDIFF(MINUTE)>30 truncates 30 minutes 1 second to 30 and misses this boundary.",
+      "solutions": [
+        {
+          "label": "LAG + break flag + cumulative SUM",
+          "explain_md": "10:30 stays in session 1; 11:00:01 is 30 minutes and one second later, so starts session 2.",
+          "sql": "WITH previous AS (\n SELECT *, LAG(event_at) OVER (PARTITION BY user_id ORDER BY event_at,event_id) AS previous_at\n FROM sessions\n), flags AS (\n SELECT *, CASE WHEN previous_at IS NULL\n OR event_at>DATE_ADD(previous_at,INTERVAL 30 MINUTE) THEN 1 ELSE 0 END AS new_session\n FROM previous\n)\nSELECT event_id,user_id,SUM(new_session) OVER (\n PARTITION BY user_id ORDER BY event_at,event_id\n ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS session_no\nFROM flags ORDER BY user_id,event_at,event_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "event_id",
+          "user_id",
+          "session_no"
+        ],
+        "rows": [
+          [
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "2",
+            "1",
+            "1"
+          ],
+          [
+            "3",
+            "1",
+            "2"
+          ],
+          [
+            "4",
+            "2",
+            "1"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A45",
+      "slug": "day-one-cohort-retention",
+      "title": "Day-one cohort retention",
+      "difficulty": "Hard",
+      "topics": [
+        "Filtering",
+        "Aggregation",
+        "Conditional aggregation",
+        "Dates"
+      ],
+      "statement_md": "Return signup_day, cohort_size, retained_users and retention_pct (two decimal places). Retained means activity exactly one calendar day after signup. Include zero-retention cohorts; sort by signup_day.",
+      "tables": [
+        {
+          "name": "signups",
+          "description_md": "One row per user. Observation is complete through January 5, 2026.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "signup_day",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-01-01"
+            ],
+            [
+              2,
+              "2026-01-01"
+            ],
+            [
+              3,
+              "2026-01-02"
+            ]
+          ]
+        },
+        {
+          "name": "activity",
+          "description_md": "One row per activity event; duplicate user/day pairs are valid.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "day",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-01-01"
+            ],
+            [
+              1,
+              "2026-01-01"
+            ],
+            [
+              1,
+              "2026-01-02"
+            ],
+            [
+              1,
+              "2026-01-03"
+            ],
+            [
+              1,
+              "2026-01-05"
+            ],
+            [
+              2,
+              "2026-01-01"
+            ],
+            [
+              2,
+              "2026-01-03"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one signup-date cohort."
+      ],
+      "notes_md": "**Pattern family:** Date equality + conditional distinct count\n\n**Grain:** one row = one signup-date cohort.\n\n**Watch out:** The denominator is signups, not active users. Exclude immature cohorts when the observation window is incomplete.",
+      "solutions": [
+        {
+          "label": "Date equality + conditional distinct count",
+          "explain_md": "Only user 1 returns on January 2; user 2's January 3 activity is too late for day one.",
+          "sql": "SELECT s.signup_day, COUNT(DISTINCT s.user_id) AS cohort_size,\n COUNT(DISTINCT a.user_id) AS retained_users,\n ROUND(100.0*COUNT(DISTINCT a.user_id)/COUNT(DISTINCT s.user_id),2) AS retention_pct\nFROM signups s LEFT JOIN activity a\n ON a.user_id=s.user_id AND a.day=DATE_ADD(s.signup_day,INTERVAL 1 DAY)\nGROUP BY s.signup_day ORDER BY s.signup_day;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "signup_day",
+          "cohort_size",
+          "retained_users",
+          "retention_pct"
+        ],
+        "rows": [
+          [
+            "2026-01-01",
+            "2",
+            "1",
+            "50.00"
+          ],
+          [
+            "2026-01-02",
+            "1",
+            "0",
+            "0.00"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A46",
+      "slug": "month-over-month-growth",
+      "title": "Month-over-month growth",
+      "difficulty": "Medium",
+      "topics": [
+        "NULL handling",
+        "Window functions",
+        "Value functions",
+        "Dates"
+      ],
+      "statement_md": "Return month_start, revenue, previous_revenue and growth_pct rounded to two decimals. First-month growth and growth from a zero prior value are NULL. Sort by month_start.",
+      "tables": [
+        {
+          "name": "monthly",
+          "description_md": "One row per month, all months consecutive. Revenue is non-NULL.",
+          "columns": [
+            {
+              "name": "month_start",
+              "type": "DATE PRIMARY KEY"
+            },
+            {
+              "name": "revenue",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2025-12-01",
+              100
+            ],
+            [
+              "2026-01-01",
+              120
+            ],
+            [
+              "2026-02-01",
+              0
+            ],
+            [
+              "2026-03-01",
+              60
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one month."
+      ],
+      "notes_md": "**Pattern family:** LAG + NULLIF denominator\n\n**Grain:** one row = one month.\n\n**Watch out:** On sparse monthly data, LAG reads the previous observed month; fill missing months first.",
+      "solutions": [
+        {
+          "label": "LAG + NULLIF denominator",
+          "explain_md": "Growth is (current−previous)/previous. The input explicitly includes every month.",
+          "sql": "WITH p AS (\n SELECT *,LAG(revenue) OVER (ORDER BY month_start) AS previous_revenue FROM monthly\n)\nSELECT month_start,revenue,previous_revenue,\n ROUND(100.0*(revenue-previous_revenue)/NULLIF(previous_revenue,0),2) AS growth_pct\nFROM p ORDER BY month_start;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "month_start",
+          "revenue",
+          "previous_revenue",
+          "growth_pct"
+        ],
+        "rows": [
+          [
+            "2025-12-01",
+            "100",
+            null,
+            null
+          ],
+          [
+            "2026-01-01",
+            "120",
+            "100",
+            "20.00"
+          ],
+          [
+            "2026-02-01",
+            "0",
+            "120",
+            "-100.00"
+          ],
+          [
+            "2026-03-01",
+            "60",
+            "0",
+            null
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A47",
+      "slug": "find-missing-activity-dates",
+      "title": "Find missing activity dates",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Anti-joins",
+        "NULL handling",
+        "Dates"
+      ],
+      "statement_md": "Return day for dates January 1–5, 2026 with no activity from any user. Sort by day.",
+      "tables": [
+        {
+          "name": "activity",
+          "description_md": "One row per activity event; duplicate user/day pairs are valid.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "day",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-01-01"
+            ],
+            [
+              1,
+              "2026-01-01"
+            ],
+            [
+              1,
+              "2026-01-02"
+            ],
+            [
+              1,
+              "2026-01-03"
+            ],
+            [
+              1,
+              "2026-01-05"
+            ],
+            [
+              2,
+              "2026-01-01"
+            ],
+            [
+              2,
+              "2026-01-03"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one missing calendar date."
+      ],
+      "notes_md": "**Pattern family:** Calendar anti join\n\n**Grain:** one row = one missing calendar date.\n\n**Watch out:** A filter on the activity table alone cannot manufacture missing dates.",
+      "solutions": [
+        {
+          "label": "Calendar anti join",
+          "explain_md": "January 4 is absent from the complete set of observed activity dates.",
+          "sql": "WITH RECURSIVE calendar AS (\n SELECT CAST('2026-01-01' AS DATE) AS day\n UNION ALL SELECT DATE_ADD(day,INTERVAL 1 DAY) FROM calendar WHERE day<'2026-01-05'\n)\nSELECT c.day FROM calendar c\nWHERE NOT EXISTS (SELECT 1 FROM activity a WHERE a.day=c.day)\nORDER BY c.day;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "day"
+        ],
+        "rows": [
+          [
+            "2026-01-04"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A48",
+      "slug": "rolling-distinct-active-users",
+      "title": "Rolling distinct active users",
+      "difficulty": "Hard",
+      "topics": [
+        "Filtering",
+        "Aggregation",
+        "Joins",
+        "Rolling windows"
+      ],
+      "statement_md": "Return day and active_users_3d for January 3, 4 and 5. Count distinct users active on that date or the previous two dates, including zero if none. Sort by day.",
+      "tables": [
+        {
+          "name": "activity",
+          "description_md": "One row per activity event; duplicate user/day pairs are valid.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "day",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-01-01"
+            ],
+            [
+              1,
+              "2026-01-01"
+            ],
+            [
+              1,
+              "2026-01-02"
+            ],
+            [
+              1,
+              "2026-01-03"
+            ],
+            [
+              1,
+              "2026-01-05"
+            ],
+            [
+              2,
+              "2026-01-01"
+            ],
+            [
+              2,
+              "2026-01-03"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one reporting date."
+      ],
+      "notes_md": "**Pattern family:** Range join + COUNT DISTINCT\n\n**Grain:** one row = one reporting date.\n\n**Watch out:** Adding daily distinct counts double-counts returning users; MySQL does not support COUNT(DISTINCT ...) as a window aggregate.",
+      "solutions": [
+        {
+          "label": "Range join + COUNT DISTINCT",
+          "explain_md": "Deduplicate user IDs across each entire three-day interval.",
+          "sql": "WITH report_days AS (\n SELECT CAST('2026-01-03' AS DATE) AS day\n UNION ALL SELECT CAST('2026-01-04' AS DATE)\n UNION ALL SELECT CAST('2026-01-05' AS DATE)\n)\nSELECT r.day,COUNT(DISTINCT a.user_id) AS active_users_3d\nFROM report_days r LEFT JOIN activity a\n ON a.day>=DATE_SUB(r.day,INTERVAL 2 DAY) AND a.day<=r.day\nGROUP BY r.day ORDER BY r.day;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "day",
+          "active_users_3d"
+        ],
+        "rows": [
+          [
+            "2026-01-03",
+            "2"
+          ],
+          [
+            "2026-01-04",
+            "2"
+          ],
+          [
+            "2026-01-05",
+            "2"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A49",
+      "slug": "repeat-purchase-within-seven-elapsed-days",
+      "title": "Repeat purchase within seven elapsed days",
+      "difficulty": "Hard",
+      "topics": [
+        "Ranking",
+        "Rolling windows",
+        "Dates"
+      ],
+      "statement_md": "Return customer_id for customers whose second-ever order occurs no more than seven elapsed days after their first. Ties use order_id; include an exact seven-day boundary. Sort by ID.",
+      "tables": [
+        {
+          "name": "date_orders",
+          "description_md": "One row per order. All timestamps are UTC DATETIME; no implicit timezone conversion. Complete history for this fixture.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "ordered_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2024-02-28 23:00:00",
+              10
+            ],
+            [
+              2,
+              1,
+              "2024-02-29 12:00:00",
+              20
+            ],
+            [
+              3,
+              2,
+              "2024-03-01 00:00:00",
+              30
+            ],
+            [
+              4,
+              2,
+              "2024-03-03 15:00:00",
+              40
+            ],
+            [
+              5,
+              3,
+              "2024-03-03 23:59:59",
+              50
+            ],
+            [
+              6,
+              1,
+              "2024-03-04 00:00:00",
+              60
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one qualifying repeat customer."
+      ],
+      "notes_md": "**Pattern family:** ROW_NUMBER + first/second timestamps\n\n**Grain:** one row = one qualifying repeat customer.\n\n**Watch out:** This is first-to-second order conversion, not any pair of orders within seven days; avoid truncated day differences.",
+      "solutions": [
+        {
+          "label": "ROW_NUMBER + first/second timestamps",
+          "explain_md": "Both customers 1 and 2 have a second order within seven elapsed days; customer 3 has no second order.",
+          "sql": "WITH r AS (\n SELECT *,ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY ordered_at,order_id) AS rn\n FROM date_orders\n), first_two AS (\n SELECT customer_id,\n MAX(CASE WHEN rn=1 THEN ordered_at END) AS first_at,\n MAX(CASE WHEN rn=2 THEN ordered_at END) AS second_at\n FROM r WHERE rn<=2 GROUP BY customer_id\n)\nSELECT customer_id FROM first_two\nWHERE second_at<=DATE_ADD(first_at,INTERVAL 7 DAY)\nORDER BY customer_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "customer_id"
+        ],
+        "rows": [
+          [
+            "1"
+          ],
+          [
+            "2"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A50",
+      "slug": "count-weekdays-in-an-interval",
+      "title": "Count weekdays in an interval",
+      "difficulty": "Medium",
+      "topics": [
+        "Aggregation",
+        "Dates",
+        "Data quality"
+      ],
+      "statement_md": "For each completed job return id and weekday_count, counting Monday–Friday calendar dates from DATE(started_at) through DATE(ended_at), inclusive. Exclude unfinished jobs. No holiday exclusions; sort by id.",
+      "tables": [
+        {
+          "name": "durations",
+          "description_md": "One row per job. ended_at may be NULL for unfinished jobs.",
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "started_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "ended_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2024-02-28 23:30:00",
+              "2024-02-29 00:15:00"
+            ],
+            [
+              2,
+              "2024-02-28 10:00:00",
+              "2024-02-29 10:00:00"
+            ],
+            [
+              3,
+              "2024-02-28 10:00:00",
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one completed job."
+      ],
+      "notes_md": "**Pattern family:** Calendar generation + WEEKDAY\n\n**Grain:** one row = one completed job.\n\n**Watch out:** This counts calendar weekdays, not eight-hour working periods. Holiday handling requires a holiday calendar.",
+      "solutions": [
+        {
+          "label": "Calendar generation + WEEKDAY",
+          "explain_md": "February 28 and 29, 2024 are Wednesday and Thursday; both dates count under an inclusive-date contract.",
+          "sql": "WITH RECURSIVE dates AS (\n SELECT id,DATE(started_at) AS day,DATE(ended_at) AS end_day\n FROM durations WHERE ended_at IS NOT NULL\n UNION ALL\n SELECT id,DATE_ADD(day,INTERVAL 1 DAY),end_day FROM dates WHERE day<end_day\n)\nSELECT id,SUM(CASE WHEN WEEKDAY(day)<5 THEN 1 ELSE 0 END) AS weekday_count\nFROM dates GROUP BY id ORDER BY id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "id",
+          "weekday_count"
+        ],
+        "rows": [
+          [
+            "1",
+            "2"
+          ],
+          [
+            "2",
+            "2"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A51",
+      "slug": "detect-overlapping-intervals",
+      "title": "Detect overlapping intervals",
+      "difficulty": "Hard",
+      "topics": [
+        "Joins",
+        "Self-joins",
+        "Window functions",
+        "Data quality"
+      ],
+      "statement_md": "Return id1,id2 for each overlapping interval pair once, smaller ID first. Touching endpoints do not overlap. Sort by id1,id2.",
+      "tables": [
+        {
+          "name": "intervals",
+          "description_md": "One row per valid interval [start_at,end_at); start is included, end excluded. Nested intervals occur.",
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "start_at",
+              "type": "INT"
+            },
+            {
+              "name": "end_at",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              10
+            ],
+            [
+              2,
+              2,
+              3
+            ],
+            [
+              3,
+              9,
+              12
+            ],
+            [
+              4,
+              12,
+              14
+            ],
+            [
+              5,
+              20,
+              22
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one overlapping unordered pair."
+      ],
+      "notes_md": "**Pattern family:** Self join with strict boundaries\n\n**Grain:** one row = one overlapping unordered pair.\n\n**Watch out:** Using <= includes touching intervals; omit a.id<b.id and you get self-pairs plus reversed duplicates.",
+      "solutions": [
+        {
+          "label": "Self join with strict boundaries",
+          "explain_md": "Two half-open intervals overlap when each begins before the other ends.",
+          "sql": "SELECT a.id AS id1,b.id AS id2 FROM intervals a\nJOIN intervals b ON a.id<b.id\n AND a.start_at<b.end_at AND b.start_at<a.end_at\nORDER BY id1,id2;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "id1",
+          "id2"
+        ],
+        "rows": [
+          [
+            "1",
+            "2"
+          ],
+          [
+            "1",
+            "3"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A52",
+      "slug": "merge-nested-and-overlapping-intervals",
+      "title": "Merge nested and overlapping intervals",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Running totals",
+        "Gaps and islands",
+        "Data quality"
+      ],
+      "statement_md": "Return merged_start and merged_end for merged intervals, sorted by merged_start. Merge overlaps transitively; keep touching intervals separate.",
+      "tables": [
+        {
+          "name": "intervals",
+          "description_md": "One row per valid interval [start_at,end_at); start is included, end excluded. Nested intervals occur.",
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "start_at",
+              "type": "INT"
+            },
+            {
+              "name": "end_at",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              10
+            ],
+            [
+              2,
+              2,
+              3
+            ],
+            [
+              3,
+              9,
+              12
+            ],
+            [
+              4,
+              12,
+              14
+            ],
+            [
+              5,
+              20,
+              22
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one merged interval."
+      ],
+      "notes_md": "**Pattern family:** Running MAX endpoint + islands\n\n**Grain:** one row = one merged interval.\n\n**Watch out:** LAG(end_at) alone fails for nested intervals. Change >= to > only if touching intervals should merge.",
+      "solutions": [
+        {
+          "label": "Running MAX endpoint + islands",
+          "explain_md": "The running maximum remembers interval 1's endpoint 10 despite nested interval 2 ending at 3. Interval 3 extends the merged interval to 12.",
+          "sql": "WITH prior AS (\n SELECT *,MAX(end_at) OVER (ORDER BY start_at,end_at,id\n ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS previous_max_end\n FROM intervals\n), flags AS (\n SELECT *,CASE WHEN previous_max_end IS NULL OR start_at>=previous_max_end\n THEN 1 ELSE 0 END AS new_group FROM prior\n), grouped AS (\n SELECT *,SUM(new_group) OVER (ORDER BY start_at,end_at,id\n ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS grp FROM flags\n)\nSELECT MIN(start_at) AS merged_start,MAX(end_at) AS merged_end\nFROM grouped GROUP BY grp ORDER BY merged_start;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "merged_start",
+          "merged_end"
+        ],
+        "rows": [
+          [
+            "1",
+            "12"
+          ],
+          [
+            "12",
+            "14"
+          ],
+          [
+            "20",
+            "22"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A53",
+      "slug": "traverse-an-employee-hierarchy",
+      "title": "Traverse an employee hierarchy",
+      "difficulty": "Medium",
+      "topics": [
+        "Aggregation",
+        "Recursive CTEs"
+      ],
+      "statement_md": "Return employee_id and depth for employee 1 and all their descendants, with the root at depth 0. Sort by depth,employee_id. Assume an acyclic hierarchy.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee; salary and manager_id may be NULL. Other fields are non-NULL. A manager_id references employee_id.",
+          "columns": [
+            {
+              "name": "employee_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "salary",
+              "type": "INT"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              "A",
+              100,
+              null
+            ],
+            [
+              2,
+              "Ben",
+              "A",
+              80,
+              1
+            ],
+            [
+              3,
+              "Cara",
+              "A",
+              80,
+              1
+            ],
+            [
+              4,
+              "Dan",
+              "B",
+              90,
+              null
+            ],
+            [
+              5,
+              "Eve",
+              "B",
+              60,
+              4
+            ],
+            [
+              6,
+              "Finn",
+              "B",
+              null,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one reachable employee."
+      ],
+      "notes_md": "**Pattern family:** WITH RECURSIVE\n\n**Grain:** one row = one reachable employee.\n\n**Watch out:** Cycles require explicit detection in less constrained data; recursion has a configured depth limit.",
+      "solutions": [
+        {
+          "label": "WITH RECURSIVE",
+          "explain_md": "The anchor selects the root; each recursion step finds reports of the prior level.",
+          "sql": "WITH RECURSIVE team AS (\n SELECT employee_id,0 AS depth FROM employees WHERE employee_id=1\n UNION ALL\n SELECT e.employee_id,t.depth+1 FROM employees e\n JOIN team t ON e.manager_id=t.employee_id\n)\nSELECT employee_id,depth FROM team ORDER BY depth,employee_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "employee_id",
+          "depth"
+        ],
+        "rows": [
+          [
+            "1",
+            "0"
+          ],
+          [
+            "2",
+            "1"
+          ],
+          [
+            "3",
+            "1"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A54",
+      "slug": "ordered-event-funnel",
+      "title": "Ordered event funnel",
+      "difficulty": "Hard",
+      "topics": [
+        "Joins",
+        "Dates",
+        "Funnels"
+      ],
+      "statement_md": "Return user_id, view_at, cart_at and purchase_at for users who complete view → cart → purchase in strictly increasing time order. Choose earliest view, earliest cart after it, and earliest purchase after that; sort by user_id.",
+      "tables": [
+        {
+          "name": "events",
+          "description_md": "One row per event; event timestamps determine funnel order. All fields non-NULL.",
+          "columns": [
+            {
+              "name": "event_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "event_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "kind",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-01-01 10:00:00",
+              "view"
+            ],
+            [
+              2,
+              1,
+              "2026-01-01 10:05:00",
+              "cart"
+            ],
+            [
+              3,
+              1,
+              "2026-01-01 10:10:00",
+              "purchase"
+            ],
+            [
+              4,
+              2,
+              "2026-01-01 09:00:00",
+              "purchase"
+            ],
+            [
+              5,
+              2,
+              "2026-01-01 09:05:00",
+              "view"
+            ],
+            [
+              6,
+              2,
+              "2026-01-01 09:10:00",
+              "cart"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one completed user funnel."
+      ],
+      "notes_md": "**Pattern family:** Stage CTEs with temporal joins\n\n**Grain:** one row = one completed user funnel.\n\n**Watch out:** Independent MIN timestamps per event kind can misclassify funnels; the stages must be temporally related.",
+      "solutions": [
+        {
+          "label": "Stage CTEs with temporal joins",
+          "explain_md": "User 2 purchased before viewing and does not complete the specified ordered sequence.",
+          "sql": "WITH v AS (\n SELECT user_id,MIN(event_at) AS view_at FROM events WHERE kind='view' GROUP BY user_id\n), c AS (\n SELECT v.user_id,v.view_at,MIN(e.event_at) AS cart_at FROM v\n JOIN events e ON e.user_id=v.user_id AND e.kind='cart' AND e.event_at>v.view_at\n GROUP BY v.user_id,v.view_at\n), p AS (\n SELECT c.user_id,c.view_at,c.cart_at,MIN(e.event_at) AS purchase_at FROM c\n JOIN events e ON e.user_id=c.user_id AND e.kind='purchase' AND e.event_at>c.cart_at\n GROUP BY c.user_id,c.view_at,c.cart_at\n)\nSELECT user_id,view_at,cart_at,purchase_at FROM p ORDER BY user_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "user_id",
+          "view_at",
+          "cart_at",
+          "purchase_at"
+        ],
+        "rows": [
+          [
+            "1",
+            "2026-01-01 10:00:00",
+            "2026-01-01 10:05:00",
+            "2026-01-01 10:10:00"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A55",
+      "slug": "pivot-event-rows-into-columns",
+      "title": "Pivot event rows into columns",
+      "difficulty": "Medium",
+      "topics": [
+        "Conditional aggregation",
+        "NULL handling",
+        "Funnels",
+        "Pivoting"
+      ],
+      "statement_md": "For each user return user_id, first_view_at and first_purchase_at independently. Keep NULL when an event kind is absent; sort by user_id. This question does not require funnel order.",
+      "tables": [
+        {
+          "name": "events",
+          "description_md": "One row per event; event timestamps determine funnel order. All fields non-NULL.",
+          "columns": [
+            {
+              "name": "event_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "event_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "kind",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-01-01 10:00:00",
+              "view"
+            ],
+            [
+              2,
+              1,
+              "2026-01-01 10:05:00",
+              "cart"
+            ],
+            [
+              3,
+              1,
+              "2026-01-01 10:10:00",
+              "purchase"
+            ],
+            [
+              4,
+              2,
+              "2026-01-01 09:00:00",
+              "purchase"
+            ],
+            [
+              5,
+              2,
+              "2026-01-01 09:05:00",
+              "view"
+            ],
+            [
+              6,
+              2,
+              "2026-01-01 09:10:00",
+              "cart"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one user represented in events."
+      ],
+      "notes_md": "**Pattern family:** MIN(CASE ...) pivot\n\n**Grain:** one row = one user represented in events.\n\n**Watch out:** This pivot is not proof of an ordered funnel; MySQL has no general PIVOT keyword.",
+      "solutions": [
+        {
+          "label": "MIN(CASE ...) pivot",
+          "explain_md": "Conditional MIN puts the first occurrence of each kind in its own column.",
+          "sql": "SELECT user_id,\n MIN(CASE WHEN kind='view' THEN event_at END) AS first_view_at,\n MIN(CASE WHEN kind='purchase' THEN event_at END) AS first_purchase_at\nFROM events GROUP BY user_id ORDER BY user_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "user_id",
+          "first_view_at",
+          "first_purchase_at"
+        ],
+        "rows": [
+          [
+            "1",
+            "2026-01-01 10:00:00",
+            "2026-01-01 10:10:00"
+          ],
+          [
+            "2",
+            "2026-01-01 09:05:00",
+            "2026-01-01 09:00:00"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A56",
+      "slug": "reconcile-both-sides-including-orphans",
+      "title": "Reconcile both sides, including orphans",
+      "difficulty": "Hard",
+      "topics": [
+        "Joins",
+        "Anti-joins",
+        "NULL handling",
+        "Reconciliation"
+      ],
+      "statement_md": "Return order_id, order_amount, payment_total and difference = order_amount − payment_total for every key in either orders or payments. Treat a missing side as zero; include all order statuses and sort by order_id.",
+      "tables": [
+        {
+          "name": "orders",
+          "description_md": "One row per order. All fields non-NULL. customer_id references customers; one customer can have many orders.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              100,
+              "paid"
+            ],
+            [
+              102,
+              1,
+              50,
+              "paid"
+            ],
+            [
+              103,
+              2,
+              80,
+              "cancelled"
+            ],
+            [
+              104,
+              3,
+              40,
+              "paid"
+            ]
+          ]
+        },
+        {
+          "name": "payments",
+          "description_md": "One row per payment. Orphan order 999 is deliberately allowed.",
+          "columns": [
+            {
+              "name": "payment_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              101,
+              70
+            ],
+            [
+              2,
+              101,
+              30
+            ],
+            [
+              3,
+              102,
+              40
+            ],
+            [
+              4,
+              999,
+              5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one order key from either source."
+      ],
+      "notes_md": "**Pattern family:** Full outer join emulation\n\n**Grain:** one row = one order key from either source.\n\n**Watch out:** MySQL does not support FULL OUTER JOIN syntax; a one-sided LEFT JOIN would lose orphan payment 999.",
+      "solutions": [
+        {
+          "label": "Full outer join emulation",
+          "explain_md": "The union of keys retains records appearing on either side. Payment aggregation ensures one row per key.",
+          "sql": "WITH p AS (\n SELECT order_id,SUM(amount) AS payment_total FROM payments GROUP BY order_id\n), keys_all AS (\n SELECT order_id FROM orders UNION SELECT order_id FROM p\n)\nSELECT k.order_id,COALESCE(o.amount,0) AS order_amount,\n COALESCE(p.payment_total,0) AS payment_total,\n COALESCE(o.amount,0)-COALESCE(p.payment_total,0) AS difference\nFROM keys_all k LEFT JOIN orders o ON o.order_id=k.order_id\nLEFT JOIN p ON p.order_id=k.order_id ORDER BY k.order_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "order_id",
+          "order_amount",
+          "payment_total",
+          "difference"
+        ],
+        "rows": [
+          [
+            "101",
+            "100",
+            "100",
+            "0"
+          ],
+          [
+            "102",
+            "50",
+            "40",
+            "10"
+          ],
+          [
+            "103",
+            "80",
+            "0",
+            "80"
+          ],
+          [
+            "104",
+            "40",
+            "0",
+            "40"
+          ],
+          [
+            "999",
+            "0",
+            "5",
+            "-5"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A57",
+      "slug": "point-in-time-dimension-lookup",
+      "title": "Point-in-time dimension lookup",
+      "difficulty": "Hard",
+      "topics": [
+        "Joins",
+        "NULL handling",
+        "Dates",
+        "Slowly changing dimensions"
+      ],
+      "statement_md": "Return sale_id and tier that was valid on each sale_day, ordered by sale_id. Keep a sale with NULL tier if no version matches.",
+      "tables": [
+        {
+          "name": "facts",
+          "description_md": "One row per sale; customer_id references versioned history.",
+          "columns": [
+            {
+              "name": "sale_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "sale_day",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-01-31"
+            ],
+            [
+              2,
+              1,
+              "2026-02-01"
+            ]
+          ]
+        },
+        {
+          "name": "history",
+          "description_md": "Nonoverlapping versions per customer with [valid_from,valid_to); NULL end is unbounded.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "valid_from",
+              "type": "DATE"
+            },
+            {
+              "name": "valid_to",
+              "type": "DATE"
+            },
+            {
+              "name": "tier",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-01-01",
+              "2026-02-01",
+              "silver"
+            ],
+            [
+              1,
+              "2026-02-01",
+              null,
+              "gold"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one sale."
+      ],
+      "notes_md": "**Pattern family:** As-of range join / SCD type 2\n\n**Grain:** one row = one sale.\n\n**Watch out:** BETWEEN on both inclusive endpoints can match two versions; overlapping history must be rejected or resolved.",
+      "solutions": [
+        {
+          "label": "As-of range join / SCD type 2",
+          "explain_md": "January 31 maps to silver; February 1 is excluded from silver and included in gold.",
+          "sql": "SELECT f.sale_id,h.tier FROM facts f\nLEFT JOIN history h ON h.customer_id=f.customer_id\n AND f.sale_day>=h.valid_from AND (f.sale_day<h.valid_to OR h.valid_to IS NULL)\nORDER BY f.sale_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "sale_id",
+          "tier"
+        ],
+        "rows": [
+          [
+            "1",
+            "silver"
+          ],
+          [
+            "2",
+            "gold"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A58",
+      "slug": "weighted-average",
+      "title": "Weighted average",
+      "difficulty": "Medium",
+      "topics": [
+        "Aggregation",
+        "Dates",
+        "Statistics"
+      ],
+      "statement_md": "Return weighted_average to two decimal places. Use value weighted by weight, not the plain mean.",
+      "tables": [
+        {
+          "name": "weighted",
+          "description_md": "One row per observation; positive weights.",
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "value",
+              "type": "INT"
+            },
+            {
+              "name": "weight",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              10,
+              1
+            ],
+            [
+              2,
+              20,
+              3
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one summary row."
+      ],
+      "notes_md": "**Pattern family:** Ratio of sums\n\n**Grain:** one row = one summary row.\n\n**Watch out:** AVG(value) gives 15, ignoring weights. Protect against a zero denominator when that is possible.",
+      "solutions": [
+        {
+          "label": "Ratio of sums",
+          "explain_md": "The numerator is 10×1 + 20×3 = 70; total weight is 4.",
+          "sql": "SELECT ROUND(1.0*SUM(value*weight)/NULLIF(SUM(weight),0),2) AS weighted_average\nFROM weighted;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "weighted_average"
+        ],
+        "rows": [
+          [
+            "17.50"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A59",
+      "slug": "first-time-a-cumulative-threshold-is-reached",
+      "title": "First time a cumulative threshold is reached",
+      "difficulty": "Hard",
+      "topics": [
+        "Aggregation",
+        "Anti-joins",
+        "Window functions",
+        "Running totals"
+      ],
+      "statement_md": "Return id and running_total for the earliest transaction at which the cumulative amount is at least 60. Order is id ascending. If never reached, return no rows.",
+      "tables": [
+        {
+          "name": "balances",
+          "description_md": "One row per transaction; id defines transaction order.",
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              40
+            ],
+            [
+              2,
+              30
+            ],
+            [
+              3,
+              50
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one first crossing transaction, or none."
+      ],
+      "notes_md": "**Pattern family:** Running SUM + first qualifying row\n\n**Grain:** one row = one first crossing transaction, or none.\n\n**Watch out:** Filtering source transactions before computing the running total changes the balance.",
+      "solutions": [
+        {
+          "label": "Running SUM + first qualifying row",
+          "explain_md": "The running balances are 40,70,120, so transaction 2 is the first crossing.",
+          "sql": "WITH r AS (\n SELECT id,SUM(amount) OVER (ORDER BY id\n ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total FROM balances\n)\nSELECT id,running_total FROM r WHERE running_total>=60 ORDER BY id LIMIT 1;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "id",
+          "running_total"
+        ],
+        "rows": [
+          [
+            "2",
+            "70"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "A60",
+      "slug": "smallest-set-contributing-at-least-80-percent",
+      "title": "Smallest set contributing at least 80 percent",
+      "difficulty": "Hard",
+      "topics": [
+        "Aggregation",
+        "Window functions",
+        "Running totals",
+        "Value functions"
+      ],
+      "statement_md": "Return customer_id, paid_total and cumulative_pct (two decimals) for the smallest leading set of customers reaching at least 80% of paid revenue. Sort by paid_total descending then customer_id; include the row that crosses 80%. Paid amounts are positive.",
+      "tables": [
+        {
+          "name": "orders",
+          "description_md": "One row per order. All fields non-NULL. customer_id references customers; one customer can have many orders.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT PRIMARY KEY"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(15)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              100,
+              "paid"
+            ],
+            [
+              102,
+              1,
+              50,
+              "paid"
+            ],
+            [
+              103,
+              2,
+              80,
+              "cancelled"
+            ],
+            [
+              104,
+              3,
+              40,
+              "paid"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Output grain: one customer in the selected leading set."
+      ],
+      "notes_md": "**Pattern family:** Aggregate + descending cumulative share\n\n**Grain:** one row = one customer in the selected leading set.\n\n**Watch out:** Filtering cumulative_pct<=80 drops the crossing row and fails to reach the target; positive values are essential for monotonic accumulation.",
+      "solutions": [
+        {
+          "label": "Aggregate + descending cumulative share",
+          "explain_md": "Customer 1 contributes 150/190, below 80%, so customer 3 must be included to cross the threshold.",
+          "sql": "WITH totals AS (\n SELECT customer_id,SUM(amount) AS paid_total FROM orders\n WHERE status='paid' GROUP BY customer_id\n), r AS (\n SELECT *,SUM(paid_total) OVER () AS grand_total,\n SUM(paid_total) OVER (ORDER BY paid_total DESC,customer_id\n ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total\n FROM totals\n)\nSELECT customer_id,paid_total,\n ROUND(100.0*running_total/NULLIF(grand_total,0),2) AS cumulative_pct\nFROM r WHERE running_total-paid_total < 0.8*grand_total\nORDER BY paid_total DESC,customer_id;"
+        }
+      ],
+      "traps": [],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "paid_total",
+          "cumulative_pct"
+        ],
+        "rows": [
+          [
+            "1",
+            "150",
+            "78.95"
+          ],
+          [
+            "3",
+            "40",
+            "100.00"
+          ]
+        ]
+      },
+      "source": "Apple SDE-Data prep bank",
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

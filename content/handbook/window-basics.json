@@ -1,0 +1,1167 @@
+{
+  "id": "window-basics",
+  "title": "Window function basics",
+  "group": "Window functions",
+  "order": 1,
+  "summary_md": "What `OVER (PARTITION BY ... ORDER BY ...)` does, how it differs from `GROUP BY`, where it may appear, and the order in which SQL evaluates it.",
+  "sections": [
+    {
+      "id": "over-and-partition",
+      "heading": "OVER() and PARTITION BY",
+      "body_md": "- A window function computes a value **per row** from a set of related rows (its *window*) and keeps every input row.\n- `OVER (...)` is what makes a function a window function. Empty `OVER ()` = the window is the whole result set.\n- `PARTITION BY` splits rows into independent groups; the function restarts in each group. Omit it and there is one group.\n- Any aggregate (`SUM`, `AVG`, `COUNT`, `MIN`, `MAX`) can be used as a window function; so can ranking and value functions (`ROW_NUMBER`, `LAG`, ...).",
+      "syntax": {
+        "mysql": "func(args) OVER (\n  [PARTITION BY expr [, expr ...]]   -- split rows into groups; omit = one group\n  [ORDER BY expr [ASC|DESC] [, ...]] -- order rows inside each group (needed by ranking / value / running functions)\n  [frame_clause]                     -- which rows around the current row count (see Window frames)\n)",
+        "tsql": "func(args) OVER (\n  [PARTITION BY expr [, expr ...]]   -- split rows into groups; omit = one group\n  [ORDER BY expr [ASC|DESC] [, ...]] -- order rows inside each group (needed by ranking / value / running functions)\n  [frame_clause]                     -- which rows around the current row count (see Window frames)\n)"
+      },
+      "args": [
+        {
+          "name": "func(args)",
+          "meaning": "The window function: an aggregate (SUM, AVG, COUNT, MIN, MAX), a ranking function (ROW_NUMBER, RANK, ...) or a value function (LAG, LEAD, FIRST_VALUE, ...)."
+        },
+        {
+          "name": "PARTITION BY expr",
+          "meaning": "Columns that define the groups. Rows with equal values are in the same partition; each partition is computed separately."
+        },
+        {
+          "name": "ORDER BY expr",
+          "meaning": "Sort order of rows inside each partition. Not the output order of the query."
+        },
+        {
+          "name": "frame_clause",
+          "meaning": "Optional ROWS / RANGE clause limiting the window around the current row."
+        }
+      ],
+      "examples": [
+        {
+          "id": "over-empty",
+          "title": "OVER () = whole table",
+          "explain_md": "Every row gets the same company-wide numbers next to its own columns. Jon's NULL salary is skipped by `SUM` and `COUNT(salary)` but counted by `COUNT(*)`.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, salary,\n       SUM(salary)   OVER () AS company_payroll,\n       COUNT(*)      OVER () AS headcount,\n       COUNT(salary) OVER () AS salaries_known\nFROM employees\nORDER BY emp_id;",
+          "tsql": "SELECT name, dept, salary,\n       SUM(salary)   OVER () AS company_payroll,\n       COUNT(*)      OVER () AS headcount,\n       COUNT(salary) OVER () AS salaries_known\nFROM employees\nORDER BY emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "salary",
+              "company_payroll",
+              "headcount",
+              "salaries_known"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "Exec",
+                "250000",
+                "1125000",
+                "10",
+                "9"
+              ],
+              [
+                "Ben",
+                "Engineering",
+                "150000",
+                "1125000",
+                "10",
+                "9"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "150000",
+                "1125000",
+                "10",
+                "9"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "120000",
+                "1125000",
+                "10",
+                "9"
+              ],
+              [
+                "Eli",
+                "Engineering",
+                "95000",
+                "1125000",
+                "10",
+                "9"
+              ],
+              [
+                "Fay",
+                "Sales",
+                "110000",
+                "1125000",
+                "10",
+                "9"
+              ],
+              [
+                "Gus",
+                "Sales",
+                "80000",
+                "1125000",
+                "10",
+                "9"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "80000",
+                "1125000",
+                "10",
+                "9"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "90000",
+                "1125000",
+                "10",
+                "9"
+              ],
+              [
+                "Jon",
+                "Marketing",
+                null,
+                "1125000",
+                "10",
+                "9"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "over-partition",
+          "title": "PARTITION BY dept",
+          "explain_md": "`dept_payroll` is the same for everyone in a department; `gap_to_top` compares each person with the best-paid person in their own department (NULL for Jon, whose salary is NULL).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, salary,\n       SUM(salary) OVER (PARTITION BY dept)    AS dept_payroll,\n       salary - MAX(salary) OVER (PARTITION BY dept) AS gap_to_top\nFROM employees\nORDER BY dept, emp_id;",
+          "tsql": "SELECT name, dept, salary,\n       SUM(salary) OVER (PARTITION BY dept)    AS dept_payroll,\n       salary - MAX(salary) OVER (PARTITION BY dept) AS gap_to_top\nFROM employees\nORDER BY dept, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "salary",
+              "dept_payroll",
+              "gap_to_top"
+            ],
+            "rows": [
+              [
+                "Ben",
+                "Engineering",
+                "150000",
+                "515000",
+                "0"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "150000",
+                "515000",
+                "0"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "120000",
+                "515000",
+                "-30000"
+              ],
+              [
+                "Eli",
+                "Engineering",
+                "95000",
+                "515000",
+                "-55000"
+              ],
+              [
+                "Ana",
+                "Exec",
+                "250000",
+                "250000",
+                "0"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "90000",
+                "90000",
+                "0"
+              ],
+              [
+                "Jon",
+                "Marketing",
+                null,
+                "90000",
+                null
+              ],
+              [
+                "Fay",
+                "Sales",
+                "110000",
+                "270000",
+                "0"
+              ],
+              [
+                "Gus",
+                "Sales",
+                "80000",
+                "270000",
+                "-30000"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "80000",
+                "270000",
+                "-30000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`OVER` is mandatory: `SUM(salary)` alone is a plain aggregate and would need `GROUP BY` or collapse the table.",
+        "NULL partition values form one partition together (like GROUP BY)."
+      ]
+    },
+    {
+      "id": "order-by-in-over",
+      "heading": "ORDER BY inside OVER",
+      "body_md": "- `ORDER BY` in `OVER` orders rows **within the partition** for the function. It does **not** sort the query output.\n- Always add a final `ORDER BY` to the statement if you care about output order.\n- Ranking and offset functions (`ROW_NUMBER`, `RANK`, `LAG`, ...) require it; aggregates can do without.\n- Adding `ORDER BY` to an aggregate window silently changes its meaning: it turns a total into a running total (the default frame, see Window frames).\n- NULL is treated as the smallest value in both MySQL and SQL Server, so it comes first in `ASC` and last in `DESC`.",
+      "examples": [
+        {
+          "id": "order-row-number",
+          "title": "Numbering inside partitions",
+          "explain_md": "`seniority_in_dept` restarts at 1 for each department; `seniority_company` numbers everyone. The final `ORDER BY emp_id` decides the output order, not the windows.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, hire_date,\n       ROW_NUMBER() OVER (PARTITION BY dept ORDER BY hire_date) AS seniority_in_dept,\n       ROW_NUMBER() OVER (ORDER BY hire_date)                   AS seniority_company\nFROM employees\nORDER BY emp_id;",
+          "tsql": "SELECT name, dept, hire_date,\n       ROW_NUMBER() OVER (PARTITION BY dept ORDER BY hire_date) AS seniority_in_dept,\n       ROW_NUMBER() OVER (ORDER BY hire_date)                   AS seniority_company\nFROM employees\nORDER BY emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "hire_date",
+              "seniority_in_dept",
+              "seniority_company"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "Exec",
+                "2015-03-01",
+                "1",
+                "1"
+              ],
+              [
+                "Ben",
+                "Engineering",
+                "2018-07-15",
+                "1",
+                "3"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "2019-01-10",
+                "2",
+                "4"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "2021-05-03",
+                "3",
+                "6"
+              ],
+              [
+                "Eli",
+                "Engineering",
+                "2023-09-18",
+                "4",
+                "8"
+              ],
+              [
+                "Fay",
+                "Sales",
+                "2017-11-20",
+                "1",
+                "2"
+              ],
+              [
+                "Gus",
+                "Sales",
+                "2022-02-14",
+                "2",
+                "7"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "2024-01-08",
+                "3",
+                "9"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "2020-06-30",
+                "1",
+                "5"
+              ],
+              [
+                "Jon",
+                "Marketing",
+                "2024-04-01",
+                "2",
+                "10"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "order-not-output",
+          "title": "OVER's ORDER BY is not the output order",
+          "explain_md": "Ranks run highest salary first, yet the rows are returned alphabetically because the outer `ORDER BY` says so. Ben and Cara tie on salary; `emp_id` in the window breaks the tie so numbering is stable.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary,\n       ROW_NUMBER() OVER (ORDER BY salary DESC, emp_id) AS pay_rank\nFROM employees\nORDER BY name;",
+          "tsql": "SELECT name, salary,\n       ROW_NUMBER() OVER (ORDER BY salary DESC, emp_id) AS pay_rank\nFROM employees\nORDER BY name;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "pay_rank"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000",
+                "1"
+              ],
+              [
+                "Ben",
+                "150000",
+                "2"
+              ],
+              [
+                "Cara",
+                "150000",
+                "3"
+              ],
+              [
+                "Dev",
+                "120000",
+                "4"
+              ],
+              [
+                "Eli",
+                "95000",
+                "6"
+              ],
+              [
+                "Fay",
+                "110000",
+                "5"
+              ],
+              [
+                "Gus",
+                "80000",
+                "8"
+              ],
+              [
+                "Hal",
+                "80000",
+                "9"
+              ],
+              [
+                "Ivy",
+                "90000",
+                "7"
+              ],
+              [
+                "Jon",
+                null,
+                "10"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "order-total-vs-running",
+          "title": "Adding ORDER BY turns a total into a running total",
+          "explain_md": "Same `SUM`, same partition. Without `ORDER BY` every row shows the department total; with it, each row shows the sum up to itself.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT emp_id, name, dept, salary,\n       SUM(salary) OVER (PARTITION BY dept)                  AS dept_total,\n       SUM(salary) OVER (PARTITION BY dept ORDER BY emp_id)  AS dept_running\nFROM employees\nORDER BY dept, emp_id;",
+          "tsql": "SELECT emp_id, name, dept, salary,\n       SUM(salary) OVER (PARTITION BY dept)                  AS dept_total,\n       SUM(salary) OVER (PARTITION BY dept ORDER BY emp_id)  AS dept_running\nFROM employees\nORDER BY dept, emp_id;",
+          "expected": {
+            "columns": [
+              "emp_id",
+              "name",
+              "dept",
+              "salary",
+              "dept_total",
+              "dept_running"
+            ],
+            "rows": [
+              [
+                "2",
+                "Ben",
+                "Engineering",
+                "150000",
+                "515000",
+                "150000"
+              ],
+              [
+                "3",
+                "Cara",
+                "Engineering",
+                "150000",
+                "515000",
+                "300000"
+              ],
+              [
+                "4",
+                "Dev",
+                "Engineering",
+                "120000",
+                "515000",
+                "420000"
+              ],
+              [
+                "5",
+                "Eli",
+                "Engineering",
+                "95000",
+                "515000",
+                "515000"
+              ],
+              [
+                "1",
+                "Ana",
+                "Exec",
+                "250000",
+                "250000",
+                "250000"
+              ],
+              [
+                "9",
+                "Ivy",
+                "Marketing",
+                "90000",
+                "90000",
+                "90000"
+              ],
+              [
+                "10",
+                "Jon",
+                "Marketing",
+                null,
+                "90000",
+                "90000"
+              ],
+              [
+                "6",
+                "Fay",
+                "Sales",
+                "110000",
+                "270000",
+                "110000"
+              ],
+              [
+                "7",
+                "Gus",
+                "Sales",
+                "80000",
+                "270000",
+                "190000"
+              ],
+              [
+                "8",
+                "Hal",
+                "Sales",
+                "80000",
+                "270000",
+                "270000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Ties in the window `ORDER BY` make `ROW_NUMBER` arbitrary between the tied rows. Add a unique column (an id) as the last sort key.",
+        "A window `ORDER BY` without a unique key plus the default frame groups ties together (see Window frames)."
+      ]
+    },
+    {
+      "id": "window-vs-group-by",
+      "heading": "Window vs GROUP BY",
+      "body_md": "- `GROUP BY` **collapses** rows: one output row per group, and only grouped columns / aggregates may be selected.\n- A window function **keeps** every row and adds the group-level value as an extra column.\n- Use windows when you need the detail row *and* a group figure side by side: percent of group, difference from average, rank within group.\n- They combine: `GROUP BY` runs first, then windows run on the grouped rows (so you can window over an aggregate, e.g. `RANK() OVER (ORDER BY SUM(x) DESC)`).",
+      "examples": [
+        {
+          "id": "gb-collapse",
+          "title": "GROUP BY: 4 rows out",
+          "explain_md": "Ten employees collapse into one row per department. Individual names and salaries are gone.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept, COUNT(*) AS headcount, SUM(salary) AS payroll\nFROM employees\nGROUP BY dept\nORDER BY dept;",
+          "tsql": "SELECT dept, COUNT(*) AS headcount, SUM(salary) AS payroll\nFROM employees\nGROUP BY dept\nORDER BY dept;",
+          "expected": {
+            "columns": [
+              "dept",
+              "headcount",
+              "payroll"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "4",
+                "515000"
+              ],
+              [
+                "Exec",
+                "1",
+                "250000"
+              ],
+              [
+                "Marketing",
+                "2",
+                "90000"
+              ],
+              [
+                "Sales",
+                "3",
+                "270000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "win-keep",
+          "title": "Window: 10 rows out",
+          "explain_md": "Every employee remains, with the department payroll and their share of it alongside.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, salary,\n       SUM(salary) OVER (PARTITION BY dept) AS dept_payroll,\n       ROUND(100.0 * salary / SUM(salary) OVER (PARTITION BY dept), 1) AS pct_of_dept\nFROM employees\nORDER BY dept, emp_id;",
+          "tsql": "SELECT name, dept, salary,\n       SUM(salary) OVER (PARTITION BY dept) AS dept_payroll,\n       ROUND(100.0 * salary / SUM(salary) OVER (PARTITION BY dept), 1) AS pct_of_dept\nFROM employees\nORDER BY dept, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "salary",
+              "dept_payroll",
+              "pct_of_dept"
+            ],
+            "rows": [
+              [
+                "Ben",
+                "Engineering",
+                "150000",
+                "515000",
+                "29.1"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "150000",
+                "515000",
+                "29.1"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "120000",
+                "515000",
+                "23.3"
+              ],
+              [
+                "Eli",
+                "Engineering",
+                "95000",
+                "515000",
+                "18.4"
+              ],
+              [
+                "Ana",
+                "Exec",
+                "250000",
+                "250000",
+                "100.0"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "90000",
+                "90000",
+                "100.0"
+              ],
+              [
+                "Jon",
+                "Marketing",
+                null,
+                "90000",
+                null
+              ],
+              [
+                "Fay",
+                "Sales",
+                "110000",
+                "270000",
+                "40.7"
+              ],
+              [
+                "Gus",
+                "Sales",
+                "80000",
+                "270000",
+                "29.6"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "80000",
+                "270000",
+                "29.6"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "gb-then-window",
+          "title": "GROUP BY first, then a window on the result",
+          "explain_md": "The window sees one row per department (after grouping), so it can rank departments by their `SUM`.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept,\n       SUM(salary) AS payroll,\n       RANK() OVER (ORDER BY SUM(salary) DESC) AS payroll_rank\nFROM employees\nGROUP BY dept\nORDER BY payroll_rank, dept;",
+          "tsql": "SELECT dept,\n       SUM(salary) AS payroll,\n       RANK() OVER (ORDER BY SUM(salary) DESC) AS payroll_rank\nFROM employees\nGROUP BY dept\nORDER BY payroll_rank, dept;",
+          "expected": {
+            "columns": [
+              "dept",
+              "payroll",
+              "payroll_rank"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "515000",
+                "1"
+              ],
+              [
+                "Sales",
+                "270000",
+                "2"
+              ],
+              [
+                "Exec",
+                "250000",
+                "3"
+              ],
+              [
+                "Marketing",
+                "90000",
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "where-allowed",
+      "heading": "Where window functions are allowed",
+      "body_md": "- Allowed **only** in `SELECT` and `ORDER BY`.\n- **Not** allowed in `WHERE`, `GROUP BY`, `HAVING` or `JOIN ... ON`. Both engines raise an error.\n- Reason: windows are computed after `WHERE`/`GROUP BY`/`HAVING` (see Evaluation order), so their result does not exist yet when those clauses run.\n- To filter on a window result, compute it in a CTE (or derived table) and filter in the outer query.\n- Neither MySQL nor SQL Server has `QUALIFY` (Snowflake, BigQuery, Teradata do), so the CTE wrapper is the standard idiom.",
+      "examples": [
+        {
+          "id": "where-cte-filter",
+          "title": "Filter on a window result with a CTE",
+          "explain_md": "Latest completed order per customer: number each customer's orders newest first inside the CTE, then keep `rn = 1` outside.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH ranked AS (\n  SELECT order_id, customer_id, order_date, amount,\n         ROW_NUMBER() OVER (PARTITION BY customer_id\n                            ORDER BY order_date DESC, order_id DESC) AS rn\n  FROM orders\n  WHERE status = 'completed'\n)\nSELECT order_id, customer_id, order_date, amount\nFROM ranked\nWHERE rn = 1\nORDER BY customer_id;",
+          "tsql": "WITH ranked AS (\n  SELECT order_id, customer_id, order_date, amount,\n         ROW_NUMBER() OVER (PARTITION BY customer_id\n                            ORDER BY order_date DESC, order_id DESC) AS rn\n  FROM orders\n  WHERE status = 'completed'\n)\nSELECT order_id, customer_id, order_date, amount\nFROM ranked\nWHERE rn = 1\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "customer_id",
+              "order_date",
+              "amount"
+            ],
+            "rows": [
+              [
+                "112",
+                "1",
+                "2024-05-05",
+                "65.00"
+              ],
+              [
+                "114",
+                "2",
+                "2024-06-30",
+                "30.00"
+              ],
+              [
+                "110",
+                "3",
+                "2024-04-01",
+                "50.00"
+              ],
+              [
+                "113",
+                "4",
+                "2024-06-11",
+                "110.00"
+              ],
+              [
+                "109",
+                "5",
+                "2024-03-16",
+                "300.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "where-order-by",
+          "title": "A window function inside ORDER BY",
+          "explain_md": "Legal: sorts by each person's rank in their department first, so every department's top earner comes first, then the second-best, and so on.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, salary\nFROM employees\nORDER BY ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC, emp_id),\n         dept, emp_id;",
+          "tsql": "SELECT name, dept, salary\nFROM employees\nORDER BY ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC, emp_id),\n         dept, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ben",
+                "Engineering",
+                "150000"
+              ],
+              [
+                "Ana",
+                "Exec",
+                "250000"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "90000"
+              ],
+              [
+                "Fay",
+                "Sales",
+                "110000"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "150000"
+              ],
+              [
+                "Jon",
+                "Marketing",
+                null
+              ],
+              [
+                "Gus",
+                "Sales",
+                "80000"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "120000"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "80000"
+              ],
+              [
+                "Eli",
+                "Engineering",
+                "95000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`WHERE ROW_NUMBER() OVER (...) = 1` fails: MySQL error 3593 / SQL Server error 4108 ('Windowed functions can only appear in the SELECT or ORDER BY clauses').",
+        "Referring to a select-list alias of a window function in `WHERE` of the same query also fails; the alias is not available there either."
+      ]
+    },
+    {
+      "id": "named-window",
+      "heading": "Named WINDOW clause",
+      "body_md": "- Define a window once, reuse it by name: `func() OVER w ... WINDOW w AS (...)`.\n- Position in the query: after `HAVING`, before the final `ORDER BY`.\n- A named window can be **extended**: `OVER (w ORDER BY x)` adds an `ORDER BY` / frame to the base, as long as the base did not already have one.\n- MySQL 8.0 supports it. SQL Server supports it from **2022** (database compatibility level 160); on 2019 repeat the full `OVER (...)` text.",
+      "syntax": {
+        "mysql": "SELECT func() OVER w_name\nFROM t\n[WHERE ...] [GROUP BY ...] [HAVING ...]\nWINDOW w_name AS ([PARTITION BY ...] [ORDER BY ...] [frame])\n[ORDER BY ...]",
+        "tsql": "same (SQL Server 2022+, compat level 160)"
+      },
+      "args": [
+        {
+          "name": "w_name",
+          "meaning": "Name you choose for the window; referenced as OVER w_name or OVER (w_name ORDER BY ...)."
+        },
+        {
+          "name": "WINDOW w_name AS (...)",
+          "meaning": "The definition: same contents as an inline OVER (...). Several windows can be defined, comma separated."
+        }
+      ],
+      "examples": [
+        {
+          "id": "named-shared",
+          "title": "One window, several functions",
+          "explain_md": "`RANK` and `DENSE_RANK` share the window `w`, so the partition and order are written once.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, salary,\n       RANK()       OVER w AS rnk,\n       DENSE_RANK() OVER w AS dense_rnk\nFROM employees\nWHERE salary IS NOT NULL\nWINDOW w AS (PARTITION BY dept ORDER BY salary DESC)\nORDER BY dept, rnk, emp_id;",
+          "tsql": "SELECT name, dept, salary,\n       RANK()       OVER w AS rnk,\n       DENSE_RANK() OVER w AS dense_rnk\nFROM employees\nWHERE salary IS NOT NULL\nWINDOW w AS (PARTITION BY dept ORDER BY salary DESC)\nORDER BY dept, rnk, emp_id;",
+          "dialect_note_md": "`WINDOW` needs SQL Server 2022 (compatibility level 160+). On SQL Server 2019 write `OVER (PARTITION BY dept ORDER BY salary DESC)` in each function.",
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "salary",
+              "rnk",
+              "dense_rnk"
+            ],
+            "rows": [
+              [
+                "Ben",
+                "Engineering",
+                "150000",
+                "1",
+                "1"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "150000",
+                "1",
+                "1"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "120000",
+                "3",
+                "2"
+              ],
+              [
+                "Eli",
+                "Engineering",
+                "95000",
+                "4",
+                "3"
+              ],
+              [
+                "Ana",
+                "Exec",
+                "250000",
+                "1",
+                "1"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "90000",
+                "1",
+                "1"
+              ],
+              [
+                "Fay",
+                "Sales",
+                "110000",
+                "1",
+                "1"
+              ],
+              [
+                "Gus",
+                "Sales",
+                "80000",
+                "2",
+                "2"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "80000",
+                "2",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "named-extend",
+          "title": "Extending a named window",
+          "explain_md": "The base window only partitions. `SUM ... OVER w` therefore totals the department, while `OVER (w ORDER BY ...)` adds an ordering for `ROW_NUMBER`.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, salary,\n       SUM(salary) OVER w AS dept_payroll,\n       ROW_NUMBER() OVER (w ORDER BY salary DESC, emp_id) AS pay_rank\nFROM employees\nWINDOW w AS (PARTITION BY dept)\nORDER BY dept, pay_rank;",
+          "tsql": "SELECT name, dept, salary,\n       SUM(salary) OVER w AS dept_payroll,\n       ROW_NUMBER() OVER (w ORDER BY salary DESC, emp_id) AS pay_rank\nFROM employees\nWINDOW w AS (PARTITION BY dept)\nORDER BY dept, pay_rank;",
+          "dialect_note_md": "`WINDOW` needs SQL Server 2022 (compatibility level 160+). Earlier versions: repeat the partition in each `OVER (...)`.",
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "salary",
+              "dept_payroll",
+              "pay_rank"
+            ],
+            "rows": [
+              [
+                "Ben",
+                "Engineering",
+                "150000",
+                "515000",
+                "1"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "150000",
+                "515000",
+                "2"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "120000",
+                "515000",
+                "3"
+              ],
+              [
+                "Eli",
+                "Engineering",
+                "95000",
+                "515000",
+                "4"
+              ],
+              [
+                "Ana",
+                "Exec",
+                "250000",
+                "250000",
+                "1"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "90000",
+                "90000",
+                "1"
+              ],
+              [
+                "Jon",
+                "Marketing",
+                null,
+                "90000",
+                "2"
+              ],
+              [
+                "Fay",
+                "Sales",
+                "110000",
+                "270000",
+                "1"
+              ],
+              [
+                "Gus",
+                "Sales",
+                "80000",
+                "270000",
+                "2"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "80000",
+                "270000",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "evaluation-order",
+      "heading": "Evaluation order",
+      "body_md": "- Logical order: `FROM` / `JOIN` -> `WHERE` -> `GROUP BY` -> `HAVING` -> **window functions** -> `SELECT` list -> `DISTINCT` -> `ORDER BY` -> `LIMIT` / `TOP`.\n- Consequence 1: `WHERE` removes rows **before** windows see them, so row numbers, ranks and totals are computed on the filtered set only.\n- Consequence 2: windows see grouped rows after `GROUP BY` / `HAVING`, so they can use aggregates as input.\n- Consequence 3: `DISTINCT` and `LIMIT` apply after windows, which is why `SELECT DISTINCT` on a window column does not change the numbering.\n- If you need the window to see more rows than you show, compute it in a CTE without the filter and filter in the outer query.",
+      "examples": [
+        {
+          "id": "eval-where-first",
+          "title": "WHERE first, then rank",
+          "explain_md": "Only completed orders reach the window, so ranks run 1..n among completed orders. The two 120.00 orders tie.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, amount,\n       RANK() OVER (ORDER BY amount DESC) AS rank_among_completed\nFROM orders\nWHERE status = 'completed'\nORDER BY rank_among_completed, order_id;",
+          "tsql": "SELECT order_id, amount,\n       RANK() OVER (ORDER BY amount DESC) AS rank_among_completed\nFROM orders\nWHERE status = 'completed'\nORDER BY rank_among_completed, order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "amount",
+              "rank_among_completed"
+            ],
+            "rows": [
+              [
+                "109",
+                "300.00",
+                "1"
+              ],
+              [
+                "106",
+                "200.00",
+                "2"
+              ],
+              [
+                "101",
+                "120.00",
+                "3"
+              ],
+              [
+                "108",
+                "120.00",
+                "3"
+              ],
+              [
+                "113",
+                "110.00",
+                "5"
+              ],
+              [
+                "112",
+                "65.00",
+                "6"
+              ],
+              [
+                "104",
+                "60.00",
+                "7"
+              ],
+              [
+                "110",
+                "50.00",
+                "8"
+              ],
+              [
+                "102",
+                "45.50",
+                "9"
+              ],
+              [
+                "114",
+                "30.00",
+                "10"
+              ],
+              [
+                "105",
+                "15.00",
+                "11"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "eval-rank-then-filter",
+          "title": "Rank everything, then filter",
+          "explain_md": "Same ranking, but cancelled and refunded orders take part in the ranking before being filtered out, so the numbers have gaps (order 107, 75.25, held a rank and was then removed).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH r AS (\n  SELECT order_id, amount, status,\n         RANK() OVER (ORDER BY amount DESC) AS rank_among_all\n  FROM orders\n)\nSELECT order_id, amount, rank_among_all\nFROM r\nWHERE status = 'completed'\nORDER BY rank_among_all, order_id;",
+          "tsql": "WITH r AS (\n  SELECT order_id, amount, status,\n         RANK() OVER (ORDER BY amount DESC) AS rank_among_all\n  FROM orders\n)\nSELECT order_id, amount, rank_among_all\nFROM r\nWHERE status = 'completed'\nORDER BY rank_among_all, order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "amount",
+              "rank_among_all"
+            ],
+            "rows": [
+              [
+                "109",
+                "300.00",
+                "1"
+              ],
+              [
+                "106",
+                "200.00",
+                "2"
+              ],
+              [
+                "101",
+                "120.00",
+                "3"
+              ],
+              [
+                "108",
+                "120.00",
+                "3"
+              ],
+              [
+                "113",
+                "110.00",
+                "5"
+              ],
+              [
+                "112",
+                "65.00",
+                "9"
+              ],
+              [
+                "104",
+                "60.00",
+                "10"
+              ],
+              [
+                "110",
+                "50.00",
+                "11"
+              ],
+              [
+                "102",
+                "45.50",
+                "12"
+              ],
+              [
+                "114",
+                "30.00",
+                "13"
+              ],
+              [
+                "105",
+                "15.00",
+                "14"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    }
+  ]
+}

@@ -11,7 +11,7 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const OUT = join(ROOT, "site", "data");
+const OUT = join(ROOT, ".build", "legacy");
 
 const errors = [];
 const fail = (msg) => errors.push(msg);

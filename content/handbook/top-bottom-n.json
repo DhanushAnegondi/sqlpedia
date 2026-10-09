@@ -1,0 +1,940 @@
+{
+  "id": "top-bottom-n",
+  "title": "Top N and bottom N",
+  "group": "Window functions",
+  "order": 7,
+  "summary_md": "Pick the highest or lowest N rows overall, per group, after aggregation, or the Nth value, and know exactly what happens on ties and NULLs.",
+  "sections": [
+    {
+      "id": "top-n-overall",
+      "heading": "Top N overall",
+      "body_md": "- Sort by the measure, then cut: `ORDER BY measure DESC` + a row limiter.\n- MySQL: `LIMIT n [OFFSET skip]`. SQL Server: `TOP (n)`, or `OFFSET skip ROWS FETCH NEXT n ROWS ONLY` (needs `ORDER BY`).\n- Always add a tiebreaker column (an id). Without it, which tied row survives the cut is arbitrary.\n- `LIMIT` / `TOP` return exactly N rows, so a tie at the boundary is cut. If ties must stay, use `RANK` (see the last section).\n- NULL counts as the smallest value in both MySQL and SQL Server: `DESC` puts NULL last, `ASC` puts NULL first.",
+      "syntax": {
+        "mysql": "SELECT cols FROM t [WHERE ...] ORDER BY measure DESC, tiebreak LIMIT n [OFFSET skip]",
+        "tsql": "SELECT TOP (n) cols FROM t ORDER BY measure DESC, tiebreak\n-- or, for paging:\nSELECT cols FROM t ORDER BY measure DESC, tiebreak OFFSET skip ROWS FETCH NEXT n ROWS ONLY"
+      },
+      "args": [
+        {
+          "name": "measure DESC",
+          "meaning": "The column that defines 'top'. DESC = biggest first."
+        },
+        {
+          "name": "tiebreak",
+          "meaning": "Second sort key (usually the primary key) so the result is deterministic."
+        },
+        {
+          "name": "LIMIT n / TOP (n) / FETCH NEXT n",
+          "meaning": "How many rows to keep."
+        },
+        {
+          "name": "OFFSET skip",
+          "meaning": "How many rows to skip first. Page k of size n skips (k-1)*n."
+        }
+      ],
+      "examples": [
+        {
+          "id": "top3-salaries",
+          "title": "Three highest salaries",
+          "explain_md": "Ben and Cara tie at 150000; the `emp_id` tiebreaker decides Ben comes first. The NULL salary sorts last under DESC, so it never shows up here.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary FROM employees ORDER BY salary DESC, emp_id LIMIT 3;",
+          "tsql": "SELECT TOP (3) name, salary FROM employees ORDER BY salary DESC, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000"
+              ],
+              [
+                "Ben",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "newest-hires",
+          "title": "Three newest hires",
+          "explain_md": "Same pattern on a date column: latest date = biggest value.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, hire_date FROM employees ORDER BY hire_date DESC, emp_id LIMIT 3;",
+          "tsql": "SELECT TOP (3) name, hire_date FROM employees ORDER BY hire_date DESC, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "hire_date"
+            ],
+            "rows": [
+              [
+                "Jon",
+                "2024-04-01"
+              ],
+              [
+                "Hal",
+                "2024-01-08"
+              ],
+              [
+                "Eli",
+                "2023-09-18"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "page-two",
+          "title": "Page 2 of the salary ranking (rows 4-6)",
+          "explain_md": "Skip the first 3, take the next 3. In SQL Server `FETCH` is only legal after `OFFSET`, and both need `ORDER BY`.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary FROM employees WHERE salary IS NOT NULL ORDER BY salary DESC, emp_id LIMIT 3 OFFSET 3;",
+          "tsql": "SELECT name, salary FROM employees WHERE salary IS NOT NULL ORDER BY salary DESC, emp_id OFFSET 3 ROWS FETCH NEXT 3 ROWS ONLY;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Dev",
+                "120000"
+              ],
+              [
+                "Fay",
+                "110000"
+              ],
+              [
+                "Eli",
+                "95000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`TOP` / `LIMIT` without `ORDER BY` returns arbitrary rows, not the 'first' rows.",
+        "`OFFSET` paging gets slower the deeper you go and shifts if rows are inserted between pages."
+      ]
+    },
+    {
+      "id": "top-n-per-group",
+      "heading": "Top N per group: ROW_NUMBER vs RANK vs DENSE_RANK",
+      "body_md": "- Number the rows inside each group, then keep the rows whose number is `<= N`. A window function cannot go in `WHERE`, so wrap it in a CTE or subquery.\n- Which function you number with decides what happens on ties:\n  - `ROW_NUMBER()`: 1,2,3,4. Never ties, so you get exactly N rows per group (tiebreaker decides who).\n  - `RANK()`: 1,2,2,4. Ties share a rank and the next rank is skipped. Keeps all tied rows, so a group can return more than N.\n  - `DENSE_RANK()`: 1,2,2,3. Ties share a rank, no gap. `<= N` returns the top N distinct values.\n- Neither MySQL nor SQL Server has `QUALIFY`; the CTE-then-filter shape is the only way.",
+      "syntax": {
+        "mysql": "WITH r AS (\n  SELECT cols, ROW_NUMBER() OVER (PARTITION BY grp ORDER BY measure DESC, id) AS rn\n  FROM t\n)\nSELECT cols FROM r WHERE rn <= N",
+        "tsql": "-- identical; RANK() and DENSE_RANK() drop in for ROW_NUMBER()"
+      },
+      "args": [
+        {
+          "name": "PARTITION BY grp",
+          "meaning": "Restarts the numbering for each group (dept, region, user...)."
+        },
+        {
+          "name": "ORDER BY measure DESC",
+          "meaning": "Defines who is 'top' inside the group."
+        },
+        {
+          "name": "id (tiebreak)",
+          "meaning": "Needed with ROW_NUMBER so equal measures get a stable order. Pointless with RANK/DENSE_RANK."
+        },
+        {
+          "name": "rn <= N",
+          "meaning": "The cut. Applied in the outer query because windows cannot be filtered in the same SELECT's WHERE."
+        }
+      ],
+      "examples": [
+        {
+          "id": "rank-functions-side-by-side",
+          "title": "All three functions on the same data",
+          "explain_md": "Engineering: Ben and Cara tie at 150000. ROW_NUMBER gives 1,2; RANK gives 1,1 then jumps to 3 for Dev; DENSE_RANK gives 1,1 then 2. Sales shows the same with Gus/Hal.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept, name, salary,\n       ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC, emp_id) AS rn,\n       RANK()       OVER (PARTITION BY dept ORDER BY salary DESC) AS rnk,\n       DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS drnk\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY dept, salary DESC, emp_id;",
+          "tsql": "SELECT dept, name, salary,\n       ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC, emp_id) AS rn,\n       RANK()       OVER (PARTITION BY dept ORDER BY salary DESC) AS rnk,\n       DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS drnk\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY dept, salary DESC, emp_id;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary",
+              "rn",
+              "rnk",
+              "drnk"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "150000",
+                "1",
+                "1",
+                "1"
+              ],
+              [
+                "Engineering",
+                "Cara",
+                "150000",
+                "2",
+                "1",
+                "1"
+              ],
+              [
+                "Engineering",
+                "Dev",
+                "120000",
+                "3",
+                "3",
+                "2"
+              ],
+              [
+                "Engineering",
+                "Eli",
+                "95000",
+                "4",
+                "4",
+                "3"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000",
+                "1",
+                "1",
+                "1"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000",
+                "1",
+                "1",
+                "1"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "110000",
+                "1",
+                "1",
+                "1"
+              ],
+              [
+                "Sales",
+                "Gus",
+                "80000",
+                "2",
+                "2",
+                "2"
+              ],
+              [
+                "Sales",
+                "Hal",
+                "80000",
+                "3",
+                "2",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "top2-row-number",
+          "title": "Top 2 earners per department: exactly 2 (ROW_NUMBER)",
+          "explain_md": "Exactly two rows for every department that has two or more people. Sales keeps Gus and drops Hal only because of the `emp_id` tiebreak; an arbitrary pick between equals.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH r AS (\n  SELECT dept, name, salary,\n         ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC, emp_id) AS rn\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT dept, name, salary, rn\nFROM r\nWHERE rn <= 2\nORDER BY dept, rn;",
+          "tsql": "WITH r AS (\n  SELECT dept, name, salary,\n         ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC, emp_id) AS rn\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT dept, name, salary, rn\nFROM r\nWHERE rn <= 2\nORDER BY dept, rn;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary",
+              "rn"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "150000",
+                "1"
+              ],
+              [
+                "Engineering",
+                "Cara",
+                "150000",
+                "2"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000",
+                "1"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000",
+                "1"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "110000",
+                "1"
+              ],
+              [
+                "Sales",
+                "Gus",
+                "80000",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "top2-rank-ties",
+          "title": "Top 2 per department, keep ties (RANK)",
+          "explain_md": "Sales now returns three people: Fay is rank 1, Gus and Hal share rank 2. Engineering returns Ben and Cara (both rank 1), and Dev (rank 3) is out.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH r AS (\n  SELECT dept, name, salary,\n         RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS rnk\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT dept, name, salary, rnk\nFROM r\nWHERE rnk <= 2\nORDER BY dept, rnk, name;",
+          "tsql": "WITH r AS (\n  SELECT dept, name, salary,\n         RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS rnk\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT dept, name, salary, rnk\nFROM r\nWHERE rnk <= 2\nORDER BY dept, rnk, name;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary",
+              "rnk"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "150000",
+                "1"
+              ],
+              [
+                "Engineering",
+                "Cara",
+                "150000",
+                "1"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000",
+                "1"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000",
+                "1"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "110000",
+                "1"
+              ],
+              [
+                "Sales",
+                "Gus",
+                "80000",
+                "2"
+              ],
+              [
+                "Sales",
+                "Hal",
+                "80000",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "top2-dense-rank",
+          "title": "Top 2 distinct salary levels per department (DENSE_RANK)",
+          "explain_md": "Engineering returns Ben, Cara and Dev: the two highest *salary levels* are 150000 and 120000, and the tie at 150000 counts as one level.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH r AS (\n  SELECT dept, name, salary,\n         DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS drnk\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT dept, name, salary, drnk\nFROM r\nWHERE drnk <= 2\nORDER BY dept, drnk, name;",
+          "tsql": "WITH r AS (\n  SELECT dept, name, salary,\n         DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS drnk\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT dept, name, salary, drnk\nFROM r\nWHERE drnk <= 2\nORDER BY dept, drnk, name;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary",
+              "drnk"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "150000",
+                "1"
+              ],
+              [
+                "Engineering",
+                "Cara",
+                "150000",
+                "1"
+              ],
+              [
+                "Engineering",
+                "Dev",
+                "120000",
+                "2"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000",
+                "1"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000",
+                "1"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "110000",
+                "1"
+              ],
+              [
+                "Sales",
+                "Gus",
+                "80000",
+                "2"
+              ],
+              [
+                "Sales",
+                "Hal",
+                "80000",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Filtering on a window alias in the same SELECT's `WHERE` is an error. Compute it in a CTE/subquery and filter outside.",
+        "A NULL measure under `DESC` ranks last, but it still takes a slot if the group is small (Marketing would show Jon with a NULL salary). Filter NULLs first if they are not real data.",
+        "ROW_NUMBER without a tiebreaker is non-deterministic on ties: the same query can return different people on different runs."
+      ]
+    },
+    {
+      "id": "bottom-n",
+      "heading": "Bottom N (and the NULL trap)",
+      "body_md": "- Bottom N = flip the sort to `ASC`. Same patterns: `LIMIT`/`TOP` overall, `ROW_NUMBER`/`RANK` per group with `ORDER BY measure ASC`.\n- NULL is the smallest value in MySQL and SQL Server, so under `ASC` NULLs come first and steal the 'lowest' slots.\n- Decide what NULL means: not real data (filter with `WHERE measure IS NOT NULL`) or a value you want ranked last (sort on `CASE WHEN measure IS NULL THEN 1 ELSE 0 END, measure`).\n- `NULLS LAST` is not available in either MySQL or SQL Server; the `CASE` sort key is the portable form.",
+      "examples": [
+        {
+          "id": "lowest3-null-trap",
+          "title": "Three lowest salaries (NULL steals the first slot)",
+          "explain_md": "Jon is a contractor with NULL salary. Ascending, NULL sorts first, so 'lowest' returns a person with no salary at all.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary FROM employees ORDER BY salary, emp_id LIMIT 3;",
+          "tsql": "SELECT TOP (3) name, salary FROM employees ORDER BY salary, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Jon",
+                null
+              ],
+              [
+                "Gus",
+                "80000"
+              ],
+              [
+                "Hal",
+                "80000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "lowest3-fixed",
+          "title": "Three lowest salaries, NULLs removed",
+          "explain_md": "Gus and Hal tie at 80000 and Ivy is next at 90000. If a fourth row were wanted, Hal's tie with Gus would matter again.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary FROM employees WHERE salary IS NOT NULL ORDER BY salary, emp_id LIMIT 3;",
+          "tsql": "SELECT TOP (3) name, salary FROM employees WHERE salary IS NOT NULL ORDER BY salary, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Gus",
+                "80000"
+              ],
+              [
+                "Hal",
+                "80000"
+              ],
+              [
+                "Ivy",
+                "90000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "lowest3-nulls-last",
+          "title": "Keep NULL rows but sort them last",
+          "explain_md": "The `CASE` key is 0 for real values and 1 for NULL, so NULLs fall to the end of an ascending sort. Here it gives the same three people as filtering.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary FROM employees ORDER BY CASE WHEN salary IS NULL THEN 1 ELSE 0 END, salary, emp_id LIMIT 3;",
+          "tsql": "SELECT TOP (3) name, salary FROM employees ORDER BY CASE WHEN salary IS NULL THEN 1 ELSE 0 END, salary, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Gus",
+                "80000"
+              ],
+              [
+                "Hal",
+                "80000"
+              ],
+              [
+                "Ivy",
+                "90000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "lowest-per-dept",
+          "title": "Lowest-paid employee per department",
+          "explain_md": "ROW_NUMBER ascending, keep rn = 1. Departments with one person (Exec) return that person; Marketing returns Ivy because Jon's NULL was filtered out first.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH r AS (\n  SELECT dept, name, salary,\n         ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary, emp_id) AS rn\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT dept, name, salary\nFROM r\nWHERE rn = 1\nORDER BY dept;",
+          "tsql": "WITH r AS (\n  SELECT dept, name, salary,\n         ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary, emp_id) AS rn\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT dept, name, salary\nFROM r\nWHERE rn = 1\nORDER BY dept;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Eli",
+                "95000"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Sales",
+                "Gus",
+                "80000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Forgetting the NULL filter on bottom-N is the classic bug: the 'lowest' row is the one with no value.",
+        "Do not fake ASC by negating the column; just write `ASC`."
+      ]
+    },
+    {
+      "id": "nth-highest",
+      "heading": "Nth highest value",
+      "body_md": "- 'Second highest salary' almost always means the second highest *distinct* value, so ties must collapse: `DENSE_RANK` or `SELECT DISTINCT`.\n- `DENSE_RANK() OVER (ORDER BY x DESC) = n`: the portable, per-group-friendly answer. Returns zero rows if there is no nth value.\n- `ORDER BY x DESC LIMIT 1 OFFSET n-1` (MySQL) / `OFFSET n-1 ROWS FETCH NEXT 1 ROWS ONLY` (SQL Server) on a `SELECT DISTINCT` list: works, but zero rows again if missing.\n- Wrap either in a scalar subquery, `SELECT (subquery) AS nth`, and a missing nth value becomes a single-row NULL. That is what interviewers usually want.\n- Max trick for n = 2: `MAX(x) WHERE x < (SELECT MAX(x))`. Naturally NULL when missing; does not scale to bigger n.",
+      "syntax": {
+        "mysql": "SELECT (\n  SELECT DISTINCT x FROM t ORDER BY x DESC LIMIT 1 OFFSET n-1\n) AS nth_highest",
+        "tsql": "SELECT (\n  SELECT DISTINCT x FROM t ORDER BY x DESC OFFSET n-1 ROWS FETCH NEXT 1 ROWS ONLY\n) AS nth_highest"
+      },
+      "args": [
+        {
+          "name": "DISTINCT x",
+          "meaning": "Collapses ties so each value counts once."
+        },
+        {
+          "name": "ORDER BY x DESC",
+          "meaning": "Largest first. Required for OFFSET/FETCH in SQL Server."
+        },
+        {
+          "name": "n-1",
+          "meaning": "Rows to skip: for the 3rd highest skip 2."
+        },
+        {
+          "name": "LIMIT 1 / FETCH NEXT 1 ROWS ONLY",
+          "meaning": "Take just that one row."
+        },
+        {
+          "name": "outer SELECT (...)",
+          "meaning": "Scalar subquery: no row becomes NULL instead of an empty result."
+        }
+      ],
+      "examples": [
+        {
+          "id": "third-highest-dense-rank",
+          "title": "3rd highest salary with DENSE_RANK",
+          "explain_md": "Distinct non-NULL salaries are 250000, 150000, 120000, ... so the 3rd highest is 120000. `DISTINCT` is needed because several rows can share a rank.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT DISTINCT salary AS third_highest\nFROM (\n  SELECT salary, DENSE_RANK() OVER (ORDER BY salary DESC) AS drnk\n  FROM employees\n  WHERE salary IS NOT NULL\n) x\nWHERE drnk = 3;",
+          "tsql": "SELECT DISTINCT salary AS third_highest\nFROM (\n  SELECT salary, DENSE_RANK() OVER (ORDER BY salary DESC) AS drnk\n  FROM employees\n  WHERE salary IS NOT NULL\n) x\nWHERE drnk = 3;",
+          "expected": {
+            "columns": [
+              "third_highest"
+            ],
+            "rows": [
+              [
+                "120000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "nth-offset-null-if-missing",
+          "title": "OFFSET form, with NULL when there is no nth value",
+          "explain_md": "There are only 7 distinct salaries, so the 8th highest does not exist. The scalar-subquery wrapper turns the empty result into NULL.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT\n  (SELECT DISTINCT salary FROM employees WHERE salary IS NOT NULL\n   ORDER BY salary DESC LIMIT 1 OFFSET 2) AS third_highest,\n  (SELECT DISTINCT salary FROM employees WHERE salary IS NOT NULL\n   ORDER BY salary DESC LIMIT 1 OFFSET 7) AS eighth_highest;",
+          "tsql": "SELECT\n  (SELECT DISTINCT salary FROM employees WHERE salary IS NOT NULL\n   ORDER BY salary DESC OFFSET 2 ROWS FETCH NEXT 1 ROWS ONLY) AS third_highest,\n  (SELECT DISTINCT salary FROM employees WHERE salary IS NOT NULL\n   ORDER BY salary DESC OFFSET 7 ROWS FETCH NEXT 1 ROWS ONLY) AS eighth_highest;",
+          "expected": {
+            "columns": [
+              "third_highest",
+              "eighth_highest"
+            ],
+            "rows": [
+              [
+                "120000",
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "second-highest-max-trick",
+          "title": "2nd highest with the MAX trick",
+          "explain_md": "Take the biggest value that is smaller than the overall biggest. `MAX` over zero rows is NULL, so a missing value needs no wrapper.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT MAX(salary) AS second_highest FROM employees WHERE salary < (SELECT MAX(salary) FROM employees);",
+          "tsql": "SELECT MAX(salary) AS second_highest FROM employees WHERE salary < (SELECT MAX(salary) FROM employees);",
+          "expected": {
+            "columns": [
+              "second_highest"
+            ],
+            "rows": [
+              [
+                "150000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "second-highest-per-dept",
+          "title": "2nd highest salary per department (NULL where missing)",
+          "explain_md": "Rank inside each department, then pick rank 2 with `MAX(CASE ...)`. Groups with fewer than two distinct salaries (Exec, Marketing) still appear, with NULL.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH r AS (\n  SELECT dept, salary,\n         DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS drnk\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT e.dept,\n       MAX(CASE WHEN r.drnk = 2 THEN r.salary END) AS second_highest\nFROM (SELECT DISTINCT dept FROM employees) e\nLEFT JOIN r ON r.dept = e.dept\nGROUP BY e.dept\nORDER BY e.dept;",
+          "tsql": "WITH r AS (\n  SELECT dept, salary,\n         DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS drnk\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT e.dept,\n       MAX(CASE WHEN r.drnk = 2 THEN r.salary END) AS second_highest\nFROM (SELECT DISTINCT dept FROM employees) e\nLEFT JOIN r ON r.dept = e.dept\nGROUP BY e.dept\nORDER BY e.dept;",
+          "expected": {
+            "columns": [
+              "dept",
+              "second_highest"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "120000"
+              ],
+              [
+                "Exec",
+                null
+              ],
+              [
+                "Marketing",
+                null
+              ],
+              [
+                "Sales",
+                "80000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`LIMIT 1 OFFSET 1` without `DISTINCT` returns the 2nd *row*: with Ben and Cara tied at 150000 it returns 150000, the same as the highest tie, not the 2nd highest value.",
+        "`DENSE_RANK` = nth distinct value; `ROW_NUMBER` = nth row; `RANK` skips numbers after a tie and may never equal n. Say which one you mean.",
+        "MySQL's `LIMIT` does not accept an expression like `n-1`; compute the number first or hard-code it."
+      ]
+    },
+    {
+      "id": "top-n-after-aggregation",
+      "heading": "Top N after aggregation",
+      "body_md": "- Two stages: `GROUP BY` to get one row per entity with its total, then rank/limit those totals.\n- Overall top N entities: aggregate, `ORDER BY total DESC, tiebreak`, `LIMIT`/`TOP`.\n- Top N entities per group: aggregate in a CTE, then `RANK() OVER (PARTITION BY grp ORDER BY total DESC)` in a second step and filter.\n- Filter rows that should not count (cancelled, refunded) in the inner `WHERE`, before totals are computed.",
+      "examples": [
+        {
+          "id": "top-cities-by-spend",
+          "title": "Top 2 cities by completed spend",
+          "explain_md": "Join, filter to completed orders, sum per city, then cut to 2. Austin sums several customers' completed orders. NULL city (Olga) is excluded here.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.city, SUM(o.amount) AS total_spend\nFROM orders o\nJOIN customers c ON c.customer_id = o.customer_id\nWHERE o.status = 'completed' AND c.city IS NOT NULL\nGROUP BY c.city\nORDER BY total_spend DESC, c.city\nLIMIT 2;",
+          "tsql": "SELECT TOP (2) c.city, SUM(o.amount) AS total_spend\nFROM orders o\nJOIN customers c ON c.customer_id = o.customer_id\nWHERE o.status = 'completed' AND c.city IS NOT NULL\nGROUP BY c.city\nORDER BY total_spend DESC, c.city;",
+          "expected": {
+            "columns": [
+              "city",
+              "total_spend"
+            ],
+            "rows": [
+              [
+                "Austin",
+                "415.00"
+              ],
+              [
+                "Denver",
+                "300.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "top-customer-per-month",
+          "title": "Biggest-spending customer in each month",
+          "explain_md": "Stage 1 totals completed spend per customer per month. Stage 2 ranks inside each month and keeps rank 1. RANK keeps a tie if two customers spend the same.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH monthly AS (\n  SELECT MONTH(order_date) AS mo, customer_id, SUM(amount) AS spend\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY MONTH(order_date), customer_id\n), ranked AS (\n  SELECT mo, customer_id, spend,\n         RANK() OVER (PARTITION BY mo ORDER BY spend DESC) AS rnk\n  FROM monthly\n)\nSELECT mo, customer_id, spend\nFROM ranked\nWHERE rnk = 1\nORDER BY mo, customer_id;",
+          "tsql": "WITH monthly AS (\n  SELECT MONTH(order_date) AS mo, customer_id, SUM(amount) AS spend\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY MONTH(order_date), customer_id\n), ranked AS (\n  SELECT mo, customer_id, spend,\n         RANK() OVER (PARTITION BY mo ORDER BY spend DESC) AS rnk\n  FROM monthly\n)\nSELECT mo, customer_id, spend\nFROM ranked\nWHERE rnk = 1\nORDER BY mo, customer_id;",
+          "expected": {
+            "columns": [
+              "mo",
+              "customer_id",
+              "spend"
+            ],
+            "rows": [
+              [
+                "1",
+                "1",
+                "120.00"
+              ],
+              [
+                "2",
+                "3",
+                "200.00"
+              ],
+              [
+                "3",
+                "5",
+                "300.00"
+              ],
+              [
+                "4",
+                "3",
+                "50.00"
+              ],
+              [
+                "5",
+                "1",
+                "65.00"
+              ],
+              [
+                "6",
+                "4",
+                "110.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "rank-over-aggregate-inline",
+          "title": "Window over an aggregate in one SELECT",
+          "explain_md": "A window function runs after `GROUP BY`, so it can rank the sums directly: `RANK() OVER (ORDER BY SUM(...) DESC)`. You still need an outer query to filter on the rank.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, total_spend, rnk\nFROM (\n  SELECT customer_id,\n         SUM(amount) AS total_spend,\n         RANK() OVER (ORDER BY SUM(amount) DESC) AS rnk\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY customer_id\n) t\nWHERE rnk <= 3\nORDER BY rnk, customer_id;",
+          "tsql": "SELECT customer_id, total_spend, rnk\nFROM (\n  SELECT customer_id,\n         SUM(amount) AS total_spend,\n         RANK() OVER (ORDER BY SUM(amount) DESC) AS rnk\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY customer_id\n) t\nWHERE rnk <= 3\nORDER BY rnk, customer_id;",
+          "expected": {
+            "columns": [
+              "customer_id",
+              "total_spend",
+              "rnk"
+            ],
+            "rows": [
+              [
+                "1",
+                "305.00",
+                "1"
+              ],
+              [
+                "5",
+                "300.00",
+                "2"
+              ],
+              [
+                "3",
+                "250.00",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Putting the status filter in the outer query instead of the inner one ranks cancelled money too.",
+        "`GROUP BY MONTH(order_date)` merges the same month of different years; group by year and month (or a month-start date) on multi-year data."
+      ]
+    },
+    {
+      "id": "with-ties",
+      "heading": "Keeping ties: TOP ... WITH TIES",
+      "body_md": "- SQL Server has a built-in: `SELECT TOP (n) WITH TIES ... ORDER BY measure DESC` returns the top n rows plus every row tied with the last one.\n- It needs `ORDER BY`, cannot be combined with `OFFSET`, and ties are judged on the full `ORDER BY` list.\n- MySQL has no equivalent. The portable form is `RANK() OVER (ORDER BY measure DESC) <= n`, which is what the examples below run (the in-browser engine cannot execute `WITH TIES`).\n- Rule of thumb: `TOP n WITH TIES` is about the same as `RANK() <= n`.",
+      "syntax": {
+        "mysql": "-- no WITH TIES in MySQL; use:\nWITH r AS (SELECT cols, RANK() OVER (ORDER BY measure DESC) AS rnk FROM t)\nSELECT cols FROM r WHERE rnk <= n",
+        "tsql": "SELECT TOP (n) WITH TIES cols FROM t ORDER BY measure DESC"
+      },
+      "args": [
+        {
+          "name": "TOP (n) WITH TIES",
+          "meaning": "Keep n rows plus all rows equal to the n-th row on the ORDER BY key."
+        },
+        {
+          "name": "RANK() <= n",
+          "meaning": "Portable equivalent: ties share a rank, so every tied row passes the filter."
+        }
+      ],
+      "examples": [
+        {
+          "id": "top3-salaries-with-ties",
+          "title": "Top 3 salaries, ties kept",
+          "explain_md": "Ana is rank 1, Ben and Cara share rank 2, Dev is rank 4. `rnk <= 3` returns Ana, Ben, Cara; Dev (4th place) is excluded.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH r AS (\n  SELECT name, salary, RANK() OVER (ORDER BY salary DESC) AS rnk\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT name, salary, rnk\nFROM r\nWHERE rnk <= 3\nORDER BY rnk, name;",
+          "tsql": "WITH r AS (\n  SELECT name, salary, RANK() OVER (ORDER BY salary DESC) AS rnk\n  FROM employees\n  WHERE salary IS NOT NULL\n)\nSELECT name, salary, rnk\nFROM r\nWHERE rnk <= 3\nORDER BY rnk, name;",
+          "dialect_note_md": "SQL Server shortcut for this query (not run in the browser): `SELECT TOP (3) WITH TIES name, salary FROM employees WHERE salary IS NOT NULL ORDER BY salary DESC;`. TOP counts rows by position, then extends over rows equal to the last one, so here it also returns Ana, Ben, Cara.",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "rnk"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000",
+                "1"
+              ],
+              [
+                "Ben",
+                "150000",
+                "2"
+              ],
+              [
+                "Cara",
+                "150000",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "top3-orders-with-ties",
+          "title": "Top 3 completed order amounts, ties kept",
+          "explain_md": "Two orders are exactly 120.00. The amounts are 300, 200, 120, 120: asking for the top 3 returns four rows because rank 3 is shared.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH r AS (\n  SELECT order_id, amount, RANK() OVER (ORDER BY amount DESC) AS rnk\n  FROM orders\n  WHERE status = 'completed'\n)\nSELECT order_id, amount, rnk\nFROM r\nWHERE rnk <= 3\nORDER BY rnk, order_id;",
+          "tsql": "WITH r AS (\n  SELECT order_id, amount, RANK() OVER (ORDER BY amount DESC) AS rnk\n  FROM orders\n  WHERE status = 'completed'\n)\nSELECT order_id, amount, rnk\nFROM r\nWHERE rnk <= 3\nORDER BY rnk, order_id;",
+          "dialect_note_md": "SQL Server shortcut (not run in the browser): `SELECT TOP (3) WITH TIES order_id, amount FROM orders WHERE status = 'completed' ORDER BY amount DESC;` returns the same four rows.",
+          "expected": {
+            "columns": [
+              "order_id",
+              "amount",
+              "rnk"
+            ],
+            "rows": [
+              [
+                "109",
+                "300.00",
+                "1"
+              ],
+              [
+                "106",
+                "200.00",
+                "2"
+              ],
+              [
+                "101",
+                "120.00",
+                "3"
+              ],
+              [
+                "108",
+                "120.00",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`TOP (n) WITH TIES` without `ORDER BY` is a syntax error.",
+        "Ties are evaluated on every column in the `ORDER BY`, so adding an id tiebreaker removes the ties and turns it back into a plain TOP."
+      ]
+    }
+  ]
+}

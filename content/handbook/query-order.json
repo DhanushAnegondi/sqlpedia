@@ -1,0 +1,492 @@
+{
+  "id": "query-order",
+  "title": "How a query runs",
+  "group": "Foundations",
+  "order": 1,
+  "summary_md": "Written order is not execution order. Know the logical order and you can predict where aliases, aggregates and window functions are allowed, and write any query in a fixed sequence.",
+  "sections": [
+    {
+      "id": "written-vs-logical",
+      "heading": "Written order vs logical order",
+      "body_md": "You *write* SELECT first, but the engine *evaluates* it late. Most \"why can't I use X here?\" errors come from this gap.\n\n| Step | Clause | What it does |\n|---|---|---|\n| 1 | `FROM` / `JOIN` / `ON` | Build the row set (joins happen here) |\n| 2 | `WHERE` | Filter individual rows (no aggregates, no window functions) |\n| 3 | `GROUP BY` | Collapse rows into groups |\n| 4 | `HAVING` | Filter groups (aggregates allowed) |\n| 5 | `SELECT` | Compute output expressions and aliases |\n| 6 | window functions | Evaluated over the rows that survived steps 1-4 (they live in SELECT / ORDER BY) |\n| 7 | `DISTINCT` | Drop duplicate output rows |\n| 8 | `ORDER BY` | Sort (the one clause that sees SELECT aliases in every dialect) |\n| 9 | `LIMIT` / `TOP` / `OFFSET-FETCH` | Cut the sorted result |\n\n- Anything a step needs must be produced by an earlier step.\n- Row-level logic goes in `WHERE`; group-level logic goes in `HAVING`.\n- This is the *logical* model; the optimizer may reorder physical work as long as the result is identical.",
+      "examples": [
+        {
+          "id": "all-clauses",
+          "title": "Every clause in one query",
+          "explain_md": "Read it in logical order: FROM, WHERE (hired since 2020), GROUP BY dept, HAVING (2+ people), SELECT, ORDER BY, LIMIT. Marketing's AVG ignores Jon's NULL salary, so it is 90000, not 45000.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept,\n       COUNT(*)    AS headcount,\n       AVG(salary) AS avg_salary\nFROM employees\nWHERE hire_date >= '2020-01-01'\nGROUP BY dept\nHAVING COUNT(*) >= 2\nORDER BY avg_salary DESC, dept\nLIMIT 5;",
+          "tsql": "SELECT TOP 5 dept,\n       COUNT(*)    AS headcount,\n       AVG(salary) AS avg_salary\nFROM employees\nWHERE hire_date >= '2020-01-01'\nGROUP BY dept\nHAVING COUNT(*) >= 2\nORDER BY avg_salary DESC, dept;",
+          "dialect_note_md": "T-SQL puts `TOP n` right after SELECT; there is no LIMIT. `AVG(int)` in SQL Server returns an int (truncated), so averages of whole-number salaries can differ from MySQL's decimal result; use `AVG(salary * 1.0)` when it matters.",
+          "expected": {
+            "columns": [
+              "dept",
+              "headcount",
+              "avg_salary"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "2",
+                "107500.0000"
+              ],
+              [
+                "Marketing",
+                "2",
+                "90000.0000"
+              ],
+              [
+                "Sales",
+                "2",
+                "80000.0000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "where-before-group",
+          "title": "WHERE shrinks rows before grouping",
+          "explain_md": "The cancelled and refunded orders are removed first, so they never reach COUNT or SUM.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id,\n       COUNT(*)    AS completed_orders,\n       SUM(amount) AS completed_total\nFROM orders\nWHERE status = 'completed'\nGROUP BY customer_id\nORDER BY customer_id;",
+          "tsql": "SELECT customer_id,\n       COUNT(*)    AS completed_orders,\n       SUM(amount) AS completed_total\nFROM orders\nWHERE status = 'completed'\nGROUP BY customer_id\nORDER BY customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "completed_orders",
+              "completed_total"
+            ],
+            "rows": [
+              [
+                "1",
+                "3",
+                "305.00"
+              ],
+              [
+                "2",
+                "4",
+                "150.50"
+              ],
+              [
+                "3",
+                "2",
+                "250.00"
+              ],
+              [
+                "4",
+                "1",
+                "110.00"
+              ],
+              [
+                "5",
+                "1",
+                "300.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`SELECT DISTINCT` runs before `ORDER BY`: in T-SQL every ORDER BY expression must appear in the SELECT list; MySQL is looser.",
+        "`LIMIT`/`TOP` without a full `ORDER BY` returns an arbitrary subset. Break ties on an id."
+      ]
+    },
+    {
+      "id": "aliases",
+      "heading": "Where a SELECT alias can and cannot be used",
+      "body_md": "An alias is created in step 5 (SELECT), so earlier clauses cannot see it.\n\n| Clause | MySQL | SQL Server |\n|---|---|---|\n| `WHERE` | no | no |\n| `GROUP BY` | yes (extension) | no - repeat the expression |\n| `HAVING` | yes (extension) | no - repeat the expression |\n| `ORDER BY` | yes | yes |\n| Outer query / CTE | yes | yes |\n\n- Portable habit: repeat the expression in GROUP BY / HAVING, or compute it once in a derived table / CTE and filter outside.\n- ORDER BY may also use column positions (`ORDER BY 2`), but names are safer.",
+      "examples": [
+        {
+          "id": "alias-order-by",
+          "title": "Alias in ORDER BY works everywhere",
+          "explain_md": "`annual` exists by the time ORDER BY runs.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary * 12 AS annual\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY annual DESC, emp_id\nLIMIT 4;",
+          "tsql": "SELECT TOP 4 name, salary * 12 AS annual\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY annual DESC, emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "annual"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "3000000"
+              ],
+              [
+                "Ben",
+                "1800000"
+              ],
+              [
+                "Cara",
+                "1800000"
+              ],
+              [
+                "Dev",
+                "1440000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "alias-group-by",
+          "title": "Alias in GROUP BY / HAVING: MySQL only",
+          "explain_md": "MySQL lets you group and filter by the alias `mth`. In SQL Server, repeat the expression.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT MONTH(order_date) AS mth, COUNT(*) AS n\nFROM orders\nGROUP BY mth\nHAVING n >= 3\nORDER BY mth;",
+          "tsql": "SELECT MONTH(order_date) AS mth, COUNT(*) AS n\nFROM orders\nGROUP BY MONTH(order_date)\nHAVING COUNT(*) >= 3\nORDER BY mth;",
+          "dialect_note_md": "MySQL accepts `GROUP BY mth` and `HAVING n >= 3`. SQL Server raises 'Invalid column name' for both; repeat `MONTH(order_date)` and `COUNT(*)`.",
+          "expected": {
+            "columns": [
+              "mth",
+              "n"
+            ],
+            "rows": [
+              [
+                "2",
+                "4"
+              ],
+              [
+                "3",
+                "3"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "alias-derived",
+          "title": "Portable way to filter on a computed column",
+          "explain_md": "Compute in a derived table, filter outside. Works in every dialect (and with a CTE).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT emp_id, name, annual\nFROM (\n  SELECT emp_id, name, salary * 12 AS annual\n  FROM employees\n) AS e\nWHERE annual > 1200000\nORDER BY annual DESC, emp_id;",
+          "tsql": "SELECT emp_id, name, annual\nFROM (\n  SELECT emp_id, name, salary * 12 AS annual\n  FROM employees\n) AS e\nWHERE annual > 1200000\nORDER BY annual DESC, emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "emp_id",
+              "name",
+              "annual"
+            ],
+            "rows": [
+              [
+                "1",
+                "Ana",
+                "3000000"
+              ],
+              [
+                "2",
+                "Ben",
+                "1800000"
+              ],
+              [
+                "3",
+                "Cara",
+                "1800000"
+              ],
+              [
+                "4",
+                "Dev",
+                "1440000"
+              ],
+              [
+                "6",
+                "Fay",
+                "1320000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`WHERE annual > 1200000` directly on the base query fails in both dialects: WHERE runs before SELECT.",
+        "In MySQL, if an alias shares a name with a real column, GROUP BY / HAVING prefers the column. Avoid aliases that shadow columns."
+      ]
+    },
+    {
+      "id": "where-vs-having",
+      "heading": "WHERE vs HAVING, and where aggregates may appear",
+      "body_md": "- `WHERE` filters **rows** before grouping; it cannot contain aggregates (they do not exist yet).\n- `HAVING` filters **groups** after aggregation; it can contain aggregates.\n- Put every condition that does not need an aggregate in `WHERE` - it shrinks the data before grouping.\n- Aggregates are legal in: `SELECT`, `HAVING`, `ORDER BY`. Illegal in: `WHERE`, `GROUP BY`, `ON`.\n- To compare a row to an aggregate of the whole table, use a subquery or window function, not WHERE with an aggregate.",
+      "examples": [
+        {
+          "id": "having-sum",
+          "title": "Filter groups with HAVING",
+          "explain_md": "Status filter is row-level (WHERE); the spend threshold is group-level (HAVING).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT customer_id, SUM(amount) AS spend\nFROM orders\nWHERE status = 'completed'\nGROUP BY customer_id\nHAVING SUM(amount) > 150\nORDER BY spend DESC, customer_id;",
+          "tsql": "SELECT customer_id, SUM(amount) AS spend\nFROM orders\nWHERE status = 'completed'\nGROUP BY customer_id\nHAVING SUM(amount) > 150\nORDER BY spend DESC, customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "spend"
+            ],
+            "rows": [
+              [
+                "1",
+                "305.00"
+              ],
+              [
+                "5",
+                "300.00"
+              ],
+              [
+                "3",
+                "250.00"
+              ],
+              [
+                "2",
+                "150.50"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "agg-vs-subquery",
+          "title": "Rows above the overall average",
+          "explain_md": "An aggregate cannot sit in WHERE, so compute it in a scalar subquery. AVG ignores Jon's NULL salary; Jon's NULL also fails the comparison, so he is excluded.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary\nFROM employees\nWHERE salary > (SELECT AVG(salary) FROM employees)\nORDER BY salary DESC, emp_id;",
+          "tsql": "SELECT name, salary\nFROM employees\nWHERE salary > (SELECT AVG(salary) FROM employees)\nORDER BY salary DESC, emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000"
+              ],
+              [
+                "Ben",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`WHERE COUNT(*) > 1` is always an error. Move it to HAVING.",
+        "HAVING without GROUP BY treats the whole table as one group - legal but rare."
+      ]
+    },
+    {
+      "id": "window-in-where",
+      "heading": "Why you cannot filter a window function in WHERE",
+      "body_md": "Window functions are evaluated in step 6, after WHERE, GROUP BY and HAVING. WHERE has already run.\n\n- To filter on a window result (top-N per group, dedupe by `ROW_NUMBER`), compute it in a CTE / derived table, then filter in the outer query.\n- Window functions *can* wrap aggregates, because GROUP BY ran first: `RANK() OVER (ORDER BY SUM(x) DESC)`.\n- MySQL and SQL Server have no `QUALIFY` clause.",
+      "syntax": {
+        "mysql": "ROW_NUMBER() OVER (PARTITION BY p ORDER BY o [DESC])",
+        "tsql": "ROW_NUMBER() OVER (PARTITION BY p ORDER BY o [DESC])"
+      },
+      "args": [
+        {
+          "name": "PARTITION BY p",
+          "meaning": "Restart numbering for each distinct value of p (like GROUP BY, but rows are kept)."
+        },
+        {
+          "name": "ORDER BY o",
+          "meaning": "Order inside each partition that decides 1, 2, 3...; add an id as final tiebreak."
+        },
+        {
+          "name": "rn = 1 (outer WHERE)",
+          "meaning": "Filter applied one query level up, after the window has been computed."
+        }
+      ],
+      "examples": [
+        {
+          "id": "top-per-dept",
+          "title": "Highest paid per department (CTE then filter)",
+          "explain_md": "`rn = 1` cannot be written in the same SELECT as the ROW_NUMBER. The tiebreak `emp_id` makes the winner deterministic (Ben beats Cara in Engineering).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH ranked AS (\n  SELECT dept, name, salary,\n         ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC, emp_id) AS rn\n  FROM employees\n)\nSELECT dept, name, salary\nFROM ranked\nWHERE rn = 1\nORDER BY dept;",
+          "tsql": "WITH ranked AS (\n  SELECT dept, name, salary,\n         ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC, emp_id) AS rn\n  FROM employees\n)\nSELECT dept, name, salary\nFROM ranked\nWHERE rn = 1\nORDER BY dept;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "150000"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "110000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "window-over-agg",
+          "title": "Window over an aggregate",
+          "explain_md": "GROUP BY produces one row per dept first; RANK then runs over those grouped rows.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT dept,\n       SUM(salary) AS payroll,\n       RANK() OVER (ORDER BY SUM(salary) DESC) AS payroll_rank\nFROM employees\nGROUP BY dept\nORDER BY payroll_rank, dept;",
+          "tsql": "SELECT dept,\n       SUM(salary) AS payroll,\n       RANK() OVER (ORDER BY SUM(salary) DESC) AS payroll_rank\nFROM employees\nGROUP BY dept\nORDER BY payroll_rank, dept;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "dept",
+              "payroll",
+              "payroll_rank"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "515000",
+                "1"
+              ],
+              [
+                "Sales",
+                "270000",
+                "2"
+              ],
+              [
+                "Exec",
+                "250000",
+                "3"
+              ],
+              [
+                "Marketing",
+                "90000",
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`WHERE ROW_NUMBER() OVER (...) = 1` is a syntax error in both dialects."
+      ]
+    },
+    {
+      "id": "recipe",
+      "heading": "A recipe for writing any query",
+      "body_md": "1. **Grain first.** Say aloud what one output row represents (\"one row per customer\"). That decides GROUP BY.\n2. **FROM / JOIN.** Pick the tables that hold the columns. Check each join's cardinality: does it multiply rows? (Fan-out is the #1 silent bug.)\n3. **WHERE.** Row-level filters (status, dates) go here. Beware filters on the right side of a LEFT JOIN.\n4. **GROUP BY.** The grain from step 1; every non-aggregated SELECT column belongs here.\n5. **HAVING.** Group-level conditions on aggregates.\n6. **Window functions / CTE.** Rank, running totals, top-N: wrap and filter outside.\n7. **Final shape.** SELECT only requested columns with exact aliases, then `ORDER BY` (fully ordered, with an id tiebreak) and `LIMIT`/`TOP`.\n8. **Sanity-check.** Row count equals expected grain? Totals match a simple `SELECT SUM(...)`? NULLs handled?",
+      "examples": [
+        {
+          "id": "recipe-worked",
+          "title": "Worked: completed spend per customer, 2+ orders",
+          "explain_md": "Grain = one row per customer. Join orders to customers, filter completed rows, group by customer, keep groups with 2+ orders, order by spend. Quinn (customer 5) has only one completed order so is dropped.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id,\n       c.name,\n       COUNT(*)      AS orders,\n       SUM(o.amount) AS spend\nFROM customers AS c\nJOIN orders    AS o ON o.customer_id = c.customer_id\nWHERE o.status = 'completed'\nGROUP BY c.customer_id, c.name\nHAVING COUNT(*) >= 2\nORDER BY spend DESC, c.customer_id;",
+          "tsql": "SELECT c.customer_id,\n       c.name,\n       COUNT(*)      AS orders,\n       SUM(o.amount) AS spend\nFROM customers AS c\nJOIN orders    AS o ON o.customer_id = c.customer_id\nWHERE o.status = 'completed'\nGROUP BY c.customer_id, c.name\nHAVING COUNT(*) >= 2\nORDER BY spend DESC, c.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "name",
+              "orders",
+              "spend"
+            ],
+            "rows": [
+              [
+                "1",
+                "Maya Lopez",
+                "3",
+                "305.00"
+              ],
+              [
+                "3",
+                "Olga Petrova",
+                "2",
+                "250.00"
+              ],
+              [
+                "2",
+                "Noah Kim",
+                "4",
+                "150.50"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "grain-check",
+          "title": "Grain check after a join",
+          "explain_md": "Rows per key after the join tell you whether it fanned out. Run this before trusting SUMs.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id, COUNT(*) AS rows_after_join\nFROM customers AS c\nLEFT JOIN orders AS o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.customer_id, COUNT(*) AS rows_after_join\nFROM customers AS c\nLEFT JOIN orders AS o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id\nORDER BY c.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "rows_after_join"
+            ],
+            "rows": [
+              [
+                "1",
+                "4"
+              ],
+              [
+                "2",
+                "4"
+              ],
+              [
+                "3",
+                "2"
+              ],
+              [
+                "4",
+                "2"
+              ],
+              [
+                "5",
+                "2"
+              ],
+              [
+                "6",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    }
+  ]
+}

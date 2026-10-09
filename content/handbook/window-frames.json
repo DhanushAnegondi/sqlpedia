@@ -1,0 +1,872 @@
+{
+  "id": "window-frames",
+  "title": "Window frames",
+  "group": "Window functions",
+  "order": 2,
+  "summary_md": "Control exactly which rows an aggregate or value function sees: ROWS vs RANGE, the default frame, UNBOUNDED / n PRECEDING / FOLLOWING, and the LAST_VALUE trap.",
+  "sections": [
+    {
+      "id": "frame-syntax",
+      "heading": "Frame clause syntax",
+      "body_md": "- The **frame** is the slice of the partition the function actually looks at for the current row.\n- Form: `{ROWS | RANGE} BETWEEN <start> AND <end>`. Start must not come after end.\n- Shorthand: `ROWS <start>` means `BETWEEN <start> AND CURRENT ROW` (e.g. `ROWS UNBOUNDED PRECEDING`, `ROWS 2 PRECEDING`).\n- Frames matter for aggregates and `FIRST_VALUE` / `LAST_VALUE` / `NTH_VALUE`. Ranking functions, `LAG`, `LEAD`, `NTILE` ignore the frame.\n- Needs an `ORDER BY` in the window to be meaningful.\n- Neither MySQL nor SQL Server supports `EXCLUDE CURRENT ROW` / `GROUPS`.",
+      "syntax": {
+        "mysql": "func(expr) OVER (\n  [PARTITION BY ...]\n  ORDER BY ...\n  {ROWS | RANGE} BETWEEN <start> AND <end>\n)\n-- <start>/<end>: UNBOUNDED PRECEDING | n PRECEDING | CURRENT ROW | n FOLLOWING | UNBOUNDED FOLLOWING",
+        "tsql": "func(expr) OVER (\n  [PARTITION BY ...]\n  ORDER BY ...\n  {ROWS | RANGE} BETWEEN <start> AND <end>\n)\n-- <start>/<end>: UNBOUNDED PRECEDING | n PRECEDING | CURRENT ROW | n FOLLOWING | UNBOUNDED FOLLOWING"
+      },
+      "args": [
+        {
+          "name": "ROWS | RANGE",
+          "meaning": "ROWS counts physical rows around the current row. RANGE works on values of the ORDER BY column: rows with the same value (peers) are treated as one unit."
+        },
+        {
+          "name": "UNBOUNDED PRECEDING",
+          "meaning": "Frame starts at the first row of the partition."
+        },
+        {
+          "name": "n PRECEDING",
+          "meaning": "Frame starts n rows before the current row (ROWS), or n units of the ORDER BY value before it (RANGE, MySQL only)."
+        },
+        {
+          "name": "CURRENT ROW",
+          "meaning": "Frame boundary at the current row (with RANGE: including all its peers)."
+        },
+        {
+          "name": "n FOLLOWING",
+          "meaning": "Frame ends n rows after the current row."
+        },
+        {
+          "name": "UNBOUNDED FOLLOWING",
+          "meaning": "Frame ends at the last row of the partition."
+        }
+      ],
+      "examples": [
+        {
+          "id": "frame-size",
+          "title": "See the frame: count the rows in it",
+          "explain_md": "`COUNT(*)` over the same frame shows how many rows each sum covers. The first two rows have a partial frame because there are no earlier rows.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date, revenue,\n       COUNT(*)     OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS rows_in_frame,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS sum_3_rows\nFROM daily_sales\nWHERE region = 'East' AND sale_date <= '2024-03-06'\nORDER BY sale_date;",
+          "tsql": "SELECT sale_date, revenue,\n       COUNT(*)     OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS rows_in_frame,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS sum_3_rows\nFROM daily_sales\nWHERE region = 'East' AND sale_date <= '2024-03-06'\nORDER BY sale_date;",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "revenue",
+              "rows_in_frame",
+              "sum_3_rows"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "100.00",
+                "1",
+                "100.00"
+              ],
+              [
+                "2024-03-02",
+                "120.00",
+                "2",
+                "220.00"
+              ],
+              [
+                "2024-03-03",
+                "90.00",
+                "3",
+                "310.00"
+              ],
+              [
+                "2024-03-04",
+                "150.00",
+                "3",
+                "360.00"
+              ],
+              [
+                "2024-03-05",
+                "110.00",
+                "3",
+                "350.00"
+              ],
+              [
+                "2024-03-06",
+                "130.00",
+                "3",
+                "390.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "frame-directions",
+          "title": "Behind, centred, ahead",
+          "explain_md": "Same data, three frame shapes. `centred` = previous + current + next. `next_2` = the two rows after (current excluded). `prev_2` = the two rows before (current excluded); NULL where the frame is empty.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date, revenue,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)   AS centred,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING)   AS next_2,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING)   AS prev_2\nFROM daily_sales\nWHERE region = 'East' AND sale_date <= '2024-03-06'\nORDER BY sale_date;",
+          "tsql": "SELECT sale_date, revenue,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)   AS centred,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING)   AS next_2,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING)   AS prev_2\nFROM daily_sales\nWHERE region = 'East' AND sale_date <= '2024-03-06'\nORDER BY sale_date;",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "revenue",
+              "centred",
+              "next_2",
+              "prev_2"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "100.00",
+                "220.00",
+                "210.00",
+                null
+              ],
+              [
+                "2024-03-02",
+                "120.00",
+                "310.00",
+                "240.00",
+                "100.00"
+              ],
+              [
+                "2024-03-03",
+                "90.00",
+                "360.00",
+                "260.00",
+                "220.00"
+              ],
+              [
+                "2024-03-04",
+                "150.00",
+                "350.00",
+                "240.00",
+                "210.00"
+              ],
+              [
+                "2024-03-05",
+                "110.00",
+                "390.00",
+                "130.00",
+                "240.00"
+              ],
+              [
+                "2024-03-06",
+                "130.00",
+                "240.00",
+                null,
+                "260.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Sorting is by row position, so a frame of '7 rows' is not '7 days' when dates are missing (see Rolling windows).",
+        "Frame bounds must be constants (a number or interval literal), not columns."
+      ]
+    },
+    {
+      "id": "rows-vs-range",
+      "heading": "ROWS vs RANGE",
+      "body_md": "- `ROWS` = positional. `2 PRECEDING` means exactly two rows back.\n- `RANGE` = by value. `CURRENT ROW` means **the current row and every peer** (rows with an equal `ORDER BY` value).\n- With unique `ORDER BY` values they give identical results. They differ only when there are ties.\n- `RANGE` with a numeric / interval offset (`RANGE BETWEEN 10 PRECEDING ...`) exists in MySQL only; SQL Server's `RANGE` accepts only `UNBOUNDED` and `CURRENT ROW`.",
+      "examples": [
+        {
+          "id": "rows-vs-range-ties",
+          "title": "Same-day orders: RANGE shares, ROWS steps",
+          "explain_md": "Customer 2 has two orders on 2024-02-03. With RANGE (the default) both rows show 120.50, the total including the whole day. With ROWS (unique sort via `order_id`) the first of them shows 105.50 and the second 120.50.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, order_date, amount,\n       SUM(amount) OVER (ORDER BY order_date\n                         RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS range_total,\n       SUM(amount) OVER (ORDER BY order_date, order_id\n                         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)  AS rows_total\nFROM orders\nWHERE customer_id = 2\nORDER BY order_date, order_id;",
+          "tsql": "SELECT order_id, order_date, amount,\n       SUM(amount) OVER (ORDER BY order_date\n                         RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS range_total,\n       SUM(amount) OVER (ORDER BY order_date, order_id\n                         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)  AS rows_total\nFROM orders\nWHERE customer_id = 2\nORDER BY order_date, order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "order_date",
+              "amount",
+              "range_total",
+              "rows_total"
+            ],
+            "rows": [
+              [
+                "102",
+                "2024-01-21",
+                "45.50",
+                "45.50",
+                "45.50"
+              ],
+              [
+                "104",
+                "2024-02-03",
+                "60.00",
+                "120.50",
+                "105.50"
+              ],
+              [
+                "105",
+                "2024-02-03",
+                "15.00",
+                "120.50",
+                "120.50"
+              ],
+              [
+                "114",
+                "2024-06-30",
+                "30.00",
+                "150.50",
+                "150.50"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "default-frame",
+      "heading": "The default frame",
+      "body_md": "- **No `ORDER BY`** in the window: frame = the whole partition (so `SUM` is a total).\n- **With `ORDER BY`**: frame = `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. This is the running-total frame, and it includes all ties.\n- Same defaults in MySQL and SQL Server.\n- The tie behaviour is the usual source of 'my running total repeats a number'. Fix: add a unique tiebreaker to `ORDER BY` and write `ROWS` explicitly.\n- Good habit: always spell out the frame when it matters.",
+      "examples": [
+        {
+          "id": "default-no-vs-with-order",
+          "title": "Without vs with ORDER BY",
+          "explain_md": "`no_order_by` is the department total. `with_order_by` is a running total in salary order, and tied salaries share one value (Sales: both 80000 rows show 160000; Engineering: Ben and Cara both show 515000).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, salary,\n       SUM(salary) OVER (PARTITION BY dept)                 AS no_order_by,\n       SUM(salary) OVER (PARTITION BY dept ORDER BY salary) AS with_order_by\nFROM employees\nWHERE dept IN ('Engineering', 'Sales')\nORDER BY dept, salary, emp_id;",
+          "tsql": "SELECT name, dept, salary,\n       SUM(salary) OVER (PARTITION BY dept)                 AS no_order_by,\n       SUM(salary) OVER (PARTITION BY dept ORDER BY salary) AS with_order_by\nFROM employees\nWHERE dept IN ('Engineering', 'Sales')\nORDER BY dept, salary, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "salary",
+              "no_order_by",
+              "with_order_by"
+            ],
+            "rows": [
+              [
+                "Eli",
+                "Engineering",
+                "95000",
+                "515000",
+                "95000"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "120000",
+                "515000",
+                "215000"
+              ],
+              [
+                "Ben",
+                "Engineering",
+                "150000",
+                "515000",
+                "515000"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "150000",
+                "515000",
+                "515000"
+              ],
+              [
+                "Gus",
+                "Sales",
+                "80000",
+                "270000",
+                "160000"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "80000",
+                "270000",
+                "160000"
+              ],
+              [
+                "Fay",
+                "Sales",
+                "110000",
+                "270000",
+                "270000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "default-spelled-out",
+          "title": "Default = RANGE; ROWS breaks the tie",
+          "explain_md": "The first two columns are identical (the default is that RANGE frame). The ROWS version, with `emp_id` as tiebreaker, gives the tied rows different values.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary,\n       SUM(salary) OVER (ORDER BY salary)                                                        AS default_frame,\n       SUM(salary) OVER (ORDER BY salary RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)      AS explicit_range,\n       SUM(salary) OVER (ORDER BY salary, emp_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS explicit_rows\nFROM employees\nWHERE dept = 'Engineering'\nORDER BY salary, emp_id;",
+          "tsql": "SELECT name, salary,\n       SUM(salary) OVER (ORDER BY salary)                                                        AS default_frame,\n       SUM(salary) OVER (ORDER BY salary RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)      AS explicit_range,\n       SUM(salary) OVER (ORDER BY salary, emp_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS explicit_rows\nFROM employees\nWHERE dept = 'Engineering'\nORDER BY salary, emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "default_frame",
+              "explicit_range",
+              "explicit_rows"
+            ],
+            "rows": [
+              [
+                "Eli",
+                "95000",
+                "95000",
+                "95000",
+                "95000"
+              ],
+              [
+                "Dev",
+                "120000",
+                "215000",
+                "215000",
+                "215000"
+              ],
+              [
+                "Ben",
+                "150000",
+                "515000",
+                "515000",
+                "365000"
+              ],
+              [
+                "Cara",
+                "150000",
+                "515000",
+                "515000",
+                "515000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "bounds",
+      "heading": "UNBOUNDED, n and CURRENT ROW",
+      "body_md": "- `UNBOUNDED PRECEDING AND CURRENT ROW` -> running total (shorthand `ROWS UNBOUNDED PRECEDING`).\n- `CURRENT ROW AND UNBOUNDED FOLLOWING` -> remaining total from here to the end.\n- `UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` -> the whole partition, regardless of `ORDER BY`.\n- `n PRECEDING AND 1 PRECEDING` -> the n rows before the current row, **excluding** it. Handy for 'today vs the average of the previous days'.\n- A frame that selects no rows yields NULL for `SUM`/`AVG`/`MIN`/`MAX` and 0 for `COUNT`.",
+      "examples": [
+        {
+          "id": "bounds-running-remaining",
+          "title": "Running, remaining and whole-partition",
+          "explain_md": "Three standard frames on East revenue for the first five days. `running_total + remaining - revenue = grand_total` on every row.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date, revenue,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS UNBOUNDED PRECEDING)                                   AS running_total,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)           AS remaining,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)   AS grand_total\nFROM daily_sales\nWHERE region = 'East' AND sale_date <= '2024-03-05'\nORDER BY sale_date;",
+          "tsql": "SELECT sale_date, revenue,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS UNBOUNDED PRECEDING)                                   AS running_total,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)           AS remaining,\n       SUM(revenue) OVER (ORDER BY sale_date ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)   AS grand_total\nFROM daily_sales\nWHERE region = 'East' AND sale_date <= '2024-03-05'\nORDER BY sale_date;",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "revenue",
+              "running_total",
+              "remaining",
+              "grand_total"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "100.00",
+                "100.00",
+                "570.00",
+                "570.00"
+              ],
+              [
+                "2024-03-02",
+                "120.00",
+                "220.00",
+                "470.00",
+                "570.00"
+              ],
+              [
+                "2024-03-03",
+                "90.00",
+                "310.00",
+                "350.00",
+                "570.00"
+              ],
+              [
+                "2024-03-04",
+                "150.00",
+                "460.00",
+                "260.00",
+                "570.00"
+              ],
+              [
+                "2024-03-05",
+                "110.00",
+                "570.00",
+                "110.00",
+                "570.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "bounds-exclude-current",
+          "title": "Compare today with the previous two days",
+          "explain_md": "The frame ends at `1 PRECEDING`, so today is not in its own baseline. The first row has no earlier rows, hence NULL.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date, revenue,\n       ROUND(AVG(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING), 2) AS prev_2_avg,\n       CASE WHEN revenue > AVG(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING)\n            THEN 'above' ELSE 'not above' END AS vs_baseline\nFROM daily_sales\nWHERE region = 'East'\nORDER BY sale_date;",
+          "tsql": "SELECT sale_date, revenue,\n       ROUND(AVG(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING), 2) AS prev_2_avg,\n       CASE WHEN revenue > AVG(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING)\n            THEN 'above' ELSE 'not above' END AS vs_baseline\nFROM daily_sales\nWHERE region = 'East'\nORDER BY sale_date;",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "revenue",
+              "prev_2_avg",
+              "vs_baseline"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "100.00",
+                null,
+                "not above"
+              ],
+              [
+                "2024-03-02",
+                "120.00",
+                "100.00",
+                "above"
+              ],
+              [
+                "2024-03-03",
+                "90.00",
+                "110.00",
+                "not above"
+              ],
+              [
+                "2024-03-04",
+                "150.00",
+                "105.00",
+                "above"
+              ],
+              [
+                "2024-03-05",
+                "110.00",
+                "120.00",
+                "not above"
+              ],
+              [
+                "2024-03-06",
+                "130.00",
+                "130.00",
+                "not above"
+              ],
+              [
+                "2024-03-07",
+                "80.00",
+                "120.00",
+                "not above"
+              ],
+              [
+                "2024-03-08",
+                "160.00",
+                "105.00",
+                "above"
+              ],
+              [
+                "2024-03-09",
+                "140.00",
+                "120.00",
+                "above"
+              ],
+              [
+                "2024-03-10",
+                "100.00",
+                "150.00",
+                "not above"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "last-value-trap",
+      "heading": "The LAST_VALUE trap",
+      "body_md": "- `FIRST_VALUE(x)`, `LAST_VALUE(x)`, `NTH_VALUE(x, n)` return `x` from the first / last / nth row **of the frame**, not of the partition.\n- With the default frame ending at `CURRENT ROW`, `LAST_VALUE` simply returns the current row's value. It looks like a bug but is correct behaviour.\n- Fix 1: extend the frame: `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.\n- Fix 2: flip the sort and use `FIRST_VALUE` (the default frame always contains the first row).\n- Fix 3: for min/max use `MIN` / `MAX` over the partition.\n- MySQL has no `IGNORE NULLS`; SQL Server 2022 does (`FIRST_VALUE(x) IGNORE NULLS OVER ...`).",
+      "syntax": {
+        "mysql": "FIRST_VALUE(expr) OVER (PARTITION BY ... ORDER BY ... [frame])\nLAST_VALUE(expr)  OVER (PARTITION BY ... ORDER BY ... [frame])\nNTH_VALUE(expr, n) OVER (PARTITION BY ... ORDER BY ... [frame])",
+        "tsql": "same; SQL Server 2022 adds ... IGNORE NULLS | RESPECT NULLS before OVER"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "The column / expression whose value is returned from the chosen row of the frame."
+        },
+        {
+          "name": "n (NTH_VALUE only)",
+          "meaning": "1-based position inside the frame; NULL if the frame has fewer than n rows."
+        }
+      ],
+      "examples": [
+        {
+          "id": "last-value-trap-demo",
+          "title": "Default frame returns the current row",
+          "explain_md": "`last_hired_trap` repeats each employee's own name. `last_hired_fixed` uses the full frame and returns the newest hire of the department on every row.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, hire_date,\n       FIRST_VALUE(name) OVER (PARTITION BY dept ORDER BY hire_date) AS first_hired,\n       LAST_VALUE(name)  OVER (PARTITION BY dept ORDER BY hire_date) AS last_hired_trap,\n       LAST_VALUE(name)  OVER (PARTITION BY dept ORDER BY hire_date\n                               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_hired_fixed\nFROM employees\nORDER BY dept, hire_date;",
+          "tsql": "SELECT name, dept, hire_date,\n       FIRST_VALUE(name) OVER (PARTITION BY dept ORDER BY hire_date) AS first_hired,\n       LAST_VALUE(name)  OVER (PARTITION BY dept ORDER BY hire_date) AS last_hired_trap,\n       LAST_VALUE(name)  OVER (PARTITION BY dept ORDER BY hire_date\n                               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_hired_fixed\nFROM employees\nORDER BY dept, hire_date;",
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "hire_date",
+              "first_hired",
+              "last_hired_trap",
+              "last_hired_fixed"
+            ],
+            "rows": [
+              [
+                "Ben",
+                "Engineering",
+                "2018-07-15",
+                "Ben",
+                "Ben",
+                "Eli"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "2019-01-10",
+                "Ben",
+                "Cara",
+                "Eli"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "2021-05-03",
+                "Ben",
+                "Dev",
+                "Eli"
+              ],
+              [
+                "Eli",
+                "Engineering",
+                "2023-09-18",
+                "Ben",
+                "Eli",
+                "Eli"
+              ],
+              [
+                "Ana",
+                "Exec",
+                "2015-03-01",
+                "Ana",
+                "Ana",
+                "Ana"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "2020-06-30",
+                "Ivy",
+                "Ivy",
+                "Jon"
+              ],
+              [
+                "Jon",
+                "Marketing",
+                "2024-04-01",
+                "Ivy",
+                "Jon",
+                "Jon"
+              ],
+              [
+                "Fay",
+                "Sales",
+                "2017-11-20",
+                "Fay",
+                "Fay",
+                "Hal"
+              ],
+              [
+                "Gus",
+                "Sales",
+                "2022-02-14",
+                "Fay",
+                "Gus",
+                "Hal"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "2024-01-08",
+                "Fay",
+                "Hal",
+                "Hal"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "last-value-alternatives",
+          "title": "Two alternatives that avoid the problem",
+          "explain_md": "Reverse the order and take `FIRST_VALUE`, or use `MAX` for the date. Neither needs an explicit frame.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, dept, hire_date,\n       FIRST_VALUE(name) OVER (PARTITION BY dept ORDER BY hire_date DESC) AS newest_hire,\n       MAX(hire_date)    OVER (PARTITION BY dept)                         AS newest_hire_date\nFROM employees\nORDER BY dept, hire_date;",
+          "tsql": "SELECT name, dept, hire_date,\n       FIRST_VALUE(name) OVER (PARTITION BY dept ORDER BY hire_date DESC) AS newest_hire,\n       MAX(hire_date)    OVER (PARTITION BY dept)                         AS newest_hire_date\nFROM employees\nORDER BY dept, hire_date;",
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "hire_date",
+              "newest_hire",
+              "newest_hire_date"
+            ],
+            "rows": [
+              [
+                "Ben",
+                "Engineering",
+                "2018-07-15",
+                "Eli",
+                "2023-09-18"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "2019-01-10",
+                "Eli",
+                "2023-09-18"
+              ],
+              [
+                "Dev",
+                "Engineering",
+                "2021-05-03",
+                "Eli",
+                "2023-09-18"
+              ],
+              [
+                "Eli",
+                "Engineering",
+                "2023-09-18",
+                "Eli",
+                "2023-09-18"
+              ],
+              [
+                "Ana",
+                "Exec",
+                "2015-03-01",
+                "Ana",
+                "2015-03-01"
+              ],
+              [
+                "Ivy",
+                "Marketing",
+                "2020-06-30",
+                "Jon",
+                "2024-04-01"
+              ],
+              [
+                "Jon",
+                "Marketing",
+                "2024-04-01",
+                "Jon",
+                "2024-04-01"
+              ],
+              [
+                "Fay",
+                "Sales",
+                "2017-11-20",
+                "Hal",
+                "2024-01-08"
+              ],
+              [
+                "Gus",
+                "Sales",
+                "2022-02-14",
+                "Hal",
+                "2024-01-08"
+              ],
+              [
+                "Hal",
+                "Sales",
+                "2024-01-08",
+                "Hal",
+                "2024-01-08"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "range-interval",
+      "heading": "RANGE with an offset (MySQL only)",
+      "body_md": "- MySQL allows value-based offsets: `RANGE BETWEEN INTERVAL 6 DAY PRECEDING AND CURRENT ROW` with a date `ORDER BY`, or `RANGE BETWEEN 20000 PRECEDING AND 20000 FOLLOWING` with a numeric one.\n- It needs exactly **one** `ORDER BY` expression, of a numeric or temporal type.\n- It selects by value, so missing dates are naturally handled: a 7-day window covers 7 calendar days even if some days have no row.\n- SQL Server only allows `UNBOUNDED` / `CURRENT ROW` with `RANGE`. Use a date spine or a self-join there (see Rolling windows).",
+      "syntax": {
+        "mysql": "func(expr) OVER (ORDER BY date_col RANGE BETWEEN INTERVAL n {DAY|MONTH|...} PRECEDING AND CURRENT ROW)",
+        "tsql": null
+      },
+      "args": [
+        {
+          "name": "INTERVAL n unit PRECEDING",
+          "meaning": "Include rows whose ORDER BY date is at most n units before the current row's date."
+        },
+        {
+          "name": "CURRENT ROW",
+          "meaning": "Up to and including the current row's date (all rows with the same date are in)."
+        }
+      ],
+      "examples": [
+        {
+          "id": "range-interval-7days",
+          "title": "7 calendar days vs 7 rows (West has gaps)",
+          "explain_md": "West has no rows on 03-04 and 03-07. On 03-09 the RANGE window (03-03..03-09) holds 5 days and sums 330; the ROWS window takes the 7 latest rows, reaching back to 03-01, and sums 450.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT sale_date, revenue,\n       SUM(revenue) OVER (ORDER BY sale_date\n                          RANGE BETWEEN INTERVAL 6 DAY PRECEDING AND CURRENT ROW) AS sum_7_calendar_days,\n       COUNT(*)     OVER (ORDER BY sale_date\n                          RANGE BETWEEN INTERVAL 6 DAY PRECEDING AND CURRENT ROW) AS days_with_sales,\n       SUM(revenue) OVER (ORDER BY sale_date\n                          ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)               AS sum_7_rows\nFROM daily_sales\nWHERE region = 'West'\nORDER BY sale_date;",
+          "tsql": null,
+          "dialect_note_md": "Not available in SQL Server: `RANGE` accepts only `UNBOUNDED PRECEDING/FOLLOWING` and `CURRENT ROW` (error 'RANGE is only supported with UNBOUNDED and CURRENT ROW window frame delimiters'). Use a date spine with `ROWS`, or a self-join on a date range.",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "revenue",
+              "sum_7_calendar_days",
+              "days_with_sales",
+              "sum_7_rows"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "50.00",
+                "50.00",
+                "1",
+                "50.00"
+              ],
+              [
+                "2024-03-02",
+                "70.00",
+                "120.00",
+                "2",
+                "120.00"
+              ],
+              [
+                "2024-03-03",
+                "60.00",
+                "180.00",
+                "3",
+                "180.00"
+              ],
+              [
+                "2024-03-05",
+                "90.00",
+                "270.00",
+                "4",
+                "270.00"
+              ],
+              [
+                "2024-03-06",
+                "40.00",
+                "310.00",
+                "5",
+                "310.00"
+              ],
+              [
+                "2024-03-08",
+                "75.00",
+                "335.00",
+                "5",
+                "385.00"
+              ],
+              [
+                "2024-03-09",
+                "65.00",
+                "330.00",
+                "5",
+                "450.00"
+              ],
+              [
+                "2024-03-10",
+                "85.00",
+                "355.00",
+                "5",
+                "485.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "range-numeric",
+          "title": "Numeric RANGE: peers within 20,000",
+          "explain_md": "For each salary, count the employees paid within +/-20,000 of it (including the person themself).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary,\n       COUNT(*) OVER (ORDER BY salary RANGE BETWEEN 20000 PRECEDING AND 20000 FOLLOWING) AS peers_within_20k\nFROM employees\nWHERE salary IS NOT NULL\nORDER BY salary, emp_id;",
+          "tsql": null,
+          "dialect_note_md": "MySQL only. In SQL Server compute it with a self-join: `JOIN employees b ON b.salary BETWEEN a.salary - 20000 AND a.salary + 20000`.",
+          "expected": {
+            "columns": [
+              "name",
+              "salary",
+              "peers_within_20k"
+            ],
+            "rows": [
+              [
+                "Gus",
+                "80000",
+                "4"
+              ],
+              [
+                "Hal",
+                "80000",
+                "4"
+              ],
+              [
+                "Ivy",
+                "90000",
+                "5"
+              ],
+              [
+                "Eli",
+                "95000",
+                "5"
+              ],
+              [
+                "Fay",
+                "110000",
+                "4"
+              ],
+              [
+                "Dev",
+                "120000",
+                "2"
+              ],
+              [
+                "Ben",
+                "150000",
+                "2"
+              ],
+              [
+                "Cara",
+                "150000",
+                "2"
+              ],
+              [
+                "Ana",
+                "250000",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    }
+  ]
+}

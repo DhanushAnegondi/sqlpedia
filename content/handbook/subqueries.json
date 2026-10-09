@@ -1,0 +1,950 @@
+{
+  "id": "subqueries",
+  "title": "Subqueries",
+  "group": "Query structure",
+  "order": 1,
+  "summary_md": "Scalar, IN, EXISTS, correlated and derived-table subqueries: when each applies, the NULL traps, and the MySQL restrictions interviewers probe.",
+  "sections": [
+    {
+      "id": "scalar-subquery",
+      "heading": "Scalar subquery",
+      "body_md": "- A scalar subquery returns **one column, at most one row**, and can be used anywhere a single value fits: `WHERE`, `SELECT` list, `HAVING`, `CASE`.\n- **Zero rows -> NULL** (not an error). **More than one row -> error** (MySQL 1242, SQL Server 512).\n- With `=` it returns every tied row, not just one (see the Engineering example).",
+      "syntax": {
+        "mysql": "(SELECT expr FROM t WHERE ... )   -- exactly one column, <= 1 row",
+        "tsql": "(SELECT expr FROM t WHERE ... )   -- same; use TOP 1 / MAX() to force a single row"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "The single column returned. Two columns is a syntax error."
+        },
+        {
+          "name": "WHERE ...",
+          "meaning": "Must narrow to one row, or use an aggregate (MAX, AVG, COUNT) to collapse to one."
+        }
+      ],
+      "examples": [
+        {
+          "id": "above-average",
+          "title": "Above the company average",
+          "explain_md": "`AVG` ignores Jon's NULL salary, so the average is over 9 people (125000). Ana, Ben and Cara beat it.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary\nFROM employees\nWHERE salary > (SELECT AVG(salary) FROM employees)\nORDER BY emp_id;",
+          "tsql": "SELECT name, salary\nFROM employees\nWHERE salary > (SELECT AVG(salary) FROM employees)\nORDER BY emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000"
+              ],
+              [
+                "Ben",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "scalar-select-list",
+          "title": "Scalar subquery in the SELECT list",
+          "explain_md": "The inner query runs once (it is not correlated) and its single value is reused on every row.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, amount,\n       ROUND(100.0 * amount / (SELECT SUM(amount) FROM orders WHERE status = 'completed'), 1) AS pct_of_completed\nFROM orders\nWHERE status = 'completed'\nORDER BY order_id;",
+          "tsql": "SELECT order_id, amount,\n       ROUND(100.0 * amount / (SELECT SUM(amount) FROM orders WHERE status = 'completed'), 1) AS pct_of_completed\nFROM orders\nWHERE status = 'completed'\nORDER BY order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "amount",
+              "pct_of_completed"
+            ],
+            "rows": [
+              [
+                "101",
+                "120.00",
+                "10.8"
+              ],
+              [
+                "102",
+                "45.50",
+                "4.1"
+              ],
+              [
+                "104",
+                "60.00",
+                "5.4"
+              ],
+              [
+                "105",
+                "15.00",
+                "1.3"
+              ],
+              [
+                "106",
+                "200.00",
+                "17.9"
+              ],
+              [
+                "108",
+                "120.00",
+                "10.8"
+              ],
+              [
+                "109",
+                "300.00",
+                "26.9"
+              ],
+              [
+                "110",
+                "50.00",
+                "4.5"
+              ],
+              [
+                "112",
+                "65.00",
+                "5.8"
+              ],
+              [
+                "113",
+                "110.00",
+                "9.9"
+              ],
+              [
+                "114",
+                "30.00",
+                "2.7"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "no-row-null",
+          "title": "No matching row gives NULL",
+          "explain_md": "Nobody works in Legal, so the subquery yields NULL; wrap in `COALESCE` for a default.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT (SELECT name FROM employees WHERE dept = 'Legal') AS raw_value,\n       COALESCE((SELECT name FROM employees WHERE dept = 'Legal'), 'none') AS safe_value;",
+          "tsql": "SELECT (SELECT name FROM employees WHERE dept = 'Legal') AS raw_value,\n       COALESCE((SELECT name FROM employees WHERE dept = 'Legal'), 'none') AS safe_value;",
+          "expected": {
+            "columns": [
+              "raw_value",
+              "safe_value"
+            ],
+            "rows": [
+              [
+                null,
+                "none"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "tie-with-equals",
+          "title": "= returns all tied rows",
+          "explain_md": "Ben and Cara tie on the Engineering maximum, so `=` against a scalar MAX returns both.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary\nFROM employees\nWHERE dept = 'Engineering'\n  AND salary = (SELECT MAX(salary) FROM employees WHERE dept = 'Engineering')\nORDER BY emp_id;",
+          "tsql": "SELECT name, salary\nFROM employees\nWHERE dept = 'Engineering'\n  AND salary = (SELECT MAX(salary) FROM employees WHERE dept = 'Engineering')\nORDER BY emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ben",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`= (SELECT ...)` that matches several rows errors out at runtime, often only after data grows. Use `IN`, an aggregate, or `LIMIT 1` / `TOP 1` with an `ORDER BY`.",
+        "A NULL salary never passes `salary > (SELECT AVG(...))`: the comparison is UNKNOWN, so the row is dropped."
+      ]
+    },
+    {
+      "id": "in-not-in",
+      "heading": "IN and NOT IN subqueries",
+      "body_md": "- `x IN (SELECT y ...)` is true if `x` equals any value the subquery returns.\n- **`NOT IN` + a NULL in the list = no rows at all**: `x <> NULL` is UNKNOWN for every `x`. The classic interview trap.\n- Fix with `WHERE y IS NOT NULL` inside the subquery, or use `NOT EXISTS`.",
+      "syntax": {
+        "mysql": "expr [NOT] IN (SELECT col FROM ...)",
+        "tsql": "expr [NOT] IN (SELECT col FROM ...)"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "Outer value (MySQL also allows a tuple: `(a, b) IN (SELECT x, y ...)`)."
+        },
+        {
+          "name": "SELECT col",
+          "meaning": "Exactly one column (as many columns as the tuple)."
+        }
+      ],
+      "examples": [
+        {
+          "id": "in-basic",
+          "title": "Customers with a completed order",
+          "explain_md": "Customer 6 never ordered, so is missing. Duplicates in the subquery do not duplicate outer rows.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name\nFROM customers\nWHERE customer_id IN (SELECT customer_id FROM orders WHERE status = 'completed')\nORDER BY customer_id;",
+          "tsql": "SELECT name\nFROM customers\nWHERE customer_id IN (SELECT customer_id FROM orders WHERE status = 'completed')\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "name"
+            ],
+            "rows": [
+              [
+                "Maya Lopez"
+              ],
+              [
+                "Noah Kim"
+              ],
+              [
+                "Olga Petrova"
+              ],
+              [
+                "Pablo Diaz"
+              ],
+              [
+                "Quinn Lee"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "not-in-safe",
+          "title": "Customers with no orders",
+          "explain_md": "`orders.customer_id` has no NULLs, so `NOT IN` is safe here and returns customer 6.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name\nFROM customers\nWHERE customer_id NOT IN (SELECT customer_id FROM orders)\nORDER BY customer_id;",
+          "tsql": "SELECT name\nFROM customers\nWHERE customer_id NOT IN (SELECT customer_id FROM orders)\nORDER BY customer_id;",
+          "expected": {
+            "columns": [
+              "name"
+            ],
+            "rows": [
+              [
+                "pablo diaz"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "not-in-null-trap",
+          "title": "NOT IN with a NULL returns nothing",
+          "explain_md": "Ana's `manager_id` is NULL, so the list contains a NULL and the result is **empty**, even though several people manage nobody.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name\nFROM employees\nWHERE emp_id NOT IN (SELECT manager_id FROM employees)\nORDER BY emp_id;",
+          "tsql": "SELECT name\nFROM employees\nWHERE emp_id NOT IN (SELECT manager_id FROM employees)\nORDER BY emp_id;",
+          "expected": {
+            "columns": [],
+            "rows": []
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "not-in-fixed",
+          "title": "The fix: filter the NULL out",
+          "explain_md": "Same question with `IS NOT NULL` in the subquery: the five people who manage nobody.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name\nFROM employees\nWHERE emp_id NOT IN (SELECT manager_id FROM employees WHERE manager_id IS NOT NULL)\nORDER BY emp_id;",
+          "tsql": "SELECT name\nFROM employees\nWHERE emp_id NOT IN (SELECT manager_id FROM employees WHERE manager_id IS NOT NULL)\nORDER BY emp_id;",
+          "expected": {
+            "columns": [
+              "name"
+            ],
+            "rows": [
+              [
+                "Dev"
+              ],
+              [
+                "Eli"
+              ],
+              [
+                "Gus"
+              ],
+              [
+                "Hal"
+              ],
+              [
+                "Jon"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "SQL Server has no row-value `(a, b) IN (SELECT ...)`; use `EXISTS` for multi-column matches.",
+        "Default to `NOT EXISTS` over `NOT IN`: it is NULL-safe and optimises at least as well."
+      ]
+    },
+    {
+      "id": "exists",
+      "heading": "EXISTS and NOT EXISTS",
+      "body_md": "- `EXISTS (subquery)` is true if the subquery returns **at least one row**; the select list is irrelevant (`SELECT 1` by convention).\n- It short-circuits on the first match and is **NULL-safe**, which makes `NOT EXISTS` the right anti-join.\n- Almost always **correlated**: the subquery references the outer row.",
+      "syntax": {
+        "mysql": "[NOT] EXISTS (SELECT 1 FROM t WHERE t.key = outer.key AND ...)",
+        "tsql": "[NOT] EXISTS (SELECT 1 FROM t WHERE t.key = outer.key AND ...)"
+      },
+      "args": [
+        {
+          "name": "SELECT 1",
+          "meaning": "Select list is ignored; `1`, `*` and a column behave the same."
+        },
+        {
+          "name": "t.key = outer.key",
+          "meaning": "The correlation: ties the subquery to the current outer row. Forget it and EXISTS is true for every row (or none)."
+        }
+      ],
+      "examples": [
+        {
+          "id": "exists-basic",
+          "title": "Customers with a completed order of 100 or more",
+          "explain_md": "The subquery is correlated on `customer_id`. Customers 1, 3, 4 and 5 qualify.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.name\nFROM customers c\nWHERE EXISTS (SELECT 1\n              FROM orders o\n              WHERE o.customer_id = c.customer_id\n                AND o.status = 'completed'\n                AND o.amount >= 100)\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.name\nFROM customers c\nWHERE EXISTS (SELECT 1\n              FROM orders o\n              WHERE o.customer_id = c.customer_id\n                AND o.status = 'completed'\n                AND o.amount >= 100)\nORDER BY c.customer_id;",
+          "expected": {
+            "columns": [
+              "name"
+            ],
+            "rows": [
+              [
+                "Maya Lopez"
+              ],
+              [
+                "Olga Petrova"
+              ],
+              [
+                "Pablo Diaz"
+              ],
+              [
+                "Quinn Lee"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "not-exists-null-safe",
+          "title": "NOT EXISTS survives the NULL manager",
+          "explain_md": "Same question as the broken `NOT IN` example, now correct: employees nobody reports to.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT e.name\nFROM employees e\nWHERE NOT EXISTS (SELECT 1 FROM employees r WHERE r.manager_id = e.emp_id)\nORDER BY e.emp_id;",
+          "tsql": "SELECT e.name\nFROM employees e\nWHERE NOT EXISTS (SELECT 1 FROM employees r WHERE r.manager_id = e.emp_id)\nORDER BY e.emp_id;",
+          "expected": {
+            "columns": [
+              "name"
+            ],
+            "rows": [
+              [
+                "Dev"
+              ],
+              [
+                "Eli"
+              ],
+              [
+                "Gus"
+              ],
+              [
+                "Hal"
+              ],
+              [
+                "Jon"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "exists-flag",
+          "title": "EXISTS as a yes/no flag",
+          "explain_md": "`EXISTS` is a predicate, so wrap it in `CASE` to expose it as a column.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.name,\n       CASE WHEN EXISTS (SELECT 1 FROM orders o\n                         WHERE o.customer_id = c.customer_id AND o.status = 'cancelled')\n            THEN 1 ELSE 0 END AS had_cancellation\nFROM customers c\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.name,\n       CASE WHEN EXISTS (SELECT 1 FROM orders o\n                         WHERE o.customer_id = c.customer_id AND o.status = 'cancelled')\n            THEN 1 ELSE 0 END AS had_cancellation\nFROM customers c\nORDER BY c.customer_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "had_cancellation"
+            ],
+            "rows": [
+              [
+                "Maya Lopez",
+                "1"
+              ],
+              [
+                "Noah Kim",
+                "0"
+              ],
+              [
+                "Olga Petrova",
+                "0"
+              ],
+              [
+                "Pablo Diaz",
+                "0"
+              ],
+              [
+                "Quinn Lee",
+                "1"
+              ],
+              [
+                "pablo diaz",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Missing correlation predicate: `EXISTS (SELECT 1 FROM orders)` is true for all customers as soon as orders has one row."
+      ]
+    },
+    {
+      "id": "correlated",
+      "heading": "Correlated subqueries",
+      "body_md": "- A correlated subquery references a column of the outer query, so conceptually it **re-runs for every outer row**.\n- Optimisers often rewrite it into a join, but assume per-row cost on big tables.\n- Alias both sides (`o` and `i`) so the correlation is unambiguous.",
+      "syntax": {
+        "mysql": "SELECT ... FROM t o WHERE o.col > (SELECT AGG(i.col) FROM t i WHERE i.grp = o.grp)",
+        "tsql": "SELECT ... FROM t o WHERE o.col > (SELECT AGG(i.col) FROM t i WHERE i.grp = o.grp)"
+      },
+      "args": [
+        {
+          "name": "o",
+          "meaning": "Outer alias; the subquery may read its columns."
+        },
+        {
+          "name": "i",
+          "meaning": "Inner alias for the same table; never reuse the outer alias."
+        },
+        {
+          "name": "i.grp = o.grp",
+          "meaning": "Correlation predicate (one per grouping key)."
+        }
+      ],
+      "examples": [
+        {
+          "id": "above-own-average",
+          "title": "Orders above that customer's own average",
+          "explain_md": "The inner `AVG` is recomputed per customer. Customer 2's 45.50 and 60.00 beat their 37.625 average.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT o.order_id, o.customer_id, o.amount\nFROM orders o\nWHERE o.amount > (SELECT AVG(i.amount)\n                  FROM orders i\n                  WHERE i.customer_id = o.customer_id)\nORDER BY o.order_id;",
+          "tsql": "SELECT o.order_id, o.customer_id, o.amount\nFROM orders o\nWHERE o.amount > (SELECT AVG(i.amount)\n                  FROM orders i\n                  WHERE i.customer_id = o.customer_id)\nORDER BY o.order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "customer_id",
+              "amount"
+            ],
+            "rows": [
+              [
+                "101",
+                "1",
+                "120.00"
+              ],
+              [
+                "102",
+                "2",
+                "45.50"
+              ],
+              [
+                "104",
+                "2",
+                "60.00"
+              ],
+              [
+                "106",
+                "3",
+                "200.00"
+              ],
+              [
+                "108",
+                "1",
+                "120.00"
+              ],
+              [
+                "109",
+                "5",
+                "300.00"
+              ],
+              [
+                "113",
+                "4",
+                "110.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "above-dept-average",
+          "title": "Paid above the department average",
+          "explain_md": "Marketing's average is Ivy alone (NULL Jon skipped), so nobody beats it; Ana is her own department.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT e.name, e.dept, e.salary\nFROM employees e\nWHERE e.salary > (SELECT AVG(x.salary) FROM employees x WHERE x.dept = e.dept)\nORDER BY e.emp_id;",
+          "tsql": "SELECT e.name, e.dept, e.salary\nFROM employees e\nWHERE e.salary > (SELECT AVG(x.salary) FROM employees x WHERE x.dept = e.dept)\nORDER BY e.emp_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "dept",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ben",
+                "Engineering",
+                "150000"
+              ],
+              [
+                "Cara",
+                "Engineering",
+                "150000"
+              ],
+              [
+                "Fay",
+                "Sales",
+                "110000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "correlated-select-list",
+          "title": "Correlated subquery in the SELECT list",
+          "explain_md": "`COUNT` gives 0 for customer 6 but `MAX` gives NULL: only `COUNT` turns 'no rows' into 0.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.name,\n       (SELECT COUNT(*)        FROM orders o WHERE o.customer_id = c.customer_id) AS n_orders,\n       (SELECT MAX(order_date) FROM orders o WHERE o.customer_id = c.customer_id) AS last_order\nFROM customers c\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.name,\n       (SELECT COUNT(*)        FROM orders o WHERE o.customer_id = c.customer_id) AS n_orders,\n       (SELECT MAX(order_date) FROM orders o WHERE o.customer_id = c.customer_id) AS last_order\nFROM customers c\nORDER BY c.customer_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "n_orders",
+              "last_order"
+            ],
+            "rows": [
+              [
+                "Maya Lopez",
+                "4",
+                "2024-05-05"
+              ],
+              [
+                "Noah Kim",
+                "4",
+                "2024-06-30"
+              ],
+              [
+                "Olga Petrova",
+                "2",
+                "2024-04-01"
+              ],
+              [
+                "Pablo Diaz",
+                "2",
+                "2024-06-11"
+              ],
+              [
+                "Quinn Lee",
+                "2",
+                "2024-04-20"
+              ],
+              [
+                "pablo diaz",
+                "0",
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Self-correlation without aliases (`WHERE customer_id = customer_id`) compares the inner column to itself: always true."
+      ]
+    },
+    {
+      "id": "derived-tables",
+      "heading": "Derived tables in FROM",
+      "body_md": "- A subquery in `FROM` acts as a temporary table for one statement: aggregate first, then join or filter the result.\n- **An alias is mandatory** in both MySQL and SQL Server.\n- Use it to filter on a window function result or on an aggregate-of-aggregate.",
+      "syntax": {
+        "mysql": "SELECT ... FROM (SELECT ...) AS alias [JOIN ...]",
+        "tsql": "SELECT ... FROM (SELECT ...) AS alias [JOIN ...]"
+      },
+      "args": [
+        {
+          "name": "(SELECT ...)",
+          "meaning": "Any query; every output column needs a unique name (alias expressions)."
+        },
+        {
+          "name": "AS alias",
+          "meaning": "Required. `AS` itself is optional."
+        }
+      ],
+      "examples": [
+        {
+          "id": "derived-join",
+          "title": "Aggregate, then join",
+          "explain_md": "Roll orders up to one row per customer in a derived table, then join to names.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.name, t.n_orders, t.total\nFROM customers c\nJOIN (SELECT customer_id, COUNT(*) AS n_orders, SUM(amount) AS total\n      FROM orders\n      WHERE status = 'completed'\n      GROUP BY customer_id) AS t\n  ON t.customer_id = c.customer_id\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.name, t.n_orders, t.total\nFROM customers c\nJOIN (SELECT customer_id, COUNT(*) AS n_orders, SUM(amount) AS total\n      FROM orders\n      WHERE status = 'completed'\n      GROUP BY customer_id) AS t\n  ON t.customer_id = c.customer_id\nORDER BY c.customer_id;",
+          "expected": {
+            "columns": [
+              "name",
+              "n_orders",
+              "total"
+            ],
+            "rows": [
+              [
+                "Maya Lopez",
+                "3",
+                "305.00"
+              ],
+              [
+                "Noah Kim",
+                "4",
+                "150.50"
+              ],
+              [
+                "Olga Petrova",
+                "2",
+                "250.00"
+              ],
+              [
+                "Pablo Diaz",
+                "1",
+                "110.00"
+              ],
+              [
+                "Quinn Lee",
+                "1",
+                "300.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "aggregate-of-aggregate",
+          "title": "Average of per-customer totals",
+          "explain_md": "You cannot write `AVG(SUM(x))`; the inner `SUM` has to live in a derived table.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT ROUND(AVG(t.total), 2) AS avg_customer_total\nFROM (SELECT customer_id, SUM(amount) AS total\n      FROM orders\n      WHERE status = 'completed'\n      GROUP BY customer_id) AS t;",
+          "tsql": "SELECT ROUND(AVG(t.total), 2) AS avg_customer_total\nFROM (SELECT customer_id, SUM(amount) AS total\n      FROM orders\n      WHERE status = 'completed'\n      GROUP BY customer_id) AS t;",
+          "expected": {
+            "columns": [
+              "avg_customer_total"
+            ],
+            "rows": [
+              [
+                "223.10"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "filter-on-window",
+          "title": "Filter on a window function",
+          "explain_md": "`WHERE rnk = 1` is illegal at the same query level as the window; push the window into a derived table. Ben and Cara tie.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT r.dept, r.name, r.salary\nFROM (SELECT dept, name, salary,\n             RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS rnk\n      FROM employees) AS r\nWHERE r.rnk = 1\nORDER BY r.dept, r.name;",
+          "tsql": "SELECT r.dept, r.name, r.salary\nFROM (SELECT dept, name, salary,\n             RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS rnk\n      FROM employees) AS r\nWHERE r.rnk = 1\nORDER BY r.dept, r.name;",
+          "expected": {
+            "columns": [
+              "dept",
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Engineering",
+                "Ben",
+                "150000"
+              ],
+              [
+                "Engineering",
+                "Cara",
+                "150000"
+              ],
+              [
+                "Exec",
+                "Ana",
+                "250000"
+              ],
+              [
+                "Marketing",
+                "Ivy",
+                "90000"
+              ],
+              [
+                "Sales",
+                "Fay",
+                "110000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Unnamed expressions inside a derived table (`SELECT COUNT(*)` with no alias) cannot be referenced outside it, and SQL Server rejects them outright.",
+        "SQL Server forbids `ORDER BY` inside a derived table unless you also use `TOP` / `OFFSET`."
+      ]
+    },
+    {
+      "id": "choosing",
+      "heading": "Subquery vs JOIN vs window",
+      "body_md": "- **Existence / absence** (\"has any\", \"has none\"): `EXISTS` / `NOT EXISTS` (or `LEFT JOIN ... IS NULL`). Never needs a DISTINCT.\n- **Need columns from the other table**: `JOIN`. Beware row multiplication when the other side has many matches.\n- **Compare a row to an aggregate of its group**: a window (`AVG() OVER (PARTITION BY ...)`) reads the table once; a correlated subquery or a join to a grouped derived table reads it twice.\n- **Top-N per group / latest per key**: window `ROW_NUMBER` / `RANK`.\n- Interviewers like hearing two approaches and the trade-off; the last two examples return identical rows.",
+      "examples": [
+        {
+          "id": "anti-join",
+          "title": "Anti-join with LEFT JOIN",
+          "explain_md": "Same answer as `NOT EXISTS` / `NOT IN`: customers with no orders. Test the **right** table's key for NULL.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.name\nFROM customers c\nLEFT JOIN orders o ON o.customer_id = c.customer_id\nWHERE o.order_id IS NULL\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.name\nFROM customers c\nLEFT JOIN orders o ON o.customer_id = c.customer_id\nWHERE o.order_id IS NULL\nORDER BY c.customer_id;",
+          "expected": {
+            "columns": [
+              "name"
+            ],
+            "rows": [
+              [
+                "pablo diaz"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "above-own-average-window",
+          "title": "Above own average, window version",
+          "explain_md": "Same rows as the correlated example, one scan. The window must sit in a subquery/CTE before it can be filtered.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT x.order_id, x.customer_id, x.amount\nFROM (SELECT order_id, customer_id, amount,\n             AVG(amount) OVER (PARTITION BY customer_id) AS cust_avg\n      FROM orders) AS x\nWHERE x.amount > x.cust_avg\nORDER BY x.order_id;",
+          "tsql": "SELECT x.order_id, x.customer_id, x.amount\nFROM (SELECT order_id, customer_id, amount,\n             AVG(amount) OVER (PARTITION BY customer_id) AS cust_avg\n      FROM orders) AS x\nWHERE x.amount > x.cust_avg\nORDER BY x.order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "customer_id",
+              "amount"
+            ],
+            "rows": [
+              [
+                "101",
+                "1",
+                "120.00"
+              ],
+              [
+                "102",
+                "2",
+                "45.50"
+              ],
+              [
+                "104",
+                "2",
+                "60.00"
+              ],
+              [
+                "106",
+                "3",
+                "200.00"
+              ],
+              [
+                "108",
+                "1",
+                "120.00"
+              ],
+              [
+                "109",
+                "5",
+                "300.00"
+              ],
+              [
+                "113",
+                "4",
+                "110.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "above-own-average-join",
+          "title": "Above own average, join version",
+          "explain_md": "Join to a grouped derived table; each customer's average is computed once.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT o.order_id, o.customer_id, o.amount\nFROM orders o\nJOIN (SELECT customer_id, AVG(amount) AS cust_avg\n      FROM orders\n      GROUP BY customer_id) AS a\n  ON a.customer_id = o.customer_id\nWHERE o.amount > a.cust_avg\nORDER BY o.order_id;",
+          "tsql": "SELECT o.order_id, o.customer_id, o.amount\nFROM orders o\nJOIN (SELECT customer_id, AVG(amount) AS cust_avg\n      FROM orders\n      GROUP BY customer_id) AS a\n  ON a.customer_id = o.customer_id\nWHERE o.amount > a.cust_avg\nORDER BY o.order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "customer_id",
+              "amount"
+            ],
+            "rows": [
+              [
+                "101",
+                "1",
+                "120.00"
+              ],
+              [
+                "102",
+                "2",
+                "45.50"
+              ],
+              [
+                "104",
+                "2",
+                "60.00"
+              ],
+              [
+                "106",
+                "3",
+                "200.00"
+              ],
+              [
+                "108",
+                "1",
+                "120.00"
+              ],
+              [
+                "109",
+                "5",
+                "300.00"
+              ],
+              [
+                "113",
+                "4",
+                "110.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "mysql-limits",
+      "heading": "MySQL limits and the derived-table workaround",
+      "body_md": "- **No `LIMIT` inside `IN` / `ANY` / `ALL` / `SOME` subqueries** in MySQL (error 1235). `LIMIT` is fine in derived tables and scalar subqueries. SQL Server allows `TOP` there.\n- **You cannot select from the table you are updating or deleting** in the same statement (MySQL error 1093). Wrap the inner query in a derived table so it is materialised first. SQL Server has no such restriction.\n- Pattern for both: `WHERE id IN (SELECT id FROM (SELECT id FROM t ... LIMIT n) AS s)`.",
+      "syntax": {
+        "mysql": "UPDATE employees SET salary = salary * 1.05\nWHERE emp_id IN (SELECT emp_id FROM (SELECT emp_id FROM employees WHERE dept = 'Sales') AS s);\n-- without the extra derived table: ERROR 1093 (can't specify target table for update in FROM clause)",
+        "tsql": "UPDATE employees SET salary = salary * 1.05\nWHERE emp_id IN (SELECT emp_id FROM employees WHERE dept = 'Sales');   -- allowed"
+      },
+      "args": [
+        {
+          "name": "AS s",
+          "meaning": "The derived table forces MySQL to materialise the inner rows before the UPDATE starts."
+        }
+      ],
+      "examples": [
+        {
+          "id": "in-with-limit",
+          "title": "Top 3 earners via IN",
+          "explain_md": "MySQL needs the extra derived table `top3`; SQL Server puts `TOP (3)` straight in the subquery. Ties are broken on `emp_id` so the three rows are stable.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT name, salary\nFROM employees\nWHERE emp_id IN (SELECT emp_id\n                 FROM (SELECT emp_id\n                       FROM employees\n                       ORDER BY salary DESC, emp_id\n                       LIMIT 3) AS top3)\nORDER BY salary DESC, emp_id;",
+          "tsql": "SELECT name, salary\nFROM employees\nWHERE emp_id IN (SELECT TOP (3) emp_id\n                 FROM employees\n                 ORDER BY salary DESC, emp_id)\nORDER BY salary DESC, emp_id;",
+          "dialect_note_md": "MySQL: `IN (SELECT ... LIMIT 3)` raises error 1235; the inner derived table is the workaround. SQL Server accepts `TOP` inside the subquery.",
+          "expected": {
+            "columns": [
+              "name",
+              "salary"
+            ],
+            "rows": [
+              [
+                "Ana",
+                "250000"
+              ],
+              [
+                "Ben",
+                "150000"
+              ],
+              [
+                "Cara",
+                "150000"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "update-self-preview",
+          "title": "Preview the rows an UPDATE would touch",
+          "explain_md": "A self-referencing UPDATE/DELETE needs the same derived-table wrapper in MySQL. Shown as a SELECT so it stays checkable; the UPDATE form is in the syntax box.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT e.emp_id, e.name\nFROM employees e\nWHERE e.emp_id IN (SELECT s.emp_id\n                   FROM (SELECT emp_id FROM employees WHERE dept = 'Sales') AS s)\nORDER BY e.emp_id;",
+          "tsql": "SELECT e.emp_id, e.name\nFROM employees e\nWHERE e.emp_id IN (SELECT s.emp_id\n                   FROM (SELECT emp_id FROM employees WHERE dept = 'Sales') AS s)\nORDER BY e.emp_id;",
+          "expected": {
+            "columns": [
+              "emp_id",
+              "name"
+            ],
+            "rows": [
+              [
+                "6",
+                "Fay"
+              ],
+              [
+                "7",
+                "Gus"
+              ],
+              [
+                "8",
+                "Hal"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "A CTE or `UPDATE ... JOIN` also avoids error 1093 in MySQL 8."
+      ]
+    }
+  ]
+}

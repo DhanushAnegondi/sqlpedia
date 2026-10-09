@@ -1,0 +1,855 @@
+{
+  "id": "running-totals",
+  "title": "Running totals",
+  "group": "Window functions",
+  "order": 4,
+  "summary_md": "Cumulative sums, counts and maxima with window functions: per-group resets, the duplicate-date trap, and running totals of daily aggregates.",
+  "sections": [
+    {
+      "id": "cumulative-sum",
+      "heading": "Cumulative SUM",
+      "body_md": "- Recipe: `SUM(x) OVER (ORDER BY <unique sort key> ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)`.\n- Shorthand: `ROWS UNBOUNDED PRECEDING`.\n- Filter rows with `WHERE` **before** the window: the running total starts from the first surviving row. To start the sum earlier than you display, window in a CTE and filter outside.\n- Running share: divide the running sum by `SUM(x) OVER ()` (the grand total).",
+      "syntax": {
+        "mysql": "SUM(expr) OVER (\n  [PARTITION BY ...]\n  ORDER BY unique_key\n  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n)",
+        "tsql": "SUM(expr) OVER (\n  [PARTITION BY ...]\n  ORDER BY unique_key\n  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n)"
+      },
+      "args": [
+        {
+          "name": "expr",
+          "meaning": "The value accumulated."
+        },
+        {
+          "name": "PARTITION BY ...",
+          "meaning": "Optional: restarts the running total in each group."
+        },
+        {
+          "name": "ORDER BY unique_key",
+          "meaning": "Defines 'so far'. Make it unique (add an id) so ties cannot share a total."
+        },
+        {
+          "name": "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW",
+          "meaning": "From the first row of the partition to this row, counting rows individually."
+        }
+      ],
+      "examples": [
+        {
+          "id": "cum-monthly",
+          "title": "Year-to-date revenue and share of the year",
+          "explain_md": "`ytd` accumulates month by month; `pct_of_year` shows how much of the 2024 total has been reached.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT month_start, revenue,\n       SUM(revenue) OVER (ORDER BY month_start ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ytd,\n       ROUND(100.0 * SUM(revenue) OVER (ORDER BY month_start ROWS UNBOUNDED PRECEDING)\n                   / SUM(revenue) OVER (), 1) AS pct_of_year\nFROM monthly_revenue\nWHERE month_start >= '2024-01-01'\nORDER BY month_start;",
+          "tsql": "SELECT month_start, revenue,\n       SUM(revenue) OVER (ORDER BY month_start ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ytd,\n       ROUND(100.0 * SUM(revenue) OVER (ORDER BY month_start ROWS UNBOUNDED PRECEDING)\n                   / SUM(revenue) OVER (), 1) AS pct_of_year\nFROM monthly_revenue\nWHERE month_start >= '2024-01-01'\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "ytd",
+              "pct_of_year"
+            ],
+            "rows": [
+              [
+                "2024-01-01",
+                "12000.00",
+                "12000.00",
+                "6.4"
+              ],
+              [
+                "2024-02-01",
+                "12100.00",
+                "24100.00",
+                "12.9"
+              ],
+              [
+                "2024-03-01",
+                "13650.00",
+                "37750.00",
+                "20.1"
+              ],
+              [
+                "2024-04-01",
+                "13200.00",
+                "50950.00",
+                "27.2"
+              ],
+              [
+                "2024-05-01",
+                "15000.00",
+                "65950.00",
+                "35.2"
+              ],
+              [
+                "2024-06-01",
+                "15600.00",
+                "81550.00",
+                "43.5"
+              ],
+              [
+                "2024-07-01",
+                "14400.00",
+                "95950.00",
+                "51.2"
+              ],
+              [
+                "2024-08-01",
+                "16800.00",
+                "112750.00",
+                "60.1"
+              ],
+              [
+                "2024-09-01",
+                "16500.00",
+                "129250.00",
+                "69.0"
+              ],
+              [
+                "2024-10-01",
+                "17400.00",
+                "146650.00",
+                "78.2"
+              ],
+              [
+                "2024-11-01",
+                "19200.00",
+                "165850.00",
+                "88.5"
+              ],
+              [
+                "2024-12-01",
+                "21600.00",
+                "187450.00",
+                "100.0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "cum-orders",
+          "title": "Company-wide running revenue by order",
+          "explain_md": "Sorting by `order_date, order_id` is unique, so every row is a distinct step.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, order_date, amount,\n       SUM(amount) OVER (ORDER BY order_date, order_id ROWS UNBOUNDED PRECEDING) AS running_revenue\nFROM orders\nWHERE status = 'completed'\nORDER BY order_date, order_id;",
+          "tsql": "SELECT order_id, order_date, amount,\n       SUM(amount) OVER (ORDER BY order_date, order_id ROWS UNBOUNDED PRECEDING) AS running_revenue\nFROM orders\nWHERE status = 'completed'\nORDER BY order_date, order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "order_date",
+              "amount",
+              "running_revenue"
+            ],
+            "rows": [
+              [
+                "101",
+                "2024-01-06",
+                "120.00",
+                "120.00"
+              ],
+              [
+                "102",
+                "2024-01-21",
+                "45.50",
+                "165.50"
+              ],
+              [
+                "104",
+                "2024-02-03",
+                "60.00",
+                "225.50"
+              ],
+              [
+                "105",
+                "2024-02-03",
+                "15.00",
+                "240.50"
+              ],
+              [
+                "106",
+                "2024-02-14",
+                "200.00",
+                "440.50"
+              ],
+              [
+                "108",
+                "2024-03-09",
+                "120.00",
+                "560.50"
+              ],
+              [
+                "109",
+                "2024-03-16",
+                "300.00",
+                "860.50"
+              ],
+              [
+                "110",
+                "2024-04-01",
+                "50.00",
+                "910.50"
+              ],
+              [
+                "112",
+                "2024-05-05",
+                "65.00",
+                "975.50"
+              ],
+              [
+                "113",
+                "2024-06-11",
+                "110.00",
+                "1085.50"
+              ],
+              [
+                "114",
+                "2024-06-30",
+                "30.00",
+                "1115.50"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "partition-reset",
+      "heading": "Reset per group",
+      "body_md": "- `PARTITION BY` restarts the running total for each group: per region, per customer, per calendar year.\n- Year-to-date: `PARTITION BY YEAR(date_col)`. Month-to-date: partition by year and month.\n- The partition column does **not** need to appear in the `ORDER BY`.",
+      "examples": [
+        {
+          "id": "reset-region",
+          "title": "Running total per region",
+          "explain_md": "East and West each start from their own first day. West skips 03-04 and 03-07 because it has no rows on those days.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT region, sale_date, revenue,\n       SUM(revenue) OVER (PARTITION BY region ORDER BY sale_date ROWS UNBOUNDED PRECEDING) AS region_running\nFROM daily_sales\nWHERE sale_date <= '2024-03-05'\nORDER BY region, sale_date;",
+          "tsql": "SELECT region, sale_date, revenue,\n       SUM(revenue) OVER (PARTITION BY region ORDER BY sale_date ROWS UNBOUNDED PRECEDING) AS region_running\nFROM daily_sales\nWHERE sale_date <= '2024-03-05'\nORDER BY region, sale_date;",
+          "expected": {
+            "columns": [
+              "region",
+              "sale_date",
+              "revenue",
+              "region_running"
+            ],
+            "rows": [
+              [
+                "East",
+                "2024-03-01",
+                "100.00",
+                "100.00"
+              ],
+              [
+                "East",
+                "2024-03-02",
+                "120.00",
+                "220.00"
+              ],
+              [
+                "East",
+                "2024-03-03",
+                "90.00",
+                "310.00"
+              ],
+              [
+                "East",
+                "2024-03-04",
+                "150.00",
+                "460.00"
+              ],
+              [
+                "East",
+                "2024-03-05",
+                "110.00",
+                "570.00"
+              ],
+              [
+                "West",
+                "2024-03-01",
+                "50.00",
+                "50.00"
+              ],
+              [
+                "West",
+                "2024-03-02",
+                "70.00",
+                "120.00"
+              ],
+              [
+                "West",
+                "2024-03-03",
+                "60.00",
+                "180.00"
+              ],
+              [
+                "West",
+                "2024-03-05",
+                "90.00",
+                "270.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "reset-year",
+          "title": "Year-to-date resets in January",
+          "explain_md": "Window over all months in a CTE, then show only Nov 2023 - Feb 2024: the total in Jan 2024 starts again from that month.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH m AS (\n  SELECT month_start, revenue,\n         SUM(revenue) OVER (PARTITION BY YEAR(month_start)\n                            ORDER BY month_start ROWS UNBOUNDED PRECEDING) AS ytd\n  FROM monthly_revenue\n)\nSELECT month_start, revenue, ytd\nFROM m\nWHERE month_start BETWEEN '2023-11-01' AND '2024-02-01'\nORDER BY month_start;",
+          "tsql": "WITH m AS (\n  SELECT month_start, revenue,\n         SUM(revenue) OVER (PARTITION BY YEAR(month_start)\n                            ORDER BY month_start ROWS UNBOUNDED PRECEDING) AS ytd\n  FROM monthly_revenue\n)\nSELECT month_start, revenue, ytd\nFROM m\nWHERE month_start BETWEEN '2023-11-01' AND '2024-02-01'\nORDER BY month_start;",
+          "expected": {
+            "columns": [
+              "month_start",
+              "revenue",
+              "ytd"
+            ],
+            "rows": [
+              [
+                "2023-11-01",
+                "16000.00",
+                "140500.00"
+              ],
+              [
+                "2023-12-01",
+                "18000.00",
+                "158500.00"
+              ],
+              [
+                "2024-01-01",
+                "12000.00",
+                "12000.00"
+              ],
+              [
+                "2024-02-01",
+                "12100.00",
+                "24100.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "running-count-max",
+      "heading": "Running count, max, min, average",
+      "body_md": "- Same frame, different aggregate: `COUNT(*)` = 'nth so far', `MAX` = best so far, `MIN` = worst so far, `AVG` = average so far.\n- 'New record' flag: compare today's value to the max of **previous** rows (`ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING`); the first row has NULL there.\n- Compare with the max including the current row only if you want to test equality (`revenue = running_max`).",
+      "examples": [
+        {
+          "id": "rc-customer",
+          "title": "nth order, biggest so far, average so far",
+          "explain_md": "Per customer, in date order. Completed orders only.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, customer_id, order_date, amount,\n       COUNT(*)    OVER (PARTITION BY customer_id ORDER BY order_date, order_id ROWS UNBOUNDED PRECEDING) AS nth_order,\n       MAX(amount) OVER (PARTITION BY customer_id ORDER BY order_date, order_id ROWS UNBOUNDED PRECEDING) AS biggest_so_far,\n       ROUND(AVG(amount) OVER (PARTITION BY customer_id ORDER BY order_date, order_id ROWS UNBOUNDED PRECEDING), 2) AS avg_so_far\nFROM orders\nWHERE status = 'completed'\nORDER BY customer_id, order_date, order_id;",
+          "tsql": "SELECT order_id, customer_id, order_date, amount,\n       COUNT(*)    OVER (PARTITION BY customer_id ORDER BY order_date, order_id ROWS UNBOUNDED PRECEDING) AS nth_order,\n       MAX(amount) OVER (PARTITION BY customer_id ORDER BY order_date, order_id ROWS UNBOUNDED PRECEDING) AS biggest_so_far,\n       ROUND(AVG(amount) OVER (PARTITION BY customer_id ORDER BY order_date, order_id ROWS UNBOUNDED PRECEDING), 2) AS avg_so_far\nFROM orders\nWHERE status = 'completed'\nORDER BY customer_id, order_date, order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "customer_id",
+              "order_date",
+              "amount",
+              "nth_order",
+              "biggest_so_far",
+              "avg_so_far"
+            ],
+            "rows": [
+              [
+                "101",
+                "1",
+                "2024-01-06",
+                "120.00",
+                "1",
+                "120.00",
+                "120.00"
+              ],
+              [
+                "108",
+                "1",
+                "2024-03-09",
+                "120.00",
+                "2",
+                "120.00",
+                "120.00"
+              ],
+              [
+                "112",
+                "1",
+                "2024-05-05",
+                "65.00",
+                "3",
+                "120.00",
+                "101.67"
+              ],
+              [
+                "102",
+                "2",
+                "2024-01-21",
+                "45.50",
+                "1",
+                "45.50",
+                "45.50"
+              ],
+              [
+                "104",
+                "2",
+                "2024-02-03",
+                "60.00",
+                "2",
+                "60.00",
+                "52.75"
+              ],
+              [
+                "105",
+                "2",
+                "2024-02-03",
+                "15.00",
+                "3",
+                "60.00",
+                "40.17"
+              ],
+              [
+                "114",
+                "2",
+                "2024-06-30",
+                "30.00",
+                "4",
+                "60.00",
+                "37.63"
+              ],
+              [
+                "106",
+                "3",
+                "2024-02-14",
+                "200.00",
+                "1",
+                "200.00",
+                "200.00"
+              ],
+              [
+                "110",
+                "3",
+                "2024-04-01",
+                "50.00",
+                "2",
+                "200.00",
+                "125.00"
+              ],
+              [
+                "113",
+                "4",
+                "2024-06-11",
+                "110.00",
+                "1",
+                "110.00",
+                "110.00"
+              ],
+              [
+                "109",
+                "5",
+                "2024-03-16",
+                "300.00",
+                "1",
+                "300.00",
+                "300.00"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "rc-record-high",
+          "title": "Flag days that set a new record",
+          "explain_md": "`prior_max` is the max of earlier days only. A day is a record when it beats it (the first day trivially is one).",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH r AS (\n  SELECT sale_date, revenue,\n         MAX(revenue) OVER (ORDER BY sale_date\n                            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prior_max\n  FROM daily_sales\n  WHERE region = 'East'\n)\nSELECT sale_date, revenue, prior_max,\n       CASE WHEN prior_max IS NULL OR revenue > prior_max THEN 'record' ELSE '-' END AS flag\nFROM r\nORDER BY sale_date;",
+          "tsql": "WITH r AS (\n  SELECT sale_date, revenue,\n         MAX(revenue) OVER (ORDER BY sale_date\n                            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prior_max\n  FROM daily_sales\n  WHERE region = 'East'\n)\nSELECT sale_date, revenue, prior_max,\n       CASE WHEN prior_max IS NULL OR revenue > prior_max THEN 'record' ELSE '-' END AS flag\nFROM r\nORDER BY sale_date;",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "revenue",
+              "prior_max",
+              "flag"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "100.00",
+                null,
+                "record"
+              ],
+              [
+                "2024-03-02",
+                "120.00",
+                "100.00",
+                "record"
+              ],
+              [
+                "2024-03-03",
+                "90.00",
+                "120.00",
+                "-"
+              ],
+              [
+                "2024-03-04",
+                "150.00",
+                "120.00",
+                "record"
+              ],
+              [
+                "2024-03-05",
+                "110.00",
+                "150.00",
+                "-"
+              ],
+              [
+                "2024-03-06",
+                "130.00",
+                "150.00",
+                "-"
+              ],
+              [
+                "2024-03-07",
+                "80.00",
+                "150.00",
+                "-"
+              ],
+              [
+                "2024-03-08",
+                "160.00",
+                "150.00",
+                "record"
+              ],
+              [
+                "2024-03-09",
+                "140.00",
+                "160.00",
+                "-"
+              ],
+              [
+                "2024-03-10",
+                "100.00",
+                "160.00",
+                "-"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "duplicate-date-trap",
+      "heading": "The duplicate-date trap",
+      "body_md": "- `SUM(x) OVER (ORDER BY d)` uses the default frame `RANGE ... CURRENT ROW`, which includes **all rows with the same `d`**.\n- Rows with the same date therefore show the same running total, and it already includes the later one of them. The step looks 'skipped'.\n- Fix: make the sort unique (`ORDER BY d, id`) **and** use `ROWS` explicitly.\n- If you actually want one value per day, aggregate by day first (next section).",
+      "examples": [
+        {
+          "id": "dup-events",
+          "title": "Two events at the same second",
+          "explain_md": "User 2 has two events at 12:00:00. `default_count` says 2 for both; the fixed count goes 1, 2, 3.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT event_id, user_id, event_ts,\n       COUNT(*) OVER (PARTITION BY user_id ORDER BY event_ts) AS default_count,\n       COUNT(*) OVER (PARTITION BY user_id ORDER BY event_ts, event_id ROWS UNBOUNDED PRECEDING) AS fixed_count\nFROM events\nORDER BY user_id, event_id;",
+          "tsql": "SELECT event_id, user_id, event_ts,\n       COUNT(*) OVER (PARTITION BY user_id ORDER BY event_ts) AS default_count,\n       COUNT(*) OVER (PARTITION BY user_id ORDER BY event_ts, event_id ROWS UNBOUNDED PRECEDING) AS fixed_count\nFROM events\nORDER BY user_id, event_id;",
+          "expected": {
+            "columns": [
+              "event_id",
+              "user_id",
+              "event_ts",
+              "default_count",
+              "fixed_count"
+            ],
+            "rows": [
+              [
+                "1",
+                "1",
+                "2024-05-01 09:00:00",
+                "1",
+                "1"
+              ],
+              [
+                "2",
+                "1",
+                "2024-05-01 09:10:00",
+                "2",
+                "2"
+              ],
+              [
+                "3",
+                "1",
+                "2024-05-01 09:55:00",
+                "3",
+                "3"
+              ],
+              [
+                "4",
+                "1",
+                "2024-05-01 10:05:00",
+                "4",
+                "4"
+              ],
+              [
+                "5",
+                "2",
+                "2024-05-01 12:00:00",
+                "2",
+                "1"
+              ],
+              [
+                "6",
+                "2",
+                "2024-05-01 12:00:00",
+                "2",
+                "2"
+              ],
+              [
+                "7",
+                "2",
+                "2024-05-02 08:30:00",
+                "3",
+                "3"
+              ],
+              [
+                "8",
+                "3",
+                "2024-05-01 18:00:00",
+                "1",
+                "1"
+              ],
+              [
+                "9",
+                "3",
+                "2024-05-02 18:30:00",
+                "2",
+                "2"
+              ],
+              [
+                "10",
+                "3",
+                "2024-05-03 19:00:00",
+                "3",
+                "3"
+              ],
+              [
+                "11",
+                "3",
+                "2024-05-05 07:45:00",
+                "4",
+                "4"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "dup-money",
+          "title": "Same-day orders in a money total",
+          "explain_md": "Customer 2's two orders on 02-03 (60.00 and 15.00) both show 120.50 with the default frame, so the 60.00 order appears to have jumped by 75.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_id, order_date, amount,\n       SUM(amount) OVER (ORDER BY order_date) AS wrong_running,\n       SUM(amount) OVER (ORDER BY order_date, order_id ROWS UNBOUNDED PRECEDING) AS right_running\nFROM orders\nWHERE customer_id = 2\nORDER BY order_date, order_id;",
+          "tsql": "SELECT order_id, order_date, amount,\n       SUM(amount) OVER (ORDER BY order_date) AS wrong_running,\n       SUM(amount) OVER (ORDER BY order_date, order_id ROWS UNBOUNDED PRECEDING) AS right_running\nFROM orders\nWHERE customer_id = 2\nORDER BY order_date, order_id;",
+          "expected": {
+            "columns": [
+              "order_id",
+              "order_date",
+              "amount",
+              "wrong_running",
+              "right_running"
+            ],
+            "rows": [
+              [
+                "102",
+                "2024-01-21",
+                "45.50",
+                "45.50",
+                "45.50"
+              ],
+              [
+                "104",
+                "2024-02-03",
+                "60.00",
+                "120.50",
+                "105.50"
+              ],
+              [
+                "105",
+                "2024-02-03",
+                "15.00",
+                "120.50",
+                "120.50"
+              ],
+              [
+                "114",
+                "2024-06-30",
+                "30.00",
+                "150.50",
+                "150.50"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "aggregate-then-window",
+      "heading": "Running total of a daily aggregate",
+      "body_md": "- Typical request: 'cumulative revenue by day' when there are several rows per day.\n- Aggregate first (`GROUP BY day`), then window over the aggregated rows: `SUM(SUM(x)) OVER (ORDER BY day)`.\n- After `GROUP BY`, each day appears once, so the default frame has no ties and cannot misbehave. Still write `ROWS` if you like being explicit.\n- A day with no activity has no row at all; to show it, join a date spine (see Rolling windows).",
+      "examples": [
+        {
+          "id": "agg-orders-by-day",
+          "title": "Cumulative completed revenue by order date",
+          "explain_md": "The two 2024-02-03 orders merge into one day (75.00) before the window runs.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT order_date,\n       SUM(amount) AS day_total,\n       SUM(SUM(amount)) OVER (ORDER BY order_date ROWS UNBOUNDED PRECEDING) AS cumulative\nFROM orders\nWHERE status = 'completed'\nGROUP BY order_date\nORDER BY order_date;",
+          "tsql": "SELECT order_date,\n       SUM(amount) AS day_total,\n       SUM(SUM(amount)) OVER (ORDER BY order_date ROWS UNBOUNDED PRECEDING) AS cumulative\nFROM orders\nWHERE status = 'completed'\nGROUP BY order_date\nORDER BY order_date;",
+          "expected": {
+            "columns": [
+              "order_date",
+              "day_total",
+              "cumulative"
+            ],
+            "rows": [
+              [
+                "2024-01-06",
+                "120.00",
+                "120.00"
+              ],
+              [
+                "2024-01-21",
+                "45.50",
+                "165.50"
+              ],
+              [
+                "2024-02-03",
+                "75.00",
+                "240.50"
+              ],
+              [
+                "2024-02-14",
+                "200.00",
+                "440.50"
+              ],
+              [
+                "2024-03-09",
+                "120.00",
+                "560.50"
+              ],
+              [
+                "2024-03-16",
+                "300.00",
+                "860.50"
+              ],
+              [
+                "2024-04-01",
+                "50.00",
+                "910.50"
+              ],
+              [
+                "2024-05-05",
+                "65.00",
+                "975.50"
+              ],
+              [
+                "2024-06-11",
+                "110.00",
+                "1085.50"
+              ],
+              [
+                "2024-06-30",
+                "30.00",
+                "1115.50"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "agg-company-days",
+          "title": "Both regions combined, with percent complete",
+          "explain_md": "A CTE sums East + West per day; the outer query adds the running total and how far through the 10-day total we are.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "WITH d AS (\n  SELECT sale_date, SUM(revenue) AS rev\n  FROM daily_sales\n  GROUP BY sale_date\n)\nSELECT sale_date, rev,\n       SUM(rev) OVER (ORDER BY sale_date ROWS UNBOUNDED PRECEDING) AS cumulative,\n       ROUND(100.0 * SUM(rev) OVER (ORDER BY sale_date ROWS UNBOUNDED PRECEDING)\n                   / SUM(rev) OVER (), 1) AS pct_complete\nFROM d\nORDER BY sale_date;",
+          "tsql": "WITH d AS (\n  SELECT sale_date, SUM(revenue) AS rev\n  FROM daily_sales\n  GROUP BY sale_date\n)\nSELECT sale_date, rev,\n       SUM(rev) OVER (ORDER BY sale_date ROWS UNBOUNDED PRECEDING) AS cumulative,\n       ROUND(100.0 * SUM(rev) OVER (ORDER BY sale_date ROWS UNBOUNDED PRECEDING)\n                   / SUM(rev) OVER (), 1) AS pct_complete\nFROM d\nORDER BY sale_date;",
+          "expected": {
+            "columns": [
+              "sale_date",
+              "rev",
+              "cumulative",
+              "pct_complete"
+            ],
+            "rows": [
+              [
+                "2024-03-01",
+                "150.00",
+                "150.00",
+                "8.7"
+              ],
+              [
+                "2024-03-02",
+                "190.00",
+                "340.00",
+                "19.8"
+              ],
+              [
+                "2024-03-03",
+                "150.00",
+                "490.00",
+                "28.6"
+              ],
+              [
+                "2024-03-04",
+                "150.00",
+                "640.00",
+                "37.3"
+              ],
+              [
+                "2024-03-05",
+                "200.00",
+                "840.00",
+                "49.0"
+              ],
+              [
+                "2024-03-06",
+                "170.00",
+                "1010.00",
+                "58.9"
+              ],
+              [
+                "2024-03-07",
+                "80.00",
+                "1090.00",
+                "63.6"
+              ],
+              [
+                "2024-03-08",
+                "235.00",
+                "1325.00",
+                "77.3"
+              ],
+              [
+                "2024-03-09",
+                "205.00",
+                "1530.00",
+                "89.2"
+              ],
+              [
+                "2024-03-10",
+                "185.00",
+                "1715.00",
+                "100.0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    }
+  ]
+}

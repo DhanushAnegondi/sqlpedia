@@ -1,0 +1,3134 @@
+{
+  "problems": [
+    {
+      "id": "P201",
+      "slug": "day-one-retention",
+      "title": "Day-1 retention by signup date",
+      "difficulty": "Medium",
+      "topics": [
+        "Cohorts",
+        "Dates",
+        "Joins"
+      ],
+      "statement_md": "A budgeting app records each account's signup date and every day an account was active. A user is **day-1 retained** if they have at least one activity row dated exactly one calendar day after their `signup_date`; activity on the signup date itself, or two or more days later, does not count. For each `signup_date`, return `cohort_size`, `retained_users` and `retention_pct` (percentage of the cohort retained, rounded to 1 decimal). Include cohorts with zero retained users. Sort by `signup_date`.",
+      "tables": [
+        {
+          "name": "users",
+          "description_md": "One row per user. `signup_date` is the day the account was created.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "signup_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-03-01"
+            ],
+            [
+              2,
+              "2026-03-01"
+            ],
+            [
+              3,
+              "2026-03-01"
+            ],
+            [
+              4,
+              "2026-03-02"
+            ],
+            [
+              5,
+              "2026-03-02"
+            ],
+            [
+              6,
+              "2026-03-31"
+            ],
+            [
+              7,
+              "2026-03-31"
+            ],
+            [
+              8,
+              "2026-03-03"
+            ]
+          ]
+        },
+        {
+          "name": "activity",
+          "description_md": "One row per activity event; the same user can appear several times on one day. May contain user ids that are not in `users`.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "activity_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-03-01"
+            ],
+            [
+              1,
+              "2026-03-02"
+            ],
+            [
+              1,
+              "2026-03-02"
+            ],
+            [
+              2,
+              "2026-03-01"
+            ],
+            [
+              2,
+              "2026-03-03"
+            ],
+            [
+              3,
+              "2026-03-01"
+            ],
+            [
+              3,
+              "2026-03-02"
+            ],
+            [
+              4,
+              "2026-03-02"
+            ],
+            [
+              4,
+              "2026-03-04"
+            ],
+            [
+              5,
+              "2026-03-03"
+            ],
+            [
+              5,
+              "2026-03-03"
+            ],
+            [
+              6,
+              "2026-03-31"
+            ],
+            [
+              6,
+              "2026-04-01"
+            ],
+            [
+              7,
+              "2026-03-31"
+            ],
+            [
+              7,
+              "2026-04-02"
+            ],
+            [
+              99,
+              "2026-03-02"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Which date must the activity match? Express it as a function of the user's own signup date.",
+        "A cohort with nobody retained must still show up, so decide which table drives the join."
+      ],
+      "notes_md": "**Pattern family:** cohort retention. Recognition cue: \"of the people who started on day X, how many came back on day X+n\".\n\n**Approach in words:** the cohort is defined by the users table, so it drives the query. Attach activity only when it falls on the target offset from that user's own signup date, then count distinct people on each side.\n\n**Snippets:**\n- `DATE_ADD(d, INTERVAL 1 DAY)` shifts a date.\n- `COUNT(DISTINCT x)` ignores repeat rows from the same person.\n\n**Trap:** an inner join (or a WHERE on the activity side) silently drops the cohorts you most want to see: the ones with zero retention.",
+      "solutions": [
+        {
+          "label": "LEFT JOIN with the offset in ON",
+          "explain_md": "The offset condition lives in ON so unmatched users survive as NULLs; distinct counts remove repeated events.",
+          "sql": "SELECT u.signup_date,\n       COUNT(DISTINCT u.user_id) AS cohort_size,\n       COUNT(DISTINCT a.user_id) AS retained_users,\n       ROUND(100 * COUNT(DISTINCT a.user_id) / COUNT(DISTINCT u.user_id), 1) AS retention_pct\nFROM users u\nLEFT JOIN activity a\n       ON a.user_id = u.user_id\n      AND a.activity_date = DATE_ADD(u.signup_date, INTERVAL 1 DAY)\nGROUP BY u.signup_date\nORDER BY u.signup_date;"
+        },
+        {
+          "label": "Correlated EXISTS flag",
+          "explain_md": "Compute a 0/1 retained flag per user, then aggregate by cohort. No join fan-out at all.",
+          "sql": "SELECT signup_date,\n       COUNT(*) AS cohort_size,\n       SUM(retained) AS retained_users,\n       ROUND(100 * SUM(retained) / COUNT(*), 1) AS retention_pct\nFROM (\n  SELECT u.user_id, u.signup_date,\n         CASE WHEN EXISTS (SELECT 1 FROM activity a\n                           WHERE a.user_id = u.user_id\n                             AND a.activity_date = DATE_ADD(u.signup_date, INTERVAL 1 DAY))\n              THEN 1 ELSE 0 END AS retained\n  FROM users u\n) f\nGROUP BY signup_date\nORDER BY signup_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "An inner join removes users with no matching activity, so the cohort size shrinks and fully-churned cohorts disappear.",
+          "sql": "SELECT u.signup_date,\n       COUNT(DISTINCT u.user_id) AS cohort_size,\n       COUNT(DISTINCT a.user_id) AS retained_users,\n       ROUND(100 * COUNT(DISTINCT a.user_id) / COUNT(DISTINCT u.user_id), 1) AS retention_pct\nFROM users u\nJOIN activity a\n  ON a.user_id = u.user_id\n AND a.activity_date = DATE_ADD(u.signup_date, INTERVAL 1 DAY)\nGROUP BY u.signup_date\nORDER BY u.signup_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "signup_date",
+          "cohort_size",
+          "retained_users",
+          "retention_pct"
+        ],
+        "rows": [
+          [
+            "2026-03-01",
+            "3",
+            "2",
+            "66.7"
+          ],
+          [
+            "2026-03-02",
+            "2",
+            "1",
+            "50.0"
+          ],
+          [
+            "2026-03-03",
+            "1",
+            "0",
+            "0.0"
+          ],
+          [
+            "2026-03-31",
+            "2",
+            "1",
+            "50.0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P202",
+      "slug": "monthly-cohort-retention",
+      "title": "Monthly cohort retention table",
+      "difficulty": "Hard",
+      "topics": [
+        "Cohorts",
+        "Dates",
+        "Aggregation"
+      ],
+      "statement_md": "Build a long-format retention table. A user's cohort is the calendar month of their `signup_date` (format `YYYY-MM`). `months_since_signup` is the number of calendar months between the signup month and the month of an activity (0 = same month). Only activity **on or after** the signup date counts. A user is active in a given month offset at most once, however many events they have. Return `cohort_month`, `months_since_signup`, `cohort_size` (all users who signed up that month), `active_users` and `retention_pct` (rounded to 1 decimal). Omit rows where nobody was active. Sort by `cohort_month`, then `months_since_signup`.",
+      "tables": [
+        {
+          "name": "users",
+          "description_md": "One row per user.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "signup_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2025-11-05"
+            ],
+            [
+              2,
+              "2025-11-20"
+            ],
+            [
+              3,
+              "2025-12-02"
+            ],
+            [
+              4,
+              "2025-12-15"
+            ],
+            [
+              5,
+              "2025-12-31"
+            ],
+            [
+              6,
+              "2026-01-10"
+            ],
+            [
+              7,
+              "2026-01-20"
+            ]
+          ]
+        },
+        {
+          "name": "activity",
+          "description_md": "One row per activity event. Some events precede the user's signup date (imported history).",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "activity_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2025-11-05"
+            ],
+            [
+              1,
+              "2025-11-20"
+            ],
+            [
+              1,
+              "2025-12-10"
+            ],
+            [
+              1,
+              "2026-01-03"
+            ],
+            [
+              2,
+              "2025-11-20"
+            ],
+            [
+              2,
+              "2026-01-15"
+            ],
+            [
+              3,
+              "2025-12-02"
+            ],
+            [
+              3,
+              "2025-12-30"
+            ],
+            [
+              3,
+              "2026-01-05"
+            ],
+            [
+              4,
+              "2025-12-15"
+            ],
+            [
+              4,
+              "2026-02-01"
+            ],
+            [
+              5,
+              "2025-12-20"
+            ],
+            [
+              5,
+              "2025-12-31"
+            ],
+            [
+              5,
+              "2026-01-01"
+            ],
+            [
+              6,
+              "2026-01-10"
+            ],
+            [
+              6,
+              "2026-01-11"
+            ],
+            [
+              6,
+              "2026-02-10"
+            ],
+            [
+              7,
+              "2026-01-05"
+            ],
+            [
+              7,
+              "2026-02-02"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Reduce activity to distinct (user, month offset) pairs before counting.",
+        "The offset must work across a year boundary, so do not subtract month numbers 1-12 directly."
+      ],
+      "notes_md": "**Pattern family:** monthly cohort retention matrix (long format).\n\n**Approach in words:** (1) cohort sizes from users alone; (2) one row per user per offset after filtering out activity before signup; (3) count users per cohort and offset; (4) divide by cohort size.\n\n**Snippets:**\n- `DATE_FORMAT(d, '%Y-%m')` gives a month label.\n- `YEAR(d) * 12 + MONTH(d)` turns a date into a month index; the difference of two indexes is a month distance.\n\n**Trap:** `MONTH(a) - MONTH(b)` goes negative across December to January; and counting events instead of distinct users inflates the table.",
+      "solutions": [
+        {
+          "label": "Distinct pairs with a month index",
+          "explain_md": "Deduplicate to (user, offset) first, then aggregate; cohort sizes come from a separate grouped CTE.",
+          "sql": "WITH cohort AS (\n  SELECT DATE_FORMAT(signup_date, '%Y-%m') AS cohort_month, COUNT(*) AS cohort_size\n  FROM users\n  GROUP BY DATE_FORMAT(signup_date, '%Y-%m')\n),\nact AS (\n  SELECT DISTINCT u.user_id,\n         DATE_FORMAT(u.signup_date, '%Y-%m') AS cohort_month,\n         (YEAR(a.activity_date) - YEAR(u.signup_date)) * 12 + MONTH(a.activity_date) - MONTH(u.signup_date) AS months_since_signup\n  FROM users u\n  JOIN activity a ON a.user_id = u.user_id AND a.activity_date >= u.signup_date\n)\nSELECT c.cohort_month, x.months_since_signup, c.cohort_size,\n       COUNT(*) AS active_users,\n       ROUND(100 * COUNT(*) / c.cohort_size, 1) AS retention_pct\nFROM act x\nJOIN cohort c ON c.cohort_month = x.cohort_month\nGROUP BY c.cohort_month, x.months_since_signup, c.cohort_size\nORDER BY c.cohort_month, x.months_since_signup;"
+        },
+        {
+          "label": "Month index in a CTE, cohort size by window",
+          "explain_md": "Convert both dates to a month index once, dedupe to (user, offset), and get the cohort size with a window COUNT over the users.",
+          "sql": "WITH u AS (\n  SELECT user_id, signup_date, DATE_FORMAT(signup_date, '%Y-%m') AS cohort_month,\n         YEAR(signup_date) * 12 + MONTH(signup_date) AS sm,\n         COUNT(*) OVER (PARTITION BY DATE_FORMAT(signup_date, '%Y-%m')) AS cohort_size\n  FROM users\n),\npairs AS (\n  SELECT DISTINCT u.user_id, u.cohort_month, u.cohort_size,\n         YEAR(a.activity_date) * 12 + MONTH(a.activity_date) - u.sm AS months_since_signup\n  FROM u\n  JOIN activity a ON a.user_id = u.user_id AND a.activity_date >= u.signup_date\n)\nSELECT cohort_month, months_since_signup, cohort_size, COUNT(*) AS active_users,\n       ROUND(100 * COUNT(*) / cohort_size, 1) AS retention_pct\nFROM pairs\nGROUP BY cohort_month, months_since_signup, cohort_size\nORDER BY cohort_month, months_since_signup;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Subtracting month numbers breaks across a year boundary (December to January gives -11), and pre-signup activity is not excluded.",
+          "sql": "SELECT DATE_FORMAT(u.signup_date, '%Y-%m') AS cohort_month,\n       MONTH(a.activity_date) - MONTH(u.signup_date) AS months_since_signup,\n       COUNT(DISTINCT u.user_id) AS active_users\nFROM users u\nJOIN activity a ON a.user_id = u.user_id\nGROUP BY DATE_FORMAT(u.signup_date, '%Y-%m'), 2\nORDER BY cohort_month, months_since_signup;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "cohort_month",
+          "months_since_signup",
+          "cohort_size",
+          "active_users",
+          "retention_pct"
+        ],
+        "rows": [
+          [
+            "2025-11",
+            "0",
+            "2",
+            "2",
+            "100.0"
+          ],
+          [
+            "2025-11",
+            "1",
+            "2",
+            "1",
+            "50.0"
+          ],
+          [
+            "2025-11",
+            "2",
+            "2",
+            "2",
+            "100.0"
+          ],
+          [
+            "2025-12",
+            "0",
+            "3",
+            "3",
+            "100.0"
+          ],
+          [
+            "2025-12",
+            "1",
+            "3",
+            "2",
+            "66.7"
+          ],
+          [
+            "2025-12",
+            "2",
+            "3",
+            "1",
+            "33.3"
+          ],
+          [
+            "2026-01",
+            "0",
+            "2",
+            "1",
+            "50.0"
+          ],
+          [
+            "2026-01",
+            "1",
+            "2",
+            "2",
+            "100.0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P203",
+      "slug": "longest-activity-streak",
+      "title": "Longest daily streak per user",
+      "difficulty": "Hard",
+      "topics": [
+        "Gaps and islands",
+        "Window functions"
+      ],
+      "statement_md": "A fitness app logs timestamped events. A **streak** is a run of consecutive calendar days (by the date of `event_ts`) on which the user logged at least one event; several events on one day count as one day. For every user whose longest streak is **3 days or more**, return `user_id`, `longest_streak` (days), and that streak's `streak_start` and `streak_end` dates. If a user has several streaks of the longest length, report the earliest. Sort by `longest_streak` descending, then `user_id`.",
+      "tables": [
+        {
+          "name": "events",
+          "description_md": "One row per logged event; multiple events per day are common.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "event_ts",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2026-03-01 08:00:00"
+            ],
+            [
+              1,
+              "2026-03-01 21:30:00"
+            ],
+            [
+              1,
+              "2026-03-02 09:00:00"
+            ],
+            [
+              1,
+              "2026-03-03 07:15:00"
+            ],
+            [
+              1,
+              "2026-03-03 23:59:59"
+            ],
+            [
+              1,
+              "2026-03-05 10:00:00"
+            ],
+            [
+              1,
+              "2026-03-06 10:00:00"
+            ],
+            [
+              1,
+              "2026-03-07 10:00:00"
+            ],
+            [
+              1,
+              "2026-03-08 10:00:00"
+            ],
+            [
+              2,
+              "2026-03-01 12:00:00"
+            ],
+            [
+              2,
+              "2026-03-02 12:00:00"
+            ],
+            [
+              2,
+              "2026-03-04 12:00:00"
+            ],
+            [
+              2,
+              "2026-03-05 12:00:00"
+            ],
+            [
+              3,
+              "2026-03-10 12:00:00"
+            ],
+            [
+              3,
+              "2026-03-11 12:00:00"
+            ],
+            [
+              3,
+              "2026-03-12 12:00:00"
+            ],
+            [
+              3,
+              "2026-03-20 12:00:00"
+            ],
+            [
+              3,
+              "2026-03-21 12:00:00"
+            ],
+            [
+              3,
+              "2026-03-22 12:00:00"
+            ],
+            [
+              4,
+              "2026-03-31 22:00:00"
+            ],
+            [
+              4,
+              "2026-04-01 06:00:00"
+            ],
+            [
+              4,
+              "2026-04-02 18:00:00"
+            ],
+            [
+              5,
+              "2026-03-01 08:00:00"
+            ],
+            [
+              5,
+              "2026-03-01 09:00:00"
+            ],
+            [
+              5,
+              "2026-03-01 10:00:00"
+            ],
+            [
+              6,
+              "2026-03-01 23:59:59"
+            ],
+            [
+              6,
+              "2026-03-02 00:00:00"
+            ],
+            [
+              6,
+              "2026-03-03 12:00:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Collapse to one row per user per day before you look for runs.",
+        "Within a run of consecutive days, the day number minus its row number is constant."
+      ],
+      "notes_md": "**Pattern family:** gaps and islands (consecutive runs).\n\n**Approach in words:** dedupe to distinct days, label each day with an island key that stays equal inside a run and changes when a day is skipped, aggregate each island, then pick the best island per user (rank with a tiebreak).\n\n**Snippets:**\n- `DATEDIFF(d, '2000-01-01') - ROW_NUMBER() OVER (PARTITION BY u ORDER BY d)` as an island key.\n- Alternative key: flag `DATEDIFF(d, LAG(d) OVER (...)) = 1`, then running `SUM` of the not-consecutive flags.\n\n**Trap:** numbering raw events: two events on one day take two row numbers and break the constant key.",
+      "solutions": [
+        {
+          "label": "Day number minus row number",
+          "explain_md": "After DISTINCT days, subtracting ROW_NUMBER from the day number gives one constant per consecutive run; rank islands per user.",
+          "sql": "WITH d AS (\n  SELECT DISTINCT user_id, DATE(event_ts) AS day FROM events\n),\ng AS (\n  SELECT user_id, day,\n         DATEDIFF(day, '2000-01-01') - ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day) AS grp\n  FROM d\n),\ns AS (\n  SELECT user_id, MIN(day) AS streak_start, MAX(day) AS streak_end, COUNT(*) AS streak_days\n  FROM g\n  GROUP BY user_id, grp\n),\nr AS (\n  SELECT s.*, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY streak_days DESC, streak_start) AS rn\n  FROM s\n)\nSELECT user_id, streak_days AS longest_streak, streak_start, streak_end\nFROM r\nWHERE rn = 1 AND streak_days >= 3\nORDER BY longest_streak DESC, user_id;"
+        },
+        {
+          "label": "LAG break flag and running sum",
+          "explain_md": "Flag each day that does not follow the previous day, then a running sum of flags numbers the islands.",
+          "sql": "WITH d AS (\n  SELECT DISTINCT user_id, DATE(event_ts) AS day FROM events\n),\nf AS (\n  SELECT user_id, day,\n         CASE WHEN DATEDIFF(day, LAG(day) OVER (PARTITION BY user_id ORDER BY day)) = 1 THEN 0 ELSE 1 END AS is_new\n  FROM d\n),\ng AS (\n  SELECT user_id, day, SUM(is_new) OVER (PARTITION BY user_id ORDER BY day) AS grp FROM f\n),\ns AS (\n  SELECT user_id, MIN(day) AS streak_start, MAX(day) AS streak_end, COUNT(*) AS streak_days\n  FROM g\n  GROUP BY user_id, grp\n),\nr AS (\n  SELECT s.*, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY streak_days DESC, streak_start) AS rn FROM s\n)\nSELECT user_id, streak_days AS longest_streak, streak_start, streak_end\nFROM r\nWHERE rn = 1 AND streak_days >= 3\nORDER BY longest_streak DESC, user_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without deduplicating days, same-day events consume extra row numbers, so runs split and event counts are mistaken for day counts.",
+          "sql": "WITH g AS (\n  SELECT user_id, DATE(event_ts) AS day,\n         DATEDIFF(DATE(event_ts), '2000-01-01') - ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY event_ts) AS grp\n  FROM events\n),\ns AS (\n  SELECT user_id, MIN(day) AS streak_start, MAX(day) AS streak_end, COUNT(*) AS streak_days\n  FROM g\n  GROUP BY user_id, grp\n)\nSELECT user_id, MAX(streak_days) AS longest_streak, MIN(streak_start) AS streak_start, MAX(streak_end) AS streak_end\nFROM s\nGROUP BY user_id\nHAVING MAX(streak_days) >= 3\nORDER BY longest_streak DESC, user_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "user_id",
+          "longest_streak",
+          "streak_start",
+          "streak_end"
+        ],
+        "rows": [
+          [
+            "1",
+            "4",
+            "2026-03-05",
+            "2026-03-08"
+          ],
+          [
+            "3",
+            "3",
+            "2026-03-10",
+            "2026-03-12"
+          ],
+          [
+            "4",
+            "3",
+            "2026-03-31",
+            "2026-04-02"
+          ],
+          [
+            "6",
+            "3",
+            "2026-03-01",
+            "2026-03-03"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P204",
+      "slug": "sessionize-pageviews",
+      "title": "Sessionize page views",
+      "difficulty": "Hard",
+      "topics": [
+        "Sessionization",
+        "Window functions",
+        "Dates"
+      ],
+      "statement_md": "Split each user's page views into **sessions**: a new session starts when the gap since the user's previous page view is **strictly greater than 30 minutes** (a gap of exactly 30:00 stays in the same session; the first view always starts a session). A session's length is the time from its first to its last view; a one-view session has length 0. Return per `user_id` the number of `sessions` and `avg_session_minutes` (average length in minutes, rounded to 2 decimals, computed from exact seconds). Sort by `user_id`.",
+      "tables": [
+        {
+          "name": "pageviews",
+          "description_md": "One row per page view. Two views by one user can share a timestamp.",
+          "columns": [
+            {
+              "name": "event_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "event_ts",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-04-01 09:00:00"
+            ],
+            [
+              2,
+              1,
+              "2026-04-01 09:10:00"
+            ],
+            [
+              3,
+              1,
+              "2026-04-01 09:40:00"
+            ],
+            [
+              4,
+              1,
+              "2026-04-01 10:11:00"
+            ],
+            [
+              5,
+              1,
+              "2026-04-01 10:20:00"
+            ],
+            [
+              6,
+              2,
+              "2026-04-01 23:50:00"
+            ],
+            [
+              7,
+              2,
+              "2026-04-02 00:05:00"
+            ],
+            [
+              8,
+              2,
+              "2026-04-02 00:35:00"
+            ],
+            [
+              9,
+              2,
+              "2026-04-02 03:00:00"
+            ],
+            [
+              10,
+              3,
+              "2026-04-01 12:00:00"
+            ],
+            [
+              11,
+              3,
+              "2026-04-01 12:00:00"
+            ],
+            [
+              12,
+              4,
+              "2026-04-01 08:00:00"
+            ],
+            [
+              13,
+              4,
+              "2026-04-01 09:00:00"
+            ],
+            [
+              14,
+              4,
+              "2026-04-01 10:00:00"
+            ],
+            [
+              15,
+              5,
+              "2026-04-01 15:00:00"
+            ],
+            [
+              16,
+              5,
+              "2026-04-01 15:30:01"
+            ],
+            [
+              17,
+              5,
+              "2026-04-01 15:59:59"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "First find each view's gap from the previous view of the same user, in seconds, not whole minutes.",
+        "A running total of 'this view starts a new session' flags gives a session number."
+      ],
+      "notes_md": "**Pattern family:** sessionization (gaps and islands with a time threshold).\n\n**Approach in words:** order views per user, measure the gap to the previous view, flag gaps over the threshold, running-sum the flags into a session id, then aggregate per session and again per user.\n\n**Snippets:**\n- `LAG(ts) OVER (PARTITION BY u ORDER BY ts)` previous timestamp.\n- `TIMESTAMPDIFF(SECOND, earlier, later)`.\n- `SUM(flag) OVER (PARTITION BY u ORDER BY ts, id)` running session number.\n\n**Trap:** boundary semantics. `>` vs `>=` at exactly 30 minutes, and units that truncate (a 30:01 gap counted in whole minutes is 30).",
+      "solutions": [
+        {
+          "label": "LAG, flag, running sum",
+          "explain_md": "Gap in seconds against 1800 makes the boundary exact; the running sum of flags is the session id.",
+          "sql": "WITH g AS (\n  SELECT event_id, user_id, event_ts,\n         CASE WHEN TIMESTAMPDIFF(SECOND, LAG(event_ts) OVER (PARTITION BY user_id ORDER BY event_ts, event_id), event_ts) > 1800\n              THEN 1 ELSE 0 END AS is_new\n  FROM pageviews\n),\ns AS (\n  SELECT user_id, event_ts,\n         SUM(is_new) OVER (PARTITION BY user_id ORDER BY event_ts, event_id) AS session_id\n  FROM g\n),\nsess AS (\n  SELECT user_id, session_id, TIMESTAMPDIFF(SECOND, MIN(event_ts), MAX(event_ts)) AS len_sec\n  FROM s\n  GROUP BY user_id, session_id\n)\nSELECT user_id, COUNT(*) AS sessions, ROUND(AVG(len_sec) / 60, 2) AS avg_session_minutes\nFROM sess\nGROUP BY user_id\nORDER BY user_id;"
+        },
+        {
+          "label": "Session starts via NOT EXISTS",
+          "explain_md": "A view starts a session if no earlier view lies within the previous 30 minutes; each view belongs to the latest start at or before it.",
+          "sql": "WITH starts AS (\n  SELECT e.user_id, e.event_ts AS start_ts\n  FROM pageviews e\n  WHERE NOT EXISTS (SELECT 1 FROM pageviews p\n                    WHERE p.user_id = e.user_id\n                      AND p.event_ts < e.event_ts\n                      AND p.event_ts >= DATE_SUB(e.event_ts, INTERVAL 30 MINUTE))\n),\ntagged AS (\n  SELECT e.user_id, e.event_ts,\n         (SELECT MAX(s.start_ts) FROM starts s WHERE s.user_id = e.user_id AND s.start_ts <= e.event_ts) AS session_start\n  FROM pageviews e\n),\nsess AS (\n  SELECT user_id, session_start, TIMESTAMPDIFF(SECOND, MIN(event_ts), MAX(event_ts)) AS len_sec\n  FROM tagged\n  GROUP BY user_id, session_start\n)\nSELECT user_id, COUNT(*) AS sessions, ROUND(AVG(len_sec) / 60, 2) AS avg_session_minutes\nFROM sess\nGROUP BY user_id\nORDER BY user_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "TIMESTAMPDIFF(MINUTE) truncates, so a 30 minute 1 second gap measures as 30 and is wrongly kept in the same session.",
+          "sql": "WITH g AS (\n  SELECT event_id, user_id, event_ts,\n         CASE WHEN TIMESTAMPDIFF(MINUTE, LAG(event_ts) OVER (PARTITION BY user_id ORDER BY event_ts, event_id), event_ts) > 30\n              THEN 1 ELSE 0 END AS is_new\n  FROM pageviews\n),\ns AS (\n  SELECT user_id, event_ts, SUM(is_new) OVER (PARTITION BY user_id ORDER BY event_ts, event_id) AS session_id FROM g\n),\nsess AS (\n  SELECT user_id, session_id, TIMESTAMPDIFF(SECOND, MIN(event_ts), MAX(event_ts)) AS len_sec FROM s GROUP BY user_id, session_id\n)\nSELECT user_id, COUNT(*) AS sessions, ROUND(AVG(len_sec) / 60, 2) AS avg_session_minutes\nFROM sess\nGROUP BY user_id\nORDER BY user_id;"
+        },
+        {
+          "explain_md": "Using >= treats a gap of exactly 30:00 as a new session.",
+          "sql": "WITH g AS (\n  SELECT event_id, user_id, event_ts,\n         CASE WHEN TIMESTAMPDIFF(SECOND, LAG(event_ts) OVER (PARTITION BY user_id ORDER BY event_ts, event_id), event_ts) >= 1800\n              THEN 1 ELSE 0 END AS is_new\n  FROM pageviews\n),\ns AS (\n  SELECT user_id, event_ts, SUM(is_new) OVER (PARTITION BY user_id ORDER BY event_ts, event_id) AS session_id FROM g\n),\nsess AS (\n  SELECT user_id, session_id, TIMESTAMPDIFF(SECOND, MIN(event_ts), MAX(event_ts)) AS len_sec FROM s GROUP BY user_id, session_id\n)\nSELECT user_id, COUNT(*) AS sessions, ROUND(AVG(len_sec) / 60, 2) AS avg_session_minutes\nFROM sess\nGROUP BY user_id\nORDER BY user_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "user_id",
+          "sessions",
+          "avg_session_minutes"
+        ],
+        "rows": [
+          [
+            "1",
+            "2",
+            "24.50"
+          ],
+          [
+            "2",
+            "2",
+            "22.50"
+          ],
+          [
+            "3",
+            "1",
+            "0.00"
+          ],
+          [
+            "4",
+            "3",
+            "0.00"
+          ],
+          [
+            "5",
+            "2",
+            "14.98"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P205",
+      "slug": "ordered-purchase-funnel",
+      "title": "Ordered view-cart-purchase funnel",
+      "difficulty": "Hard",
+      "topics": [
+        "Funnels",
+        "Dates",
+        "CTEs"
+      ],
+      "statement_md": "Measure a three-step funnel per user, anchored on the user's **first** `view`. Step 2 (`add_to_cart`) is reached if some add_to_cart is strictly after that first view and at most 24 hours after it. Step 3 (`purchase`) is reached if the user reached step 2 and has a purchase strictly after their earliest qualifying add_to_cart and at most 24 hours after the first view. Return one row per step: `step` (1-3), `event_type`, `users`, `pct_of_previous` (NULL for step 1) and `pct_of_viewers`, both rounded to 1 decimal. Sort by `step`.",
+      "tables": [
+        {
+          "name": "events",
+          "description_md": "One row per tracked event; exact duplicates can occur.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "event_type",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "event_ts",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "view",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              1,
+              "view",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              1,
+              "add_to_cart",
+              "2026-05-01 10:30:00"
+            ],
+            [
+              1,
+              "purchase",
+              "2026-05-01 11:00:00"
+            ],
+            [
+              2,
+              "view",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              2,
+              "add_to_cart",
+              "2026-05-01 10:30:00"
+            ],
+            [
+              3,
+              "view",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              3,
+              "purchase",
+              "2026-05-01 10:20:00"
+            ],
+            [
+              3,
+              "add_to_cart",
+              "2026-05-01 10:40:00"
+            ],
+            [
+              4,
+              "view",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              4,
+              "add_to_cart",
+              "2026-05-02 10:00:00"
+            ],
+            [
+              4,
+              "purchase",
+              "2026-05-02 10:00:01"
+            ],
+            [
+              5,
+              "view",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              5,
+              "add_to_cart",
+              "2026-05-02 10:00:01"
+            ],
+            [
+              6,
+              "add_to_cart",
+              "2026-05-01 09:00:00"
+            ],
+            [
+              6,
+              "view",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              6,
+              "purchase",
+              "2026-05-01 10:30:00"
+            ],
+            [
+              7,
+              "view",
+              "2026-05-01 08:00:00"
+            ],
+            [
+              7,
+              "view",
+              "2026-05-03 08:00:00"
+            ],
+            [
+              7,
+              "add_to_cart",
+              "2026-05-03 08:30:00"
+            ],
+            [
+              7,
+              "purchase",
+              "2026-05-03 09:00:00"
+            ],
+            [
+              8,
+              "view",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              8,
+              "add_to_cart",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              8,
+              "purchase",
+              "2026-05-01 10:30:00"
+            ],
+            [
+              9,
+              "view",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              9,
+              "add_to_cart",
+              "2026-05-01 10:10:00"
+            ],
+            [
+              9,
+              "add_to_cart",
+              "2026-05-01 10:20:00"
+            ],
+            [
+              9,
+              "purchase",
+              "2026-05-01 10:15:00"
+            ],
+            [
+              9,
+              "purchase",
+              "2026-05-01 10:40:00"
+            ],
+            [
+              10,
+              "purchase",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              11,
+              "view",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              11,
+              "add_to_cart",
+              "2026-05-01 11:00:00"
+            ],
+            [
+              11,
+              "purchase",
+              "2026-05-01 11:00:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Work out each user's anchor time first, then test step 2 and step 3 against it.",
+        "A user can pass step 3 only through a cart event that itself qualified for step 2."
+      ],
+      "notes_md": "**Pattern family:** ordered funnel with a time window.\n\n**Approach in words:** anchor = earliest first-step event per user. Join forward to the next step's events inside the window (strict order, inclusive end), keep the earliest qualifier, repeat for the next step, then count users per step and compute ratios with LAG / FIRST_VALUE.\n\n**Snippets:**\n- `DATE_ADD(ts, INTERVAL 24 HOUR)` as the window end.\n- `UNION ALL` of per-step counts, then a window function over the union.\n\n**Trap:** counting distinct users per event type ignores order and window completely.",
+      "solutions": [
+        {
+          "label": "Chained CTEs per step",
+          "explain_md": "Each step's CTE joins to the previous one so only ordered, in-window users survive.",
+          "sql": "WITH v AS (\n  SELECT user_id, MIN(event_ts) AS view_ts FROM events WHERE event_type = 'view' GROUP BY user_id\n),\nc AS (\n  SELECT v.user_id, v.view_ts, MIN(e.event_ts) AS cart_ts\n  FROM v\n  JOIN events e ON e.user_id = v.user_id AND e.event_type = 'add_to_cart'\n               AND e.event_ts > v.view_ts AND e.event_ts <= DATE_ADD(v.view_ts, INTERVAL 24 HOUR)\n  GROUP BY v.user_id, v.view_ts\n),\np AS (\n  SELECT DISTINCT c.user_id\n  FROM c\n  JOIN events e ON e.user_id = c.user_id AND e.event_type = 'purchase'\n               AND e.event_ts > c.cart_ts AND e.event_ts <= DATE_ADD(c.view_ts, INTERVAL 24 HOUR)\n),\nsteps AS (\n  SELECT 1 AS step, 'view' AS event_type, COUNT(*) AS users FROM v\n  UNION ALL SELECT 2, 'add_to_cart', COUNT(*) FROM c\n  UNION ALL SELECT 3, 'purchase', COUNT(*) FROM p\n)\nSELECT step, event_type, users,\n       ROUND(100 * users / LAG(users) OVER (ORDER BY step), 1) AS pct_of_previous,\n       ROUND(100 * users / FIRST_VALUE(users) OVER (ORDER BY step), 1) AS pct_of_viewers\nFROM steps\nORDER BY step;"
+        },
+        {
+          "label": "Per-user flags with EXISTS",
+          "explain_md": "Compute two boolean flags per viewer with correlated EXISTS, count them, and reuse the same ratio layer.",
+          "sql": "WITH v AS (\n  SELECT user_id, MIN(event_ts) AS view_ts FROM events WHERE event_type = 'view' GROUP BY user_id\n),\nf AS (\n  SELECT v.user_id,\n         EXISTS (SELECT 1 FROM events c WHERE c.user_id = v.user_id AND c.event_type = 'add_to_cart'\n                   AND c.event_ts > v.view_ts AND c.event_ts <= DATE_ADD(v.view_ts, INTERVAL 24 HOUR)) AS has_cart,\n         EXISTS (SELECT 1 FROM events c JOIN events p ON p.user_id = c.user_id AND p.event_type = 'purchase'\n                   AND p.event_ts > c.event_ts AND p.event_ts <= DATE_ADD(v.view_ts, INTERVAL 24 HOUR)\n                 WHERE c.user_id = v.user_id AND c.event_type = 'add_to_cart'\n                   AND c.event_ts > v.view_ts AND c.event_ts <= DATE_ADD(v.view_ts, INTERVAL 24 HOUR)) AS has_buy\n  FROM v\n),\nsteps AS (\n  SELECT 1 AS step, 'view' AS event_type, COUNT(*) AS users FROM f\n  UNION ALL SELECT 2, 'add_to_cart', COUNT(CASE WHEN has_cart = 1 THEN 1 END) FROM f\n  UNION ALL SELECT 3, 'purchase', COUNT(CASE WHEN has_buy = 1 THEN 1 END) FROM f\n)\nSELECT step, event_type, users,\n       ROUND(100 * users / LAG(users) OVER (ORDER BY step), 1) AS pct_of_previous,\n       ROUND(100 * users / FIRST_VALUE(users) OVER (ORDER BY step), 1) AS pct_of_viewers\nFROM steps\nORDER BY step;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Counting distinct users per event type ignores sequence, the 24 hour window and the anchor, so out-of-order and late users are credited.",
+          "sql": "WITH steps AS (\n  SELECT 1 AS step, 'view' AS event_type, COUNT(DISTINCT user_id) AS users FROM events WHERE event_type = 'view'\n  UNION ALL SELECT 2, 'add_to_cart', COUNT(DISTINCT user_id) FROM events WHERE event_type = 'add_to_cart'\n  UNION ALL SELECT 3, 'purchase', COUNT(DISTINCT user_id) FROM events WHERE event_type = 'purchase'\n)\nSELECT step, event_type, users,\n       ROUND(100 * users / LAG(users) OVER (ORDER BY step), 1) AS pct_of_previous,\n       ROUND(100 * users / FIRST_VALUE(users) OVER (ORDER BY step), 1) AS pct_of_viewers\nFROM steps\nORDER BY step;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "step",
+          "event_type",
+          "users",
+          "pct_of_previous",
+          "pct_of_viewers"
+        ],
+        "rows": [
+          [
+            "1",
+            "view",
+            "10",
+            null,
+            "100.0"
+          ],
+          [
+            "2",
+            "add_to_cart",
+            "6",
+            "60.0",
+            "60.0"
+          ],
+          [
+            "3",
+            "purchase",
+            "2",
+            "33.3",
+            "20.0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P206",
+      "slug": "first-purchase-repeat-rate",
+      "title": "Repeat purchase within 30 days of first order",
+      "difficulty": "Medium",
+      "topics": [
+        "Cohorts",
+        "Dates",
+        "Joins"
+      ],
+      "statement_md": "Only orders with `status = 'completed'` count as purchases. A customer's **first purchase** is their earliest completed order date. They are a **repeat customer** if they have another completed order dated after the first purchase date and no later than 30 days after it (a second order on the same day does not count). Group customers by the month of their first purchase (`YYYY-MM`) and return `first_month`, `new_customers`, `repeat_customers` and `repeat_pct` (rounded to 1 decimal). Customers with no completed order are ignored. Sort by `first_month`.",
+      "tables": [
+        {
+          "name": "orders",
+          "description_md": "One row per order; `status` is `completed` or `cancelled`.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "order_date",
+              "type": "DATE"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-01-05",
+              "completed"
+            ],
+            [
+              2,
+              1,
+              "2026-02-04",
+              "completed"
+            ],
+            [
+              3,
+              2,
+              "2026-01-10",
+              "completed"
+            ],
+            [
+              4,
+              2,
+              "2026-02-10",
+              "completed"
+            ],
+            [
+              5,
+              3,
+              "2026-01-12",
+              "cancelled"
+            ],
+            [
+              6,
+              3,
+              "2026-01-20",
+              "completed"
+            ],
+            [
+              7,
+              3,
+              "2026-01-25",
+              "completed"
+            ],
+            [
+              8,
+              4,
+              "2026-01-30",
+              "cancelled"
+            ],
+            [
+              9,
+              4,
+              "2026-02-02",
+              "completed"
+            ],
+            [
+              10,
+              4,
+              "2026-02-20",
+              "completed"
+            ],
+            [
+              11,
+              5,
+              "2026-02-03",
+              "completed"
+            ],
+            [
+              12,
+              5,
+              "2026-02-03",
+              "completed"
+            ],
+            [
+              13,
+              6,
+              "2026-02-14",
+              "completed"
+            ],
+            [
+              14,
+              7,
+              "2026-02-15",
+              "cancelled"
+            ],
+            [
+              15,
+              8,
+              "2026-01-31",
+              "completed"
+            ],
+            [
+              16,
+              8,
+              "2026-03-01",
+              "completed"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Decide which orders are allowed to define the first purchase before you compute any date window.",
+        "Join each customer's first purchase back to their completed orders inside the window."
+      ],
+      "notes_md": "**Pattern family:** first-event cohort plus a follow-up window.\n\n**Approach in words:** filter to qualifying events first, take the min date per customer, then ask whether a second qualifying event exists in (first, first + 30 days]. Aggregate by first-purchase month.\n\n**Snippets:**\n- `MIN(order_date)` after a `WHERE status = ...`.\n- `DATE_ADD(d, INTERVAL 30 DAY)` for an inclusive window end.\n\n**Trap:** taking the first row of any status makes cancelled orders define the cohort month.",
+      "solutions": [
+        {
+          "label": "LEFT JOIN to later orders",
+          "explain_md": "First qualifying date comes from the filtered table; a LEFT JOIN with the window in ON plus MAX of a 0/1 flag marks repeaters once.",
+          "sql": "WITH f AS (\n  SELECT customer_id, MIN(order_date) AS first_date, DATE_FORMAT(MIN(order_date), '%Y-%m') AS first_month\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY customer_id\n),\nr AS (\n  SELECT f.customer_id, f.first_month, MAX(CASE WHEN o.order_id IS NOT NULL THEN 1 ELSE 0 END) AS repeated\n  FROM f\n  LEFT JOIN orders o ON o.customer_id = f.customer_id AND o.status = 'completed'\n                    AND o.order_date > f.first_date\n                    AND o.order_date <= DATE_ADD(f.first_date, INTERVAL 30 DAY)\n  GROUP BY f.customer_id, f.first_month\n)\nSELECT first_month, COUNT(*) AS new_customers, SUM(repeated) AS repeat_customers,\n       ROUND(100 * SUM(repeated) / COUNT(*), 1) AS repeat_pct\nFROM r\nGROUP BY first_month\nORDER BY first_month;"
+        },
+        {
+          "label": "Correlated EXISTS",
+          "explain_md": "Same logic, but the follow-up check is an EXISTS against the first-purchase CTE.",
+          "sql": "WITH f AS (\n  SELECT customer_id, MIN(order_date) AS first_date FROM orders WHERE status = 'completed' GROUP BY customer_id\n)\nSELECT DATE_FORMAT(f.first_date, '%Y-%m') AS first_month,\n       COUNT(*) AS new_customers,\n       SUM(CASE WHEN EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = f.customer_id AND o.status = 'completed'\n                               AND o.order_date > f.first_date AND o.order_date <= DATE_ADD(f.first_date, INTERVAL 30 DAY))\n                THEN 1 ELSE 0 END) AS repeat_customers,\n       ROUND(100 * SUM(CASE WHEN EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = f.customer_id AND o.status = 'completed'\n                               AND o.order_date > f.first_date AND o.order_date <= DATE_ADD(f.first_date, INTERVAL 30 DAY))\n                THEN 1 ELSE 0 END) / COUNT(*), 1) AS repeat_pct\nFROM f\nGROUP BY DATE_FORMAT(f.first_date, '%Y-%m')\nORDER BY first_month;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Taking the earliest order of any status lets a cancelled order set the cohort month and the window start, and cancelled-only customers appear as new customers.",
+          "sql": "WITH f AS (\n  SELECT customer_id, MIN(order_date) AS first_date FROM orders GROUP BY customer_id\n),\nr AS (\n  SELECT f.customer_id, DATE_FORMAT(f.first_date, '%Y-%m') AS first_month,\n         MAX(CASE WHEN o.order_id IS NOT NULL THEN 1 ELSE 0 END) AS repeated\n  FROM f\n  LEFT JOIN orders o ON o.customer_id = f.customer_id AND o.order_date > f.first_date\n                    AND o.order_date <= DATE_ADD(f.first_date, INTERVAL 30 DAY)\n  GROUP BY f.customer_id, DATE_FORMAT(f.first_date, '%Y-%m')\n)\nSELECT first_month, COUNT(*) AS new_customers, SUM(repeated) AS repeat_customers,\n       ROUND(100 * SUM(repeated) / COUNT(*), 1) AS repeat_pct\nFROM r\nGROUP BY first_month\nORDER BY first_month;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "first_month",
+          "new_customers",
+          "repeat_customers",
+          "repeat_pct"
+        ],
+        "rows": [
+          [
+            "2026-01",
+            "4",
+            "3",
+            "75.0"
+          ],
+          [
+            "2026-02",
+            "3",
+            "1",
+            "33.3"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P207",
+      "slug": "source-target-reconciliation",
+      "title": "Source-to-target reconciliation",
+      "difficulty": "Hard",
+      "topics": [
+        "Reconciliation",
+        "NULL handling",
+        "Set operations"
+      ],
+      "statement_md": "After a nightly copy job, compare `src_accounts` with `tgt_accounts` on `acct_id`. Return one row per problem: `acct_id` and `issue`, where `issue` is `MISSING_IN_TARGET` (in source only), `EXTRA_IN_TARGET` (in target only) or `MISMATCH` (in both, but `owner`, `balance` or `tier` differs). Two NULLs count as equal; a NULL against a value is a difference. Do not use FULL OUTER JOIN. Sort by `acct_id`.",
+      "tables": [
+        {
+          "name": "src_accounts",
+          "description_md": "Source of truth. `tier` may be NULL.",
+          "columns": [
+            {
+              "name": "acct_id",
+              "type": "INT"
+            },
+            {
+              "name": "owner",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "balance",
+              "type": "DECIMAL(10,2)"
+            },
+            {
+              "name": "tier",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ann",
+              100.0,
+              "gold"
+            ],
+            [
+              2,
+              "Bo",
+              50.0,
+              null
+            ],
+            [
+              3,
+              "Cy",
+              75.5,
+              "silver"
+            ],
+            [
+              4,
+              "Di",
+              0.0,
+              null
+            ],
+            [
+              5,
+              "Ed",
+              20.0,
+              "gold"
+            ],
+            [
+              6,
+              "Flo",
+              9.99,
+              null
+            ]
+          ]
+        },
+        {
+          "name": "tgt_accounts",
+          "description_md": "Warehouse copy.",
+          "columns": [
+            {
+              "name": "acct_id",
+              "type": "INT"
+            },
+            {
+              "name": "owner",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "balance",
+              "type": "DECIMAL(10,2)"
+            },
+            {
+              "name": "tier",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ann",
+              100.0,
+              "gold"
+            ],
+            [
+              2,
+              "Bo",
+              50.0,
+              null
+            ],
+            [
+              3,
+              "Cy",
+              75.5,
+              null
+            ],
+            [
+              4,
+              "Di",
+              0.0,
+              "bronze"
+            ],
+            [
+              6,
+              "Flo",
+              10.0,
+              null
+            ],
+            [
+              7,
+              "Gus",
+              30.0,
+              "gold"
+            ],
+            [
+              8,
+              "Hal",
+              5.0,
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Three separate questions: only on the left, only on the right, on both but different.",
+        "The plain inequality operator returns NULL, not true, when either side is NULL."
+      ],
+      "notes_md": "**Pattern family:** source-to-target reconciliation (diff two tables).\n\n**Approach in words:** missing = anti-join from source, extra = anti-join from target, mismatch = inner join filtered by a row-level difference test. Stack with UNION ALL, or build a spine of all keys and left join both sides.\n\n**Snippets:**\n- `a <=> b` is null-safe equality (NULL <=> NULL is 1).\n- `NOT (a <=> b OR ...)` style predicates never evaluate to NULL.\n\n**Trap:** `a <> b` silently skips any row where one side is NULL.",
+      "solutions": [
+        {
+          "label": "Three branches with UNION ALL",
+          "explain_md": "Two anti-joins and one null-safe mismatch join are mutually exclusive, so UNION ALL is safe.",
+          "sql": "SELECT s.acct_id, 'MISSING_IN_TARGET' AS issue\nFROM src_accounts s LEFT JOIN tgt_accounts t ON t.acct_id = s.acct_id\nWHERE t.acct_id IS NULL\nUNION ALL\nSELECT t.acct_id, 'EXTRA_IN_TARGET'\nFROM tgt_accounts t LEFT JOIN src_accounts s ON s.acct_id = t.acct_id\nWHERE s.acct_id IS NULL\nUNION ALL\nSELECT s.acct_id, 'MISMATCH'\nFROM src_accounts s JOIN tgt_accounts t ON t.acct_id = s.acct_id\nWHERE NOT (s.owner <=> t.owner AND s.balance <=> t.balance AND s.tier <=> t.tier)\nORDER BY acct_id;"
+        },
+        {
+          "label": "Key spine with two LEFT JOINs",
+          "explain_md": "A distinct union of keys replaces FULL OUTER JOIN; a CASE labels each key.",
+          "sql": "SELECT k.acct_id,\n       CASE WHEN s.acct_id IS NULL THEN 'EXTRA_IN_TARGET'\n            WHEN t.acct_id IS NULL THEN 'MISSING_IN_TARGET'\n            ELSE 'MISMATCH' END AS issue\nFROM (SELECT acct_id FROM src_accounts UNION SELECT acct_id FROM tgt_accounts) k\nLEFT JOIN src_accounts s ON s.acct_id = k.acct_id\nLEFT JOIN tgt_accounts t ON t.acct_id = k.acct_id\nWHERE s.acct_id IS NULL OR t.acct_id IS NULL\n   OR NOT (s.owner <=> t.owner AND s.balance <=> t.balance AND s.tier <=> t.tier)\nORDER BY k.acct_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Using <> to detect differences yields NULL when either side is NULL, so NULL-versus-value changes are missed.",
+          "sql": "SELECT s.acct_id, 'MISSING_IN_TARGET' AS issue\nFROM src_accounts s LEFT JOIN tgt_accounts t ON t.acct_id = s.acct_id\nWHERE t.acct_id IS NULL\nUNION ALL\nSELECT t.acct_id, 'EXTRA_IN_TARGET'\nFROM tgt_accounts t LEFT JOIN src_accounts s ON s.acct_id = t.acct_id\nWHERE s.acct_id IS NULL\nUNION ALL\nSELECT s.acct_id, 'MISMATCH'\nFROM src_accounts s JOIN tgt_accounts t ON t.acct_id = s.acct_id\nWHERE s.owner <> t.owner OR s.balance <> t.balance OR s.tier <> t.tier\nORDER BY acct_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "acct_id",
+          "issue"
+        ],
+        "rows": [
+          [
+            "3",
+            "MISMATCH"
+          ],
+          [
+            "4",
+            "MISMATCH"
+          ],
+          [
+            "5",
+            "MISSING_IN_TARGET"
+          ],
+          [
+            "6",
+            "MISMATCH"
+          ],
+          [
+            "7",
+            "EXTRA_IN_TARGET"
+          ],
+          [
+            "8",
+            "EXTRA_IN_TARGET"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P208",
+      "slug": "incremental-upsert-rows",
+      "title": "Rows to upsert from a staging batch",
+      "difficulty": "Hard",
+      "topics": [
+        "Incremental loads",
+        "Deduplication",
+        "Window functions"
+      ],
+      "statement_md": "A loader receives a batch in `staging_customers` (the same `cust_id` can appear several times, and old versions can arrive late). Produce the rows that must be written to `target_customers`: for each `cust_id`, take its **latest version** in staging (highest `updated_at`; if tied, the highest `batch_row_id`), and keep it only if the key is new to the target or its `updated_at` is **strictly newer** than the target's. Return `cust_id`, `email`, `updated_at` and `action` (`INSERT` for new keys, `UPDATE` otherwise). Sort by `cust_id`.",
+      "tables": [
+        {
+          "name": "target_customers",
+          "description_md": "Current state of the dimension.",
+          "columns": [
+            {
+              "name": "cust_id",
+              "type": "INT"
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "updated_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "a@x.io",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              2,
+              "b@x.io",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              3,
+              "c@x.io",
+              "2026-05-02 09:00:00"
+            ],
+            [
+              4,
+              "d@x.io",
+              "2026-05-03 00:00:00"
+            ]
+          ]
+        },
+        {
+          "name": "staging_customers",
+          "description_md": "Incoming batch. `batch_row_id` is arrival order; `email` can be NULL.",
+          "columns": [
+            {
+              "name": "batch_row_id",
+              "type": "INT"
+            },
+            {
+              "name": "cust_id",
+              "type": "INT"
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "updated_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "a2@x.io",
+              "2026-05-01 12:00:00"
+            ],
+            [
+              2,
+              1,
+              "a3@x.io",
+              "2026-05-01 15:00:00"
+            ],
+            [
+              3,
+              1,
+              "a1late@x.io",
+              "2026-05-01 11:00:00"
+            ],
+            [
+              4,
+              2,
+              "b@x.io",
+              "2026-05-01 10:00:00"
+            ],
+            [
+              5,
+              3,
+              "c-old@x.io",
+              "2026-05-02 08:00:00"
+            ],
+            [
+              6,
+              4,
+              "d2@x.io",
+              "2026-05-03 08:00:00"
+            ],
+            [
+              7,
+              4,
+              "d3@x.io",
+              "2026-05-03 08:00:00"
+            ],
+            [
+              8,
+              5,
+              "e@x.io",
+              "2026-05-04 10:00:00"
+            ],
+            [
+              9,
+              5,
+              "e@x.io",
+              "2026-05-04 10:00:00"
+            ],
+            [
+              10,
+              6,
+              null,
+              "2026-05-04 11:00:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Arrival order and business time are different things; pick the winner by business time.",
+        "Dedupe staging first, then compare the winner with the target."
+      ],
+      "notes_md": "**Pattern family:** incremental load / upsert candidate selection (dedupe, then compare to target).\n\n**Approach in words:** rank staging rows per key by (updated_at desc, batch_row_id desc), keep rank 1, LEFT JOIN the target, keep rows where there is no target row or the staged version is strictly newer, and label INSERT vs UPDATE from whether the target matched.\n\n**Snippets:**\n- `ROW_NUMBER() OVER (PARTITION BY k ORDER BY ts DESC, id DESC)`.\n- Equivalent without windows: `NOT EXISTS` a better row for the same key.\n\n**Trap:** choosing the latest by arrival id lets a late-arriving old version overwrite a newer one.",
+      "solutions": [
+        {
+          "label": "ROW_NUMBER then compare to target",
+          "explain_md": "Rank 1 per key is the winning version; the WHERE keeps only genuinely new or newer rows.",
+          "sql": "WITH ranked AS (\n  SELECT s.*, ROW_NUMBER() OVER (PARTITION BY cust_id ORDER BY updated_at DESC, batch_row_id DESC) AS rn\n  FROM staging_customers s\n)\nSELECT r.cust_id, r.email, r.updated_at,\n       CASE WHEN t.cust_id IS NULL THEN 'INSERT' ELSE 'UPDATE' END AS action\nFROM ranked r\nLEFT JOIN target_customers t ON t.cust_id = r.cust_id\nWHERE r.rn = 1 AND (t.cust_id IS NULL OR r.updated_at > t.updated_at)\nORDER BY r.cust_id;"
+        },
+        {
+          "label": "NOT EXISTS for a better version",
+          "explain_md": "A staged row wins if no other staged row for the same key beats it on time or, at equal time, on batch id.",
+          "sql": "SELECT s.cust_id, s.email, s.updated_at,\n       CASE WHEN t.cust_id IS NULL THEN 'INSERT' ELSE 'UPDATE' END AS action\nFROM staging_customers s\nLEFT JOIN target_customers t ON t.cust_id = s.cust_id\nWHERE NOT EXISTS (SELECT 1 FROM staging_customers x\n                  WHERE x.cust_id = s.cust_id\n                    AND (x.updated_at > s.updated_at OR (x.updated_at = s.updated_at AND x.batch_row_id > s.batch_row_id)))\n  AND (t.cust_id IS NULL OR s.updated_at > t.updated_at)\nGROUP BY s.cust_id, s.email, s.updated_at, t.cust_id\nORDER BY s.cust_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Ranking by arrival order (batch_row_id) lets a late-arriving older version beat the genuinely newer one.",
+          "sql": "WITH ranked AS (\n  SELECT s.*, ROW_NUMBER() OVER (PARTITION BY cust_id ORDER BY batch_row_id DESC) AS rn\n  FROM staging_customers s\n)\nSELECT r.cust_id, r.email, r.updated_at,\n       CASE WHEN t.cust_id IS NULL THEN 'INSERT' ELSE 'UPDATE' END AS action\nFROM ranked r\nLEFT JOIN target_customers t ON t.cust_id = r.cust_id\nWHERE r.rn = 1 AND (t.cust_id IS NULL OR r.updated_at > t.updated_at)\nORDER BY r.cust_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "cust_id",
+          "email",
+          "updated_at",
+          "action"
+        ],
+        "rows": [
+          [
+            "1",
+            "a3@x.io",
+            "2026-05-01 15:00:00",
+            "UPDATE"
+          ],
+          [
+            "4",
+            "d3@x.io",
+            "2026-05-03 08:00:00",
+            "UPDATE"
+          ],
+          [
+            "5",
+            "e@x.io",
+            "2026-05-04 10:00:00",
+            "INSERT"
+          ],
+          [
+            "6",
+            null,
+            "2026-05-04 11:00:00",
+            "INSERT"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P209",
+      "slug": "point-in-time-customer-tier",
+      "title": "Revenue by customer tier at order time",
+      "difficulty": "Medium",
+      "topics": [
+        "Slowly changing dimensions",
+        "Joins",
+        "Dates"
+      ],
+      "statement_md": "`customer_tiers` is a Type 2 history: each row is valid from `valid_from` (inclusive) up to `valid_to` (**exclusive**); `valid_to` NULL means the version is still current. Attribute each order to the tier version in force at its `order_ts` (an order exactly at a version's `valid_from` belongs to that version). Orders with no version in force (unknown customer, or placed before the first version) are reported as `unknown`. Return `tier_at_order`, `orders` and `revenue`, sorted by `tier_at_order`.",
+      "tables": [
+        {
+          "name": "customer_tiers",
+          "description_md": "SCD2 history, one row per customer per version; ranges do not overlap.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "tier",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "valid_from",
+              "type": "DATE"
+            },
+            {
+              "name": "valid_to",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "basic",
+              "2026-01-01",
+              "2026-02-01"
+            ],
+            [
+              1,
+              "silver",
+              "2026-02-01",
+              "2026-04-01"
+            ],
+            [
+              1,
+              "gold",
+              "2026-04-01",
+              null
+            ],
+            [
+              2,
+              "basic",
+              "2026-01-15",
+              null
+            ],
+            [
+              3,
+              "silver",
+              "2026-03-01",
+              null
+            ]
+          ]
+        },
+        {
+          "name": "orders",
+          "description_md": "One row per order.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "order_ts",
+              "type": "DATETIME"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-01-31 23:59:59",
+              10.0
+            ],
+            [
+              2,
+              1,
+              "2026-02-01 00:00:00",
+              20.0
+            ],
+            [
+              3,
+              1,
+              "2026-03-31 23:59:59",
+              30.0
+            ],
+            [
+              4,
+              1,
+              "2026-04-01 00:00:00",
+              40.0
+            ],
+            [
+              5,
+              1,
+              "2026-05-10 12:00:00",
+              50.0
+            ],
+            [
+              6,
+              2,
+              "2026-01-14 18:00:00",
+              15.0
+            ],
+            [
+              7,
+              2,
+              "2026-01-15 00:00:00",
+              25.0
+            ],
+            [
+              8,
+              2,
+              "2026-06-01 09:00:00",
+              35.0
+            ],
+            [
+              9,
+              3,
+              "2026-02-10 10:00:00",
+              5.0
+            ],
+            [
+              10,
+              3,
+              "2026-03-01 10:00:00",
+              60.0
+            ],
+            [
+              11,
+              4,
+              "2026-03-03 08:00:00",
+              70.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Think of each version as the range [valid_from, valid_to). What should the open-ended version's end be?",
+        "Orders that match no version must survive the join."
+      ],
+      "notes_md": "**Pattern family:** point-in-time join to an SCD Type 2 dimension.\n\n**Approach in words:** LEFT JOIN the fact to the dimension on the key plus a range test: fact time at or after the start and strictly before the end, treating a NULL end as open. Group on the version's tier with a fallback label for unmatched facts.\n\n**Snippets:**\n- `ts >= valid_from AND ts < end`.\n- `COALESCE(valid_to, '9999-12-31')` or an `OR valid_to IS NULL` branch.\n\n**Trap:** `BETWEEN` is closed on both ends, so a boundary timestamp matches two versions and is double counted; NULL ends match nothing.",
+      "solutions": [
+        {
+          "label": "COALESCE the open end",
+          "explain_md": "Half-open range, with a far-future sentinel standing in for NULL.",
+          "sql": "SELECT COALESCE(ct.tier, 'unknown') AS tier_at_order, COUNT(*) AS orders, SUM(o.amount) AS revenue\nFROM orders o\nLEFT JOIN customer_tiers ct\n       ON ct.customer_id = o.customer_id\n      AND o.order_ts >= ct.valid_from\n      AND o.order_ts < COALESCE(ct.valid_to, '9999-12-31')\nGROUP BY COALESCE(ct.tier, 'unknown')\nORDER BY tier_at_order;"
+        },
+        {
+          "label": "OR IS NULL branch",
+          "explain_md": "Same half-open test, with the open-ended version handled by an explicit IS NULL branch.",
+          "sql": "SELECT COALESCE(ct.tier, 'unknown') AS tier_at_order, COUNT(*) AS orders, SUM(o.amount) AS revenue\nFROM orders o\nLEFT JOIN customer_tiers ct\n       ON ct.customer_id = o.customer_id\n      AND o.order_ts >= ct.valid_from\n      AND (ct.valid_to IS NULL OR o.order_ts < ct.valid_to)\nGROUP BY COALESCE(ct.tier, 'unknown')\nORDER BY tier_at_order;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "BETWEEN is inclusive at both ends, so an order at a version boundary is counted twice and the NULL-ended current versions never match; the inner join also drops unknown tiers.",
+          "sql": "SELECT ct.tier AS tier_at_order, COUNT(*) AS orders, SUM(o.amount) AS revenue\nFROM orders o\nJOIN customer_tiers ct ON ct.customer_id = o.customer_id\n AND o.order_ts BETWEEN ct.valid_from AND ct.valid_to\nGROUP BY ct.tier\nORDER BY tier_at_order;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "tier_at_order",
+          "orders",
+          "revenue"
+        ],
+        "rows": [
+          [
+            "basic",
+            "3",
+            "70.00"
+          ],
+          [
+            "gold",
+            "2",
+            "90.00"
+          ],
+          [
+            "silver",
+            "3",
+            "110.00"
+          ],
+          [
+            "unknown",
+            "3",
+            "90.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P210",
+      "slug": "rate-card-quality-checks",
+      "title": "Orphan keys and overlapping ranges",
+      "difficulty": "Hard",
+      "topics": [
+        "Data quality",
+        "Self-joins",
+        "Anti-joins"
+      ],
+      "statement_md": "Audit `rate_cards`. Each rate is valid for a half-open range `[valid_from, valid_to)`; `valid_to` NULL means open-ended. Report two kinds of issues: `ORPHAN_PRODUCT` (the rate's non-NULL `product_id` does not exist in `products`; `related_rate_id` is NULL) and `OVERLAP` (two rates of the same product whose ranges share any time; report each pair once with `rate_id` the smaller id and `related_rate_id` the larger). Ranges that merely touch (one ends the day the other starts) do not overlap. Rates with a NULL product are not compared. Return `issue`, `rate_id`, `related_rate_id`, sorted by `issue`, `rate_id`, `related_rate_id`.",
+      "tables": [
+        {
+          "name": "products",
+          "description_md": "Valid product ids.",
+          "columns": [
+            {
+              "name": "product_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Widget"
+            ],
+            [
+              2,
+              "Gadget"
+            ],
+            [
+              3,
+              "Gizmo"
+            ]
+          ]
+        },
+        {
+          "name": "rate_cards",
+          "description_md": "Price versions per product.",
+          "columns": [
+            {
+              "name": "rate_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_id",
+              "type": "INT"
+            },
+            {
+              "name": "valid_from",
+              "type": "DATE"
+            },
+            {
+              "name": "valid_to",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2026-01-01",
+              "2026-02-01"
+            ],
+            [
+              2,
+              1,
+              "2026-02-01",
+              "2026-03-01"
+            ],
+            [
+              3,
+              1,
+              "2026-02-15",
+              "2026-02-20"
+            ],
+            [
+              4,
+              2,
+              "2026-01-01",
+              null
+            ],
+            [
+              5,
+              2,
+              "2026-06-01",
+              "2026-07-01"
+            ],
+            [
+              6,
+              3,
+              "2026-01-01",
+              "2026-01-10"
+            ],
+            [
+              7,
+              3,
+              "2026-01-10",
+              "2026-01-20"
+            ],
+            [
+              8,
+              3,
+              "2026-01-20",
+              "2026-01-25"
+            ],
+            [
+              9,
+              9,
+              "2026-01-01",
+              "2026-02-01"
+            ],
+            [
+              10,
+              9,
+              "2026-01-15",
+              "2026-02-15"
+            ],
+            [
+              11,
+              null,
+              "2026-01-01",
+              "2026-02-01"
+            ],
+            [
+              12,
+              null,
+              "2026-01-15",
+              "2026-03-01"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Two half-open ranges overlap exactly when each starts before the other ends.",
+        "A NULL end must behave like 'never ends'; a NULL product id never equals anything."
+      ],
+      "notes_md": "**Pattern family:** data-quality audits: orphan foreign keys (anti-join) and interval overlap (self-join).\n\n**Approach in words:** orphans via NOT EXISTS (or LEFT JOIN ... IS NULL) while excluding NULL keys; overlaps via a self-join on the key with `a.id < b.id` to report each pair once and the interval-intersection test; stack the two with UNION ALL.\n\n**Snippets:**\n- Overlap of [a,b) and [c,d): `a < d AND c < b`.\n- `COALESCE(end, '9999-12-31')` for open ranges.\n\n**Trap:** inclusive comparisons (`<=`) make touching ranges look like overlaps.",
+      "solutions": [
+        {
+          "label": "NOT EXISTS plus self-join",
+          "explain_md": "Strict inequalities encode half-open overlap; id ordering de-duplicates pairs.",
+          "sql": "SELECT 'ORPHAN_PRODUCT' AS issue, r.rate_id, NULL AS related_rate_id\nFROM rate_cards r\nWHERE r.product_id IS NOT NULL\n  AND NOT EXISTS (SELECT 1 FROM products p WHERE p.product_id = r.product_id)\nUNION ALL\nSELECT 'OVERLAP', a.rate_id, b.rate_id\nFROM rate_cards a\nJOIN rate_cards b\n  ON a.product_id = b.product_id AND a.rate_id < b.rate_id\n AND a.valid_from < COALESCE(b.valid_to, '9999-12-31')\n AND b.valid_from < COALESCE(a.valid_to, '9999-12-31')\nORDER BY issue, rate_id, related_rate_id;"
+        },
+        {
+          "label": "LEFT JOIN anti-join and negated disjoint test",
+          "explain_md": "Overlap is the negation of 'one range ends at or before the other starts'.",
+          "sql": "SELECT 'ORPHAN_PRODUCT' AS issue, r.rate_id, NULL AS related_rate_id\nFROM rate_cards r\nLEFT JOIN products p ON p.product_id = r.product_id\nWHERE r.product_id IS NOT NULL AND p.product_id IS NULL\nUNION ALL\nSELECT 'OVERLAP', a.rate_id, b.rate_id\nFROM rate_cards a\nJOIN rate_cards b ON a.product_id = b.product_id AND a.rate_id < b.rate_id\nWHERE NOT (COALESCE(a.valid_to, '9999-12-31') <= b.valid_from OR COALESCE(b.valid_to, '9999-12-31') <= a.valid_from)\nORDER BY issue, rate_id, related_rate_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Closed-interval comparisons treat ranges that merely touch as overlapping, flagging healthy back-to-back versions.",
+          "sql": "SELECT 'ORPHAN_PRODUCT' AS issue, r.rate_id, NULL AS related_rate_id\nFROM rate_cards r\nWHERE r.product_id IS NOT NULL\n  AND NOT EXISTS (SELECT 1 FROM products p WHERE p.product_id = r.product_id)\nUNION ALL\nSELECT 'OVERLAP', a.rate_id, b.rate_id\nFROM rate_cards a\nJOIN rate_cards b\n  ON a.product_id = b.product_id AND a.rate_id < b.rate_id\n AND a.valid_from <= COALESCE(b.valid_to, '9999-12-31')\n AND b.valid_from <= COALESCE(a.valid_to, '9999-12-31')\nORDER BY issue, rate_id, related_rate_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "issue",
+          "rate_id",
+          "related_rate_id"
+        ],
+        "rows": [
+          [
+            "ORPHAN_PRODUCT",
+            "9",
+            null
+          ],
+          [
+            "ORPHAN_PRODUCT",
+            "10",
+            null
+          ],
+          [
+            "OVERLAP",
+            "2",
+            "3"
+          ],
+          [
+            "OVERLAP",
+            "4",
+            "5"
+          ],
+          [
+            "OVERLAP",
+            "9",
+            "10"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P211",
+      "slug": "org-chart-depth-and-path",
+      "title": "Org chart depth and reporting path",
+      "difficulty": "Hard",
+      "topics": [
+        "Recursive CTEs",
+        "Hierarchies",
+        "String functions"
+      ],
+      "statement_md": "`employees` stores each person's direct manager. Top-level people have a NULL `manager_id` and depth 0; each report is one level deeper. For every employee reachable from a top-level person return `emp_id`, `name`, `depth` and `reporting_path`: the names from the top-level person down to the employee, joined by ` > ` (a top-level person's path is just their own name). Employees whose manager id does not exist in the table are unreachable and must be omitted. Sort by `emp_id`.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee.",
+          "columns": [
+            {
+              "name": "emp_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ava",
+              null
+            ],
+            [
+              2,
+              "Ben",
+              1
+            ],
+            [
+              3,
+              "Cat",
+              1
+            ],
+            [
+              4,
+              "Dev",
+              2
+            ],
+            [
+              5,
+              "Eli",
+              2
+            ],
+            [
+              6,
+              "Fay",
+              3
+            ],
+            [
+              7,
+              "Gus",
+              4
+            ],
+            [
+              8,
+              "Hui",
+              7
+            ],
+            [
+              9,
+              "Ivo",
+              null
+            ],
+            [
+              10,
+              "Joy",
+              9
+            ],
+            [
+              11,
+              "Kit",
+              99
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Start from the rows with no manager and repeatedly attach their direct reports.",
+        "Carry the depth and the path as extra columns that grow on every step."
+      ],
+      "notes_md": "**Pattern family:** hierarchy traversal with a recursive CTE.\n\n**Approach in words:** anchor member = roots; recursive member joins employees whose manager_id equals the previous level's emp_id, adding 1 to depth and appending to the path. Rows never reached by the recursion (broken parent links) simply never appear.\n\n**Snippets:**\n- `WITH RECURSIVE t AS (anchor UNION ALL step) SELECT ...`.\n- `CONCAT(path, ' > ', name)` for building strings.\n\n**Trap:** MySQL fixes a recursive column's type from the anchor member, so check how your path column behaves once strings get longer than the first row. Fixed-depth self-joins also fail as soon as the hierarchy is deeper than you wrote.",
+      "solutions": [
+        {
+          "label": "Top-down recursion",
+          "explain_md": "Roots seed the recursion; each level adds depth and extends the path. Orphans are never visited.",
+          "sql": "WITH RECURSIVE chain AS (\n  SELECT emp_id, name, 0 AS depth, CAST(name AS CHAR(500)) AS reporting_path\n  FROM employees\n  WHERE manager_id IS NULL\n  UNION ALL\n  SELECT e.emp_id, e.name, c.depth + 1, CONCAT(c.reporting_path, ' > ', e.name)\n  FROM employees e\n  JOIN chain c ON e.manager_id = c.emp_id\n)\nSELECT emp_id, name, depth, reporting_path\nFROM chain\nORDER BY emp_id;"
+        },
+        {
+          "label": "Bottom-up recursion",
+          "explain_md": "Climb from every employee to the top, prepending managers; keep only the climbs that ended at a NULL manager.",
+          "sql": "WITH RECURSIVE up AS (\n  SELECT emp_id AS start_id, manager_id AS next_id, 0 AS steps, CAST(name AS CHAR(500)) AS path\n  FROM employees\n  UNION ALL\n  SELECT u.start_id, m.manager_id, u.steps + 1, CONCAT(m.name, ' > ', u.path)\n  FROM up u\n  JOIN employees m ON m.emp_id = u.next_id\n)\nSELECT e.emp_id, e.name, u.steps AS depth, u.path AS reporting_path\nFROM up u\nJOIN employees e ON e.emp_id = u.start_id\nWHERE u.next_id IS NULL\nORDER BY e.emp_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Hard-coding a fixed number of self-joins only reaches three levels, so deeper employees get a wrong depth and the orphan is not excluded.",
+          "sql": "SELECT e.emp_id, e.name,\n       CASE WHEN e.manager_id IS NULL THEN 0\n            WHEN m1.manager_id IS NULL THEN 1\n            WHEN m2.manager_id IS NULL THEN 2\n            ELSE 3 END AS depth\nFROM employees e\nLEFT JOIN employees m1 ON m1.emp_id = e.manager_id\nLEFT JOIN employees m2 ON m2.emp_id = m1.manager_id\nORDER BY e.emp_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "emp_id",
+          "name",
+          "depth",
+          "reporting_path"
+        ],
+        "rows": [
+          [
+            "1",
+            "Ava",
+            "0",
+            "Ava"
+          ],
+          [
+            "2",
+            "Ben",
+            "1",
+            "Ava > Ben"
+          ],
+          [
+            "3",
+            "Cat",
+            "1",
+            "Ava > Cat"
+          ],
+          [
+            "4",
+            "Dev",
+            "2",
+            "Ava > Ben > Dev"
+          ],
+          [
+            "5",
+            "Eli",
+            "2",
+            "Ava > Ben > Eli"
+          ],
+          [
+            "6",
+            "Fay",
+            "2",
+            "Ava > Cat > Fay"
+          ],
+          [
+            "7",
+            "Gus",
+            "3",
+            "Ava > Ben > Dev > Gus"
+          ],
+          [
+            "8",
+            "Hui",
+            "4",
+            "Ava > Ben > Dev > Gus > Hui"
+          ],
+          [
+            "9",
+            "Ivo",
+            "0",
+            "Ivo"
+          ],
+          [
+            "10",
+            "Joy",
+            "1",
+            "Ivo > Joy"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P212",
+      "slug": "fill-missing-days",
+      "title": "Fill missing days with a date spine",
+      "difficulty": "Medium",
+      "topics": [
+        "Recursive CTEs",
+        "Dates",
+        "Running totals"
+      ],
+      "statement_md": "`daily_signups` has batch rows per day and no rows for quiet days; `signups` can be NULL. Return one row for **every calendar day** from the earliest to the latest `signup_date` in the table: `day`, `signups` (sum for that day, 0 if none) and `running_signups` (cumulative total up to and including that day). Sort by `day`.",
+      "tables": [
+        {
+          "name": "daily_signups",
+          "description_md": "Zero or more rows per day; days without a row were quiet.",
+          "columns": [
+            {
+              "name": "signup_date",
+              "type": "DATE"
+            },
+            {
+              "name": "signups",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2026-02-26",
+              5
+            ],
+            [
+              "2026-02-28",
+              3
+            ],
+            [
+              "2026-02-28",
+              4
+            ],
+            [
+              "2026-03-01",
+              0
+            ],
+            [
+              "2026-03-02",
+              2
+            ],
+            [
+              "2026-03-03",
+              null
+            ],
+            [
+              "2026-03-04",
+              7
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need a source of consecutive dates that does not depend on your data having a row for each.",
+        "Aggregate the table to one row per day before joining it to the calendar."
+      ],
+      "notes_md": "**Pattern family:** date spine / calendar fill.\n\n**Approach in words:** generate every date between the min and max with a recursive CTE, LEFT JOIN the per-day totals onto it, COALESCE missing values to 0, and run a window SUM ordered by day.\n\n**Snippets:**\n- Recursive step: `SELECT DATE_ADD(day, INTERVAL 1 DAY) FROM spine WHERE day < end_date`.\n- `SUM(x) OVER (ORDER BY day)`.\n\n**Trap:** grouping only the existing rows never produces the missing days, and NULL-only days sum to NULL until coalesced.",
+      "solutions": [
+        {
+          "label": "Recursive date spine",
+          "explain_md": "The recursion stops at the max date; the LEFT JOIN supplies zeros for gaps.",
+          "sql": "WITH RECURSIVE spine AS (\n  SELECT MIN(signup_date) AS day FROM daily_signups\n  UNION ALL\n  SELECT DATE_ADD(day, INTERVAL 1 DAY) FROM spine\n  WHERE day < (SELECT MAX(signup_date) FROM daily_signups)\n),\nagg AS (\n  SELECT signup_date, SUM(signups) AS n FROM daily_signups GROUP BY signup_date\n)\nSELECT s.day, COALESCE(a.n, 0) AS signups, SUM(COALESCE(a.n, 0)) OVER (ORDER BY s.day) AS running_signups\nFROM spine s\nLEFT JOIN agg a ON a.signup_date = s.day\nORDER BY s.day;"
+        },
+        {
+          "label": "Digit cross join instead of recursion",
+          "explain_md": "Two digit tables produce 0-99; add each to the minimum date and keep offsets inside the range.",
+          "sql": "WITH bounds AS (\n  SELECT MIN(signup_date) AS lo, MAX(signup_date) AS hi FROM daily_signups\n),\ndigits AS (\n  SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4\n  UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9\n),\nnums AS (\n  SELECT a.n + 10 * b.n AS n FROM digits a CROSS JOIN digits b\n),\nspine AS (\n  SELECT ADDDATE(b.lo, x.n) AS day\n  FROM bounds b JOIN nums x ON x.n <= DATEDIFF(b.hi, b.lo)\n),\nagg AS (\n  SELECT signup_date, SUM(signups) AS n FROM daily_signups GROUP BY signup_date\n)\nSELECT s.day, COALESCE(a.n, 0) AS signups, SUM(COALESCE(a.n, 0)) OVER (ORDER BY s.day) AS running_signups\nFROM spine s\nLEFT JOIN agg a ON a.signup_date = s.day\nORDER BY s.day;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Grouping the table directly returns only days that have rows, so quiet days are absent and the running total skips them.",
+          "sql": "SELECT signup_date AS day, COALESCE(SUM(signups), 0) AS signups,\n       SUM(COALESCE(SUM(signups), 0)) OVER (ORDER BY signup_date) AS running_signups\nFROM daily_signups\nGROUP BY signup_date\nORDER BY day;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "day",
+          "signups",
+          "running_signups"
+        ],
+        "rows": [
+          [
+            "2026-02-26",
+            "5",
+            "5"
+          ],
+          [
+            "2026-02-27",
+            "0",
+            "5"
+          ],
+          [
+            "2026-02-28",
+            "7",
+            "12"
+          ],
+          [
+            "2026-03-01",
+            "0",
+            "12"
+          ],
+          [
+            "2026-03-02",
+            "2",
+            "14"
+          ],
+          [
+            "2026-03-03",
+            "0",
+            "14"
+          ],
+          [
+            "2026-03-04",
+            "7",
+            "21"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P213",
+      "slug": "product-pairs-bought-together",
+      "title": "Product pairs bought together",
+      "difficulty": "Medium",
+      "topics": [
+        "Self-joins",
+        "Aggregation"
+      ],
+      "statement_md": "Find every unordered pair of different products that appear together in **at least 2 distinct orders**. An order can list the same product on several lines; that never counts twice. Return `product_a` and `product_b` (names, where `product_a` has the smaller `product_id`) and `orders_together`. Sort by `orders_together` descending, then the two product ids ascending.",
+      "tables": [
+        {
+          "name": "products",
+          "description_md": "Catalog.",
+          "columns": [
+            {
+              "name": "product_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Notebook"
+            ],
+            [
+              2,
+              "Pen"
+            ],
+            [
+              3,
+              "Stapler"
+            ],
+            [
+              4,
+              "Tape"
+            ]
+          ]
+        },
+        {
+          "name": "order_items",
+          "description_md": "One row per order line; the same product can repeat in an order.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_id",
+              "type": "INT"
+            },
+            {
+              "name": "qty",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              1
+            ],
+            [
+              1,
+              2,
+              1
+            ],
+            [
+              1,
+              3,
+              2
+            ],
+            [
+              2,
+              1,
+              1
+            ],
+            [
+              2,
+              2,
+              1
+            ],
+            [
+              3,
+              2,
+              1
+            ],
+            [
+              3,
+              3,
+              1
+            ],
+            [
+              3,
+              3,
+              1
+            ],
+            [
+              4,
+              1,
+              1
+            ],
+            [
+              4,
+              3,
+              1
+            ],
+            [
+              5,
+              1,
+              1
+            ],
+            [
+              5,
+              2,
+              1
+            ],
+            [
+              5,
+              3,
+              1
+            ],
+            [
+              6,
+              4,
+              1
+            ],
+            [
+              7,
+              4,
+              1
+            ],
+            [
+              7,
+              1,
+              1
+            ],
+            [
+              8,
+              1,
+              1
+            ],
+            [
+              8,
+              2,
+              1
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Join the order lines to themselves inside the same order, and keep each pair in one direction only.",
+        "Count orders, not joined rows."
+      ],
+      "notes_md": "**Pattern family:** market-basket pair counting (self-join on the basket key).\n\n**Approach in words:** self-join order_items on order_id with `a.product_id < b.product_id` so each pair appears once and never pairs with itself; count distinct orders per pair; filter with HAVING.\n\n**Snippets:**\n- `JOIN t b ON a.order_id = b.order_id AND a.product_id < b.product_id`.\n- `COUNT(DISTINCT order_id)`.\n\n**Trap:** repeated lines for one product multiply the joined rows, so `COUNT(*)` overstates a pair.",
+      "solutions": [
+        {
+          "label": "Self-join with COUNT DISTINCT",
+          "explain_md": "The id inequality removes mirror pairs; distinct order ids absorb repeated lines.",
+          "sql": "SELECT pa.name AS product_a, pb.name AS product_b, COUNT(DISTINCT a.order_id) AS orders_together\nFROM order_items a\nJOIN order_items b ON a.order_id = b.order_id AND a.product_id < b.product_id\nJOIN products pa ON pa.product_id = a.product_id\nJOIN products pb ON pb.product_id = b.product_id\nGROUP BY a.product_id, b.product_id, pa.name, pb.name\nHAVING COUNT(DISTINCT a.order_id) >= 2\nORDER BY orders_together DESC, a.product_id, b.product_id;"
+        },
+        {
+          "label": "Deduplicate lines first",
+          "explain_md": "Reduce to distinct (order, product) pairs, then a plain COUNT(*) is correct.",
+          "sql": "WITH items AS (\n  SELECT DISTINCT order_id, product_id FROM order_items\n)\nSELECT pa.name AS product_a, pb.name AS product_b, COUNT(*) AS orders_together\nFROM items a\nJOIN items b ON a.order_id = b.order_id AND a.product_id < b.product_id\nJOIN products pa ON pa.product_id = a.product_id\nJOIN products pb ON pb.product_id = b.product_id\nGROUP BY a.product_id, b.product_id, pa.name, pb.name\nHAVING COUNT(*) >= 2\nORDER BY orders_together DESC, a.product_id, b.product_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "COUNT(*) counts joined rows, so an order with a repeated product line is counted once per line.",
+          "sql": "SELECT pa.name AS product_a, pb.name AS product_b, COUNT(*) AS orders_together\nFROM order_items a\nJOIN order_items b ON a.order_id = b.order_id AND a.product_id < b.product_id\nJOIN products pa ON pa.product_id = a.product_id\nJOIN products pb ON pb.product_id = b.product_id\nGROUP BY a.product_id, b.product_id, pa.name, pb.name\nHAVING COUNT(*) >= 2\nORDER BY orders_together DESC, a.product_id, b.product_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "product_a",
+          "product_b",
+          "orders_together"
+        ],
+        "rows": [
+          [
+            "Notebook",
+            "Pen",
+            "4"
+          ],
+          [
+            "Notebook",
+            "Stapler",
+            "3"
+          ],
+          [
+            "Pen",
+            "Stapler",
+            "3"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P214",
+      "slug": "bought-every-required-product",
+      "title": "Customers who bought every required product",
+      "difficulty": "Medium",
+      "topics": [
+        "Relational division",
+        "Aggregation",
+        "Anti-joins"
+      ],
+      "statement_md": "`required_products` lists the products that make up a starter kit. Return the `customer_id` of every customer who has bought **all** of them at least once. Extra purchases are fine, repeat purchases of one product do not substitute for a missing one, and purchase rows with a NULL `product_id` are ignored. Sort by `customer_id`.",
+      "tables": [
+        {
+          "name": "required_products",
+          "description_md": "The kit.",
+          "columns": [
+            {
+              "name": "product_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              10
+            ],
+            [
+              20
+            ],
+            [
+              30
+            ]
+          ]
+        },
+        {
+          "name": "purchases",
+          "description_md": "One row per purchase line; repeats and NULL products occur.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_id",
+              "type": "INT"
+            },
+            {
+              "name": "purchase_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              10,
+              "2026-01-01"
+            ],
+            [
+              1,
+              20,
+              "2026-01-02"
+            ],
+            [
+              1,
+              30,
+              "2026-01-03"
+            ],
+            [
+              2,
+              10,
+              "2026-01-01"
+            ],
+            [
+              2,
+              10,
+              "2026-01-05"
+            ],
+            [
+              2,
+              20,
+              "2026-01-06"
+            ],
+            [
+              3,
+              10,
+              "2026-02-01"
+            ],
+            [
+              3,
+              20,
+              "2026-02-02"
+            ],
+            [
+              3,
+              30,
+              "2026-02-03"
+            ],
+            [
+              3,
+              40,
+              "2026-02-04"
+            ],
+            [
+              4,
+              10,
+              "2026-02-01"
+            ],
+            [
+              4,
+              20,
+              "2026-02-02"
+            ],
+            [
+              5,
+              30,
+              "2026-03-01"
+            ],
+            [
+              5,
+              20,
+              "2026-03-02"
+            ],
+            [
+              5,
+              10,
+              "2026-03-03"
+            ],
+            [
+              5,
+              10,
+              "2026-03-04"
+            ],
+            [
+              6,
+              10,
+              "2026-03-01"
+            ],
+            [
+              6,
+              null,
+              "2026-03-02"
+            ],
+            [
+              6,
+              40,
+              "2026-03-03"
+            ],
+            [
+              7,
+              40,
+              "2026-03-01"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Compare how many distinct required products each customer bought with how many are required.",
+        "Or phrase it as: there is no required product for which this customer has no purchase."
+      ],
+      "notes_md": "**Pattern family:** relational division (\"for all\" queries).\n\n**Approach in words:** (a) restrict purchases to required products, group by customer, require the distinct count to equal the size of the required set; or (b) double NOT EXISTS: customer such that no required product lacks a matching purchase.\n\n**Snippets:**\n- `HAVING COUNT(DISTINCT p) = (SELECT COUNT(*) FROM req)`.\n- `NOT EXISTS (req row WHERE NOT EXISTS (purchase for that req row))`.\n\n**Trap:** `COUNT(*)` counts lines, so repeats can make a customer who is missing a product look complete.",
+      "solutions": [
+        {
+          "label": "Group, filter, compare counts",
+          "explain_md": "Join to the required set, count distinct matched products per customer, compare with the set size.",
+          "sql": "SELECT p.customer_id\nFROM purchases p\nJOIN required_products r ON r.product_id = p.product_id\nGROUP BY p.customer_id\nHAVING COUNT(DISTINCT p.product_id) = (SELECT COUNT(*) FROM required_products)\nORDER BY p.customer_id;"
+        },
+        {
+          "label": "Double NOT EXISTS",
+          "explain_md": "A customer qualifies when no required product exists without a matching purchase by that customer.",
+          "sql": "SELECT c.customer_id\nFROM (SELECT DISTINCT customer_id FROM purchases) c\nWHERE NOT EXISTS (\n  SELECT 1 FROM required_products r\n  WHERE NOT EXISTS (\n    SELECT 1 FROM purchases p WHERE p.customer_id = c.customer_id AND p.product_id = r.product_id\n  )\n)\nORDER BY c.customer_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Comparing a raw row count to the size of the kit counts repeat purchases as coverage, so a customer with ten pens and no stapler passes while a complete customer with a repeat is rejected.",
+          "sql": "SELECT p.customer_id\nFROM purchases p\nJOIN required_products r ON r.product_id = p.product_id\nGROUP BY p.customer_id\nHAVING COUNT(*) = (SELECT COUNT(*) FROM required_products)\nORDER BY p.customer_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "customer_id"
+        ],
+        "rows": [
+          [
+            "1"
+          ],
+          [
+            "3"
+          ],
+          [
+            "5"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P215",
+      "slug": "pareto-top-products",
+      "title": "Smallest product set covering 80% of revenue",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Running totals",
+        "CTEs"
+      ],
+      "statement_md": "Rank products by total revenue (sum of `amount`, refunds are negative lines), highest first, ties broken by the smaller `product_id`. Return the smallest prefix of that ranking whose combined revenue is **at least 80%** of total revenue: include a product when the revenue of all products ranked strictly above it is still under 80% of the total (so the product that reaches or crosses 80% is included). Return `product_id`, `product_name`, `revenue` and `cum_share_pct` (running revenue share through that product, in percent, 2 decimals). Products without sales are ignored. Sort by rank.",
+      "tables": [
+        {
+          "name": "products",
+          "description_md": "Catalog.",
+          "columns": [
+            {
+              "name": "product_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Aurora"
+            ],
+            [
+              2,
+              "Basalt"
+            ],
+            [
+              3,
+              "Cobalt"
+            ],
+            [
+              4,
+              "Delta"
+            ],
+            [
+              5,
+              "Ember"
+            ],
+            [
+              6,
+              "Flint"
+            ],
+            [
+              7,
+              "Garnet"
+            ],
+            [
+              8,
+              "Halo"
+            ],
+            [
+              9,
+              "Indigo"
+            ]
+          ]
+        },
+        {
+          "name": "sales",
+          "description_md": "One row per sale line; negative amounts are refunds.",
+          "columns": [
+            {
+              "name": "sale_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              200
+            ],
+            [
+              2,
+              1,
+              150
+            ],
+            [
+              3,
+              2,
+              120
+            ],
+            [
+              4,
+              2,
+              80
+            ],
+            [
+              5,
+              3,
+              200
+            ],
+            [
+              6,
+              4,
+              60
+            ],
+            [
+              7,
+              4,
+              -10
+            ],
+            [
+              8,
+              5,
+              50
+            ],
+            [
+              9,
+              6,
+              30
+            ],
+            [
+              10,
+              6,
+              20
+            ],
+            [
+              11,
+              7,
+              50
+            ],
+            [
+              12,
+              8,
+              50
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Aggregate to one revenue figure per product first, then build a running sum in rank order.",
+        "Test the running total *before* adding the current product, not after."
+      ],
+      "notes_md": "**Pattern family:** Pareto / cumulative share cut-off.\n\n**Approach in words:** revenue per product, rank order with a deterministic tiebreak, running sum and grand total as window functions, keep rows where (running sum minus own revenue) is still under the threshold.\n\n**Snippets:**\n- `SUM(x) OVER (ORDER BY r DESC, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)`.\n- `SUM(x) OVER ()` for the grand total.\n\n**Trap:** an ORDER BY window with no explicit frame treats tied values as peers, giving them all the same running total; and filtering on the running share after the product misses the one that lands on the threshold.",
+      "solutions": [
+        {
+          "label": "Window running sum with an explicit frame",
+          "explain_md": "ROWS frame gives a distinct running total per row even when revenues tie; the pre-row total decides inclusion.",
+          "sql": "WITH rev AS (\n  SELECT p.product_id, p.product_name, SUM(s.amount) AS revenue\n  FROM products p\n  JOIN sales s ON s.product_id = p.product_id\n  GROUP BY p.product_id, p.product_name\n),\nranked AS (\n  SELECT product_id, product_name, revenue,\n         SUM(revenue) OVER (ORDER BY revenue DESC, product_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum_rev,\n         SUM(revenue) OVER () AS total_rev\n  FROM rev\n)\nSELECT product_id, product_name, revenue, ROUND(100 * cum_rev / total_rev, 2) AS cum_share_pct\nFROM ranked\nWHERE cum_rev - revenue < 0.8 * total_rev\nORDER BY cum_rev, product_id;"
+        },
+        {
+          "label": "Correlated sum of higher-ranked products",
+          "explain_md": "For each product, sum the revenue of everything ranked above it, no window functions needed.",
+          "sql": "WITH rev AS (\n  SELECT p.product_id, p.product_name, SUM(s.amount) AS revenue\n  FROM products p\n  JOIN sales s ON s.product_id = p.product_id\n  GROUP BY p.product_id, p.product_name\n),\nx AS (\n  SELECT r.product_id, r.product_name, r.revenue,\n         COALESCE((SELECT SUM(h.revenue) FROM rev h WHERE h.revenue > r.revenue OR (h.revenue = r.revenue AND h.product_id < r.product_id)), 0) AS before_rev,\n         (SELECT SUM(revenue) FROM rev) AS total_rev\n  FROM rev r\n)\nSELECT product_id, product_name, revenue, ROUND(100 * (before_rev + revenue) / total_rev, 2) AS cum_share_pct\nFROM x\nWHERE before_rev < 0.8 * total_rev\nORDER BY before_rev, product_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Filtering on the running share after the product (< 80%) drops the product that lands exactly on 80%.",
+          "sql": "WITH rev AS (\n  SELECT p.product_id, p.product_name, SUM(s.amount) AS revenue\n  FROM products p\n  JOIN sales s ON s.product_id = p.product_id\n  GROUP BY p.product_id, p.product_name\n),\nranked AS (\n  SELECT product_id, product_name, revenue,\n         SUM(revenue) OVER (ORDER BY revenue DESC, product_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum_rev,\n         SUM(revenue) OVER () AS total_rev\n  FROM rev\n)\nSELECT product_id, product_name, revenue, ROUND(100 * cum_rev / total_rev, 2) AS cum_share_pct\nFROM ranked\nWHERE cum_rev < 0.8 * total_rev\nORDER BY cum_rev, product_id;"
+        },
+        {
+          "explain_md": "Leaving out the frame makes the default RANGE frame give tied products the same running total, so the products tied at the cut-off all look past 80%.",
+          "sql": "WITH rev AS (\n  SELECT p.product_id, p.product_name, SUM(s.amount) AS revenue\n  FROM products p\n  JOIN sales s ON s.product_id = p.product_id\n  GROUP BY p.product_id, p.product_name\n),\nranked AS (\n  SELECT product_id, product_name, revenue,\n         SUM(revenue) OVER (ORDER BY revenue DESC) AS cum_rev,\n         SUM(revenue) OVER () AS total_rev\n  FROM rev\n)\nSELECT product_id, product_name, revenue, ROUND(100 * cum_rev / total_rev, 2) AS cum_share_pct\nFROM ranked\nWHERE cum_rev - revenue < 0.8 * total_rev\nORDER BY cum_rev, product_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "product_id",
+          "product_name",
+          "revenue",
+          "cum_share_pct"
+        ],
+        "rows": [
+          [
+            "1",
+            "Aurora",
+            "350.00",
+            "35.00"
+          ],
+          [
+            "2",
+            "Basalt",
+            "200.00",
+            "55.00"
+          ],
+          [
+            "3",
+            "Cobalt",
+            "200.00",
+            "75.00"
+          ],
+          [
+            "4",
+            "Delta",
+            "50.00",
+            "80.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "P216",
+      "slug": "collapse-events-to-scd2",
+      "title": "Collapse a change log into SCD2 ranges",
+      "difficulty": "Hard",
+      "topics": [
+        "Slowly changing dimensions",
+        "Gaps and islands",
+        "Window functions"
+      ],
+      "statement_md": "`plan_events` records a plan assignment event per customer per day (at most one per day), including redundant events that repeat the current plan. Build a Type 2 history: one row per **uninterrupted run** of the same plan, with `customer_id`, `plan`, `valid_from` (date of the run's first event) and `valid_to` (exclusive: the `valid_from` of the customer's next run; NULL for the current run). A customer who returns to an earlier plan gets a new row for it. Sort by `customer_id`, `valid_from`.",
+      "tables": [
+        {
+          "name": "plan_events",
+          "description_md": "Plan assignment events.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "plan",
+              "type": "VARCHAR(12)"
+            },
+            {
+              "name": "effective_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "free",
+              "2026-01-01"
+            ],
+            [
+              1,
+              "free",
+              "2026-01-05"
+            ],
+            [
+              1,
+              "pro",
+              "2026-01-10"
+            ],
+            [
+              1,
+              "free",
+              "2026-01-20"
+            ],
+            [
+              1,
+              "free",
+              "2026-01-25"
+            ],
+            [
+              2,
+              "pro",
+              "2026-02-01"
+            ],
+            [
+              3,
+              "free",
+              "2026-03-01"
+            ],
+            [
+              3,
+              "pro",
+              "2026-03-15"
+            ],
+            [
+              3,
+              "pro",
+              "2026-03-20"
+            ],
+            [
+              3,
+              "enterprise",
+              "2026-04-01"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Which events actually change something? Compare each event with the customer's previous one.",
+        "Once only change points remain, the end of each range is the start of the next."
+      ],
+      "notes_md": "**Pattern family:** building SCD2 ranges from an event log (islands, then LEAD for the end date).\n\n**Approach in words:** mark events whose plan differs from the previous event (or that are first); keep those as range starts; end date = next start via LEAD. Or number runs with a running sum of change flags and aggregate each run.\n\n**Snippets:**\n- `LAG(plan) OVER (PARTITION BY c ORDER BY d)`.\n- `LEAD(valid_from) OVER (PARTITION BY c ORDER BY valid_from)` as exclusive end.\n\n**Trap:** grouping by customer and plan merges non-adjacent runs of the same plan into one row.",
+      "solutions": [
+        {
+          "label": "Keep change points, then LEAD",
+          "explain_md": "Only events that differ from the previous plan start a range; LEAD supplies the exclusive end.",
+          "sql": "WITH changes AS (\n  SELECT customer_id, plan, effective_date,\n         LAG(plan) OVER (PARTITION BY customer_id ORDER BY effective_date) AS prev_plan\n  FROM plan_events\n),\nkept AS (\n  SELECT customer_id, plan, effective_date AS valid_from FROM changes WHERE prev_plan IS NULL OR plan <> prev_plan\n)\nSELECT customer_id, plan, valid_from,\n       LEAD(valid_from) OVER (PARTITION BY customer_id ORDER BY valid_from) AS valid_to\nFROM kept\nORDER BY customer_id, valid_from;"
+        },
+        {
+          "label": "Run ids, aggregate, LEAD",
+          "explain_md": "A running sum of change flags numbers each run; MIN date per run is its start.",
+          "sql": "WITH f AS (\n  SELECT customer_id, plan, effective_date,\n         CASE WHEN plan = LAG(plan) OVER (PARTITION BY customer_id ORDER BY effective_date) THEN 0 ELSE 1 END AS is_change\n  FROM plan_events\n),\ng AS (\n  SELECT customer_id, plan, effective_date,\n         SUM(is_change) OVER (PARTITION BY customer_id ORDER BY effective_date) AS run_id\n  FROM f\n),\nr AS (\n  SELECT customer_id, plan, MIN(effective_date) AS valid_from FROM g GROUP BY customer_id, run_id, plan\n)\nSELECT customer_id, plan, valid_from,\n       LEAD(valid_from) OVER (PARTITION BY customer_id ORDER BY valid_from) AS valid_to\nFROM r\nORDER BY customer_id, valid_from;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Grouping by customer and plan fuses a customer's separate stints on the same plan into one row and loses the return to it.",
+          "sql": "WITH r AS (\n  SELECT customer_id, plan, MIN(effective_date) AS valid_from FROM plan_events GROUP BY customer_id, plan\n)\nSELECT customer_id, plan, valid_from,\n       LEAD(valid_from) OVER (PARTITION BY customer_id ORDER BY valid_from) AS valid_to\nFROM r\nORDER BY customer_id, valid_from;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "plan",
+          "valid_from",
+          "valid_to"
+        ],
+        "rows": [
+          [
+            "1",
+            "free",
+            "2026-01-01",
+            "2026-01-10"
+          ],
+          [
+            "1",
+            "pro",
+            "2026-01-10",
+            "2026-01-20"
+          ],
+          [
+            "1",
+            "free",
+            "2026-01-20",
+            null
+          ],
+          [
+            "2",
+            "pro",
+            "2026-02-01",
+            null
+          ],
+          [
+            "3",
+            "free",
+            "2026-03-01",
+            "2026-03-15"
+          ],
+          [
+            "3",
+            "pro",
+            "2026-03-15",
+            "2026-04-01"
+          ],
+          [
+            "3",
+            "enterprise",
+            "2026-04-01",
+            null
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

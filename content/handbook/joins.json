@@ -1,0 +1,922 @@
+{
+  "id": "joins",
+  "title": "Joins",
+  "group": "Foundations",
+  "order": 4,
+  "summary_md": "Combine tables correctly: inner vs outer joins, FULL OUTER in MySQL, cross and self-joins, semi/anti-joins, the ON vs WHERE trap on LEFT JOINs, and fan-out from joining two child tables.",
+  "sections": [
+    {
+      "id": "inner-left",
+      "heading": "INNER JOIN and LEFT JOIN",
+      "body_md": "- `INNER JOIN` keeps only rows with a match on both sides. `JOIN` alone means INNER.\n- `LEFT JOIN` keeps **every left row**; right-side columns are NULL where nothing matched.\n- Join condition in `ON`; use table aliases and qualify columns (`o.customer_id`).\n- To count related rows including zero, `LEFT JOIN` then `COUNT(right.key)`.\n- `USING (col)` is shorthand for equal-named columns in MySQL; SQL Server has no USING - write the ON.\n- Join on keys that are unique on at least one side, or you multiply rows (see fan-out).",
+      "syntax": {
+        "mysql": "FROM a [INNER | LEFT [OUTER]] JOIN b ON a.key = b.key",
+        "tsql": "FROM a [INNER | LEFT [OUTER]] JOIN b ON a.key = b.key"
+      },
+      "args": [
+        {
+          "name": "a",
+          "meaning": "Left table: its rows are all kept in a LEFT JOIN."
+        },
+        {
+          "name": "b",
+          "meaning": "Right table: contributes NULLs when no match."
+        },
+        {
+          "name": "ON a.key = b.key",
+          "meaning": "Match condition evaluated per pair of rows; may include extra predicates."
+        }
+      ],
+      "examples": [
+        {
+          "id": "inner-count",
+          "title": "INNER JOIN drops customers without orders",
+          "explain_md": "Customer 6 (no orders) is missing: only customers with at least one order appear.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id, c.name, COUNT(*) AS orders\nFROM customers AS c\nINNER JOIN orders AS o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id, c.name\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.customer_id, c.name, COUNT(*) AS orders\nFROM customers AS c\nINNER JOIN orders AS o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id, c.name\nORDER BY c.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "name",
+              "orders"
+            ],
+            "rows": [
+              [
+                "1",
+                "Maya Lopez",
+                "4"
+              ],
+              [
+                "2",
+                "Noah Kim",
+                "4"
+              ],
+              [
+                "3",
+                "Olga Petrova",
+                "2"
+              ],
+              [
+                "4",
+                "Pablo Diaz",
+                "2"
+              ],
+              [
+                "5",
+                "Quinn Lee",
+                "2"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "left-count",
+          "title": "LEFT JOIN keeps them, with a 0",
+          "explain_md": "Same query, LEFT JOIN, COUNT on a right-table column: customer 6 appears with 0 orders.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id, c.name, COUNT(o.order_id) AS orders\nFROM customers AS c\nLEFT JOIN orders AS o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id, c.name\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.customer_id, c.name, COUNT(o.order_id) AS orders\nFROM customers AS c\nLEFT JOIN orders AS o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id, c.name\nORDER BY c.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "name",
+              "orders"
+            ],
+            "rows": [
+              [
+                "1",
+                "Maya Lopez",
+                "4"
+              ],
+              [
+                "2",
+                "Noah Kim",
+                "4"
+              ],
+              [
+                "3",
+                "Olga Petrova",
+                "2"
+              ],
+              [
+                "4",
+                "Pablo Diaz",
+                "2"
+              ],
+              [
+                "5",
+                "Quinn Lee",
+                "2"
+              ],
+              [
+                "6",
+                "pablo diaz",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "left-nulls",
+          "title": "What the unmatched row looks like",
+          "explain_md": "The padded columns are NULL. This is why `WHERE o.order_id IS NULL` finds unmatched left rows.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id, c.name, o.order_id, o.amount\nFROM customers AS c\nLEFT JOIN orders AS o ON o.customer_id = c.customer_id\nWHERE c.customer_id IN (5, 6)\nORDER BY c.customer_id, o.order_id;",
+          "tsql": "SELECT c.customer_id, c.name, o.order_id, o.amount\nFROM customers AS c\nLEFT JOIN orders AS o ON o.customer_id = c.customer_id\nWHERE c.customer_id IN (5, 6)\nORDER BY c.customer_id, o.order_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "name",
+              "order_id",
+              "amount"
+            ],
+            "rows": [
+              [
+                "5",
+                "Quinn Lee",
+                "109",
+                "300.00"
+              ],
+              [
+                "5",
+                "Quinn Lee",
+                "111",
+                "90.00"
+              ],
+              [
+                "6",
+                "pablo diaz",
+                null,
+                null
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`COUNT(*)` after a LEFT JOIN counts the NULL-padded row as 1. Count a right-table column."
+      ]
+    },
+    {
+      "id": "right-full",
+      "heading": "RIGHT and FULL OUTER JOIN",
+      "body_md": "- `RIGHT JOIN` = `LEFT JOIN` with the tables swapped. Most people only write LEFT; swap the order instead.\n- `FULL OUTER JOIN` keeps unmatched rows from **both** sides. SQL Server supports it; **MySQL does not**.\n- MySQL emulation: `LEFT JOIN` UNION ALL the right-only rows (`RIGHT JOIN ... WHERE left.key IS NULL`). Use UNION ALL plus the anti filter; plain UNION would also dedupe legitimate duplicate rows.\n- Typical use: reconcile two sources and see what is missing from each side.",
+      "examples": [
+        {
+          "id": "right-swap",
+          "title": "RIGHT JOIN equals swapped LEFT JOIN",
+          "explain_md": "orders RIGHT JOIN customers returns exactly the rows of customers LEFT JOIN orders.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id, COUNT(o.order_id) AS orders\nFROM orders AS o\nRIGHT JOIN customers AS c ON c.customer_id = o.customer_id\nGROUP BY c.customer_id\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.customer_id, COUNT(o.order_id) AS orders\nFROM orders AS o\nRIGHT JOIN customers AS c ON c.customer_id = o.customer_id\nGROUP BY c.customer_id\nORDER BY c.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "orders"
+            ],
+            "rows": [
+              [
+                "1",
+                "4"
+              ],
+              [
+                "2",
+                "4"
+              ],
+              [
+                "3",
+                "2"
+              ],
+              [
+                "4",
+                "2"
+              ],
+              [
+                "5",
+                "2"
+              ],
+              [
+                "6",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "full-outer",
+          "title": "FULL OUTER JOIN and the MySQL emulation",
+          "explain_md": "Five rows: matched pairs, Cy with no badge, and the orphan badge with no student. MySQL needs LEFT JOIN + right-only rows.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "students",
+              "description_md": "One row per student. Cy has no badges.",
+              "columns": [
+                {
+                  "name": "student_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(10)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Ada"
+                ],
+                [
+                  2,
+                  "Bo"
+                ],
+                [
+                  3,
+                  "Cy"
+                ]
+              ]
+            },
+            {
+              "name": "badges",
+              "description_md": "One row per badge. Badge 13 points at student 9, who does not exist (orphan).",
+              "columns": [
+                {
+                  "name": "badge_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "student_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "badge",
+                  "type": "VARCHAR(10)"
+                }
+              ],
+              "rows": [
+                [
+                  10,
+                  1,
+                  "gold"
+                ],
+                [
+                  11,
+                  2,
+                  "silver"
+                ],
+                [
+                  12,
+                  2,
+                  "bronze"
+                ],
+                [
+                  13,
+                  9,
+                  "orphan"
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT student_id, name, badge_id, badge\nFROM (\n  SELECT s.student_id, s.name, b.badge_id, b.badge, b.student_id AS badge_owner\n  FROM students AS s\n  LEFT JOIN badges AS b ON b.student_id = s.student_id\n  UNION ALL\n  SELECT s.student_id, s.name, b.badge_id, b.badge, b.student_id\n  FROM students AS s\n  RIGHT JOIN badges AS b ON b.student_id = s.student_id\n  WHERE s.student_id IS NULL\n) AS f\nORDER BY COALESCE(student_id, badge_owner), badge_id;",
+          "tsql": "SELECT s.student_id, s.name, b.badge_id, b.badge\nFROM students AS s\nFULL OUTER JOIN badges AS b ON b.student_id = s.student_id\nORDER BY COALESCE(s.student_id, b.student_id), b.badge_id;",
+          "dialect_note_md": "MySQL has no FULL OUTER JOIN; the first form emulates it. SQL Server uses FULL OUTER JOIN directly.",
+          "expected": {
+            "columns": [
+              "student_id",
+              "name",
+              "badge_id",
+              "badge"
+            ],
+            "rows": [
+              [
+                "1",
+                "Ada",
+                "10",
+                "gold"
+              ],
+              [
+                "2",
+                "Bo",
+                "11",
+                "silver"
+              ],
+              [
+                "2",
+                "Bo",
+                "12",
+                "bronze"
+              ],
+              [
+                "3",
+                "Cy",
+                null,
+                null
+              ],
+              [
+                null,
+                null,
+                "13",
+                "orphan"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "Using `UNION` instead of `UNION ALL` in the emulation silently removes duplicate rows."
+      ]
+    },
+    {
+      "id": "cross-self",
+      "heading": "CROSS JOIN and self-joins",
+      "body_md": "- `CROSS JOIN` = every left row with every right row (n x m). No ON clause. Use it to build grids (dates x regions) then LEFT JOIN facts onto the grid to expose gaps.\n- A **self-join** joins a table to itself under two aliases: hierarchy (employee -> manager) or pairs (two rows of the same group).\n- Hierarchy: use `LEFT JOIN` so the top of the tree (no manager) is kept.\n- Pairs: add `a.id < b.id` to avoid (x, x) and mirrored duplicates.",
+      "examples": [
+        {
+          "id": "cross-grid",
+          "title": "Find missing days with a calendar grid",
+          "explain_md": "Every (region, date) pair is built with CROSS JOIN, then the real rows are LEFT JOINed. NULL revenue marks the days West had no sales.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT r.region, d.sale_date\nFROM (SELECT DISTINCT region FROM daily_sales) AS r\nCROSS JOIN (SELECT DISTINCT sale_date FROM daily_sales) AS d\nLEFT JOIN daily_sales AS s\n       ON s.region = r.region AND s.sale_date = d.sale_date\nWHERE s.revenue IS NULL\nORDER BY r.region, d.sale_date;",
+          "tsql": "SELECT r.region, d.sale_date\nFROM (SELECT DISTINCT region FROM daily_sales) AS r\nCROSS JOIN (SELECT DISTINCT sale_date FROM daily_sales) AS d\nLEFT JOIN daily_sales AS s\n       ON s.region = r.region AND s.sale_date = d.sale_date\nWHERE s.revenue IS NULL\nORDER BY r.region, d.sale_date;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "region",
+              "sale_date"
+            ],
+            "rows": [
+              [
+                "West",
+                "2024-03-04"
+              ],
+              [
+                "West",
+                "2024-03-07"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "self-manager",
+          "title": "Employee and manager name",
+          "explain_md": "Same table twice: `e` is the employee, `m` the manager. Ana (the CEO) has no manager; LEFT JOIN keeps her with NULL.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT e.name AS employee, m.name AS manager\nFROM employees AS e\nLEFT JOIN employees AS m ON m.emp_id = e.manager_id\nORDER BY e.emp_id;",
+          "tsql": "SELECT e.name AS employee, m.name AS manager\nFROM employees AS e\nLEFT JOIN employees AS m ON m.emp_id = e.manager_id\nORDER BY e.emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "employee",
+              "manager"
+            ],
+            "rows": [
+              [
+                "Ana",
+                null
+              ],
+              [
+                "Ben",
+                "Ana"
+              ],
+              [
+                "Cara",
+                "Ben"
+              ],
+              [
+                "Dev",
+                "Ben"
+              ],
+              [
+                "Eli",
+                "Cara"
+              ],
+              [
+                "Fay",
+                "Ana"
+              ],
+              [
+                "Gus",
+                "Fay"
+              ],
+              [
+                "Hal",
+                "Fay"
+              ],
+              [
+                "Ivy",
+                "Ana"
+              ],
+              [
+                "Jon",
+                "Ivy"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "self-pairs",
+          "title": "Pairs inside a group",
+          "explain_md": "`a.emp_id < b.emp_id` yields each Sales pair once and never pairs someone with themselves.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT a.name AS emp_a, b.name AS emp_b\nFROM employees AS a\nJOIN employees AS b ON a.dept = b.dept AND a.emp_id < b.emp_id\nWHERE a.dept = 'Sales'\nORDER BY a.emp_id, b.emp_id;",
+          "tsql": "SELECT a.name AS emp_a, b.name AS emp_b\nFROM employees AS a\nJOIN employees AS b ON a.dept = b.dept AND a.emp_id < b.emp_id\nWHERE a.dept = 'Sales'\nORDER BY a.emp_id, b.emp_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "emp_a",
+              "emp_b"
+            ],
+            "rows": [
+              [
+                "Fay",
+                "Gus"
+              ],
+              [
+                "Fay",
+                "Hal"
+              ],
+              [
+                "Gus",
+                "Hal"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "semi-anti",
+      "heading": "Semi-join and anti-join",
+      "body_md": "- **Semi-join** = rows from A that *have* a match in B, with no columns from B and **no duplicates**: `WHERE EXISTS (SELECT 1 FROM B WHERE B.k = A.k)`.\n- **Anti-join** = rows from A with *no* match: `WHERE NOT EXISTS (...)`, or `LEFT JOIN B ... WHERE B.k IS NULL`.\n- A plain JOIN as a filter duplicates A rows when B has many matches; EXISTS does not.\n- `NOT IN (subquery)` breaks if the subquery returns a NULL. Prefer NOT EXISTS.\n- All three anti-join forms give the same rows; NOT EXISTS and LEFT JOIN/IS NULL are the safe ones.",
+      "examples": [
+        {
+          "id": "semi-exists",
+          "title": "Customers with at least one completed order",
+          "explain_md": "One row per qualifying customer even though customer 1 has three completed orders.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id, c.name\nFROM customers AS c\nWHERE EXISTS (\n  SELECT 1 FROM orders AS o\n  WHERE o.customer_id = c.customer_id AND o.status = 'completed'\n)\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.customer_id, c.name\nFROM customers AS c\nWHERE EXISTS (\n  SELECT 1 FROM orders AS o\n  WHERE o.customer_id = c.customer_id AND o.status = 'completed'\n)\nORDER BY c.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "name"
+            ],
+            "rows": [
+              [
+                "1",
+                "Maya Lopez"
+              ],
+              [
+                "2",
+                "Noah Kim"
+              ],
+              [
+                "3",
+                "Olga Petrova"
+              ],
+              [
+                "4",
+                "Pablo Diaz"
+              ],
+              [
+                "5",
+                "Quinn Lee"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "anti-not-exists",
+          "title": "Customers with no completed order",
+          "explain_md": "Pablo (4) only has a refunded order and pablo diaz (6) has none.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id, c.name\nFROM customers AS c\nWHERE NOT EXISTS (\n  SELECT 1 FROM orders AS o\n  WHERE o.customer_id = c.customer_id AND o.status = 'completed'\n)\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.customer_id, c.name\nFROM customers AS c\nWHERE NOT EXISTS (\n  SELECT 1 FROM orders AS o\n  WHERE o.customer_id = c.customer_id AND o.status = 'completed'\n)\nORDER BY c.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "name"
+            ],
+            "rows": [
+              [
+                "6",
+                "pablo diaz"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "anti-left-join",
+          "title": "Same result with LEFT JOIN ... IS NULL",
+          "explain_md": "The status filter must live in ON, not WHERE, otherwise the unmatched rows are filtered out before the IS NULL test.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id, c.name\nFROM customers AS c\nLEFT JOIN orders AS o\n       ON o.customer_id = c.customer_id AND o.status = 'completed'\nWHERE o.order_id IS NULL\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.customer_id, c.name\nFROM customers AS c\nLEFT JOIN orders AS o\n       ON o.customer_id = c.customer_id AND o.status = 'completed'\nWHERE o.order_id IS NULL\nORDER BY c.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "name"
+            ],
+            "rows": [
+              [
+                "6",
+                "pablo diaz"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "`SELECT 1` inside EXISTS is convention only; the select list is ignored."
+      ]
+    },
+    {
+      "id": "on-vs-where",
+      "heading": "Filter in ON vs WHERE (LEFT JOIN)",
+      "body_md": "- For **INNER** joins, ON and WHERE filters are equivalent.\n- For **LEFT** joins they differ:\n  - A condition on the right table in `ON` only limits which right rows can match; every left row survives (padded with NULLs).\n  - The same condition in `WHERE` runs after the join and removes the NULL-padded rows, silently turning the LEFT JOIN into an INNER JOIN.\n- Put left-table filters in WHERE; put right-table filters in ON when you want to keep unmatched left rows.",
+      "examples": [
+        {
+          "id": "filter-in-on",
+          "title": "Right-table filter in ON keeps all customers",
+          "explain_md": "All six customers appear; customer 6 gets 0.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id, COUNT(o.order_id) AS completed_orders\nFROM customers AS c\nLEFT JOIN orders AS o\n       ON o.customer_id = c.customer_id AND o.status = 'completed'\nGROUP BY c.customer_id\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.customer_id, COUNT(o.order_id) AS completed_orders\nFROM customers AS c\nLEFT JOIN orders AS o\n       ON o.customer_id = c.customer_id AND o.status = 'completed'\nGROUP BY c.customer_id\nORDER BY c.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "completed_orders"
+            ],
+            "rows": [
+              [
+                "1",
+                "3"
+              ],
+              [
+                "2",
+                "4"
+              ],
+              [
+                "3",
+                "2"
+              ],
+              [
+                "4",
+                "1"
+              ],
+              [
+                "5",
+                "1"
+              ],
+              [
+                "6",
+                "0"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "filter-in-where",
+          "title": "Same filter in WHERE loses customers",
+          "explain_md": "Customer 6 vanishes: the NULL status fails `status = 'completed'`. The query is now an inner join in disguise.",
+          "uses_dataset": true,
+          "tables": [],
+          "mysql": "SELECT c.customer_id, COUNT(o.order_id) AS completed_orders\nFROM customers AS c\nLEFT JOIN orders AS o ON o.customer_id = c.customer_id\nWHERE o.status = 'completed'\nGROUP BY c.customer_id\nORDER BY c.customer_id;",
+          "tsql": "SELECT c.customer_id, COUNT(o.order_id) AS completed_orders\nFROM customers AS c\nLEFT JOIN orders AS o ON o.customer_id = c.customer_id\nWHERE o.status = 'completed'\nGROUP BY c.customer_id\nORDER BY c.customer_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "customer_id",
+              "completed_orders"
+            ],
+            "rows": [
+              [
+                "1",
+                "3"
+              ],
+              [
+                "2",
+                "4"
+              ],
+              [
+                "3",
+                "2"
+              ],
+              [
+                "4",
+                "1"
+              ],
+              [
+                "5",
+                "1"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ]
+    },
+    {
+      "id": "fan-out",
+      "heading": "Fan-out: double counting across two child tables",
+      "body_md": "- Joining a parent to **two** one-to-many children produces `children_1 x children_2` rows per parent. Sums on either child are inflated.\n- Symptoms: totals larger than the source table's total; counts that look like products.\n- Fix: **aggregate each child to the parent's grain first** (derived table / CTE), then join the one-row-per-parent results.\n- `COUNT(DISTINCT id)` can rescue counts but never sums (equal amounts collapse); do not rely on it.\n- Always sanity-check: `SUM` after the join vs `SUM` on the base table.",
+      "examples": [
+        {
+          "id": "fan-wrong",
+          "title": "Wrong: join both children, then SUM",
+          "explain_md": "Acme has 2 invoices x 3 payments = 6 rows, so invoiced shows 900 (true 300) and paid shows 120 (true 60).",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "accounts",
+              "description_md": "One row per account.",
+              "columns": [
+                {
+                  "name": "account_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(10)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Acme"
+                ],
+                [
+                  2,
+                  "Birch"
+                ]
+              ]
+            },
+            {
+              "name": "invoices",
+              "description_md": "Acme has two invoices (100 + 200); Birch has one (50).",
+              "columns": [
+                {
+                  "name": "invoice_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "account_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "amount",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  100
+                ],
+                [
+                  2,
+                  1,
+                  200
+                ],
+                [
+                  3,
+                  2,
+                  50
+                ]
+              ]
+            },
+            {
+              "name": "payments",
+              "description_md": "Acme has three payments (10 + 20 + 30); Birch has one (50).",
+              "columns": [
+                {
+                  "name": "payment_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "account_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "amount",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  10
+                ],
+                [
+                  2,
+                  1,
+                  20
+                ],
+                [
+                  3,
+                  1,
+                  30
+                ],
+                [
+                  4,
+                  2,
+                  50
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT a.name,\n       SUM(i.amount) AS invoiced,\n       SUM(p.amount) AS paid\nFROM accounts AS a\nJOIN invoices AS i ON i.account_id = a.account_id\nJOIN payments AS p ON p.account_id = a.account_id\nGROUP BY a.account_id, a.name\nORDER BY a.account_id;",
+          "tsql": "SELECT a.name,\n       SUM(i.amount) AS invoiced,\n       SUM(p.amount) AS paid\nFROM accounts AS a\nJOIN invoices AS i ON i.account_id = a.account_id\nJOIN payments AS p ON p.account_id = a.account_id\nGROUP BY a.account_id, a.name\nORDER BY a.account_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "invoiced",
+              "paid"
+            ],
+            "rows": [
+              [
+                "Acme",
+                "900",
+                "120"
+              ],
+              [
+                "Birch",
+                "50",
+                "50"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        },
+        {
+          "id": "fan-right",
+          "title": "Right: pre-aggregate each child",
+          "explain_md": "Each child is reduced to one row per account before joining, so no multiplication occurs. Use LEFT JOINs (plus COALESCE) if an account may lack invoices or payments.",
+          "uses_dataset": false,
+          "tables": [
+            {
+              "name": "accounts",
+              "description_md": "One row per account.",
+              "columns": [
+                {
+                  "name": "account_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "name",
+                  "type": "VARCHAR(10)"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  "Acme"
+                ],
+                [
+                  2,
+                  "Birch"
+                ]
+              ]
+            },
+            {
+              "name": "invoices",
+              "description_md": "Acme has two invoices (100 + 200); Birch has one (50).",
+              "columns": [
+                {
+                  "name": "invoice_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "account_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "amount",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  100
+                ],
+                [
+                  2,
+                  1,
+                  200
+                ],
+                [
+                  3,
+                  2,
+                  50
+                ]
+              ]
+            },
+            {
+              "name": "payments",
+              "description_md": "Acme has three payments (10 + 20 + 30); Birch has one (50).",
+              "columns": [
+                {
+                  "name": "payment_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "account_id",
+                  "type": "INT"
+                },
+                {
+                  "name": "amount",
+                  "type": "INT"
+                }
+              ],
+              "rows": [
+                [
+                  1,
+                  1,
+                  10
+                ],
+                [
+                  2,
+                  1,
+                  20
+                ],
+                [
+                  3,
+                  1,
+                  30
+                ],
+                [
+                  4,
+                  2,
+                  50
+                ]
+              ]
+            }
+          ],
+          "mysql": "SELECT a.name,\n       COALESCE(i.invoiced, 0) AS invoiced,\n       COALESCE(p.paid, 0)     AS paid\nFROM accounts AS a\nLEFT JOIN (SELECT account_id, SUM(amount) AS invoiced\n           FROM invoices GROUP BY account_id) AS i ON i.account_id = a.account_id\nLEFT JOIN (SELECT account_id, SUM(amount) AS paid\n           FROM payments GROUP BY account_id) AS p ON p.account_id = a.account_id\nORDER BY a.account_id;",
+          "tsql": "SELECT a.name,\n       COALESCE(i.invoiced, 0) AS invoiced,\n       COALESCE(p.paid, 0)     AS paid\nFROM accounts AS a\nLEFT JOIN (SELECT account_id, SUM(amount) AS invoiced\n           FROM invoices GROUP BY account_id) AS i ON i.account_id = a.account_id\nLEFT JOIN (SELECT account_id, SUM(amount) AS paid\n           FROM payments GROUP BY account_id) AS p ON p.account_id = a.account_id\nORDER BY a.account_id;",
+          "dialect_note_md": null,
+          "expected": {
+            "columns": [
+              "name",
+              "invoiced",
+              "paid"
+            ],
+            "rows": [
+              [
+                "Acme",
+                "300",
+                "60"
+              ],
+              [
+                "Birch",
+                "50",
+                "50"
+              ]
+            ]
+          },
+          "verified_on": "MySQL 8.0.39"
+        }
+      ],
+      "pitfalls_md": [
+        "A fan-out never raises an error; the numbers are just wrong. Compare against an independent total."
+      ]
+    }
+  ]
+}
