@@ -1,0 +1,2515 @@
+{
+  "problems": [
+    {
+      "id": "T301",
+      "slug": "city-share-of-total-bookings",
+      "title": "City share of total bookings",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Easy",
+      "topics": [
+        "Window functions",
+        "Aggregation"
+      ],
+      "statement_md": "The finance team at a ride-hailing company wants to know how much each city contributes to gross bookings. Return `city`, the city's `total_fares`, and `pct_of_total` (that city's fares as a percentage of all fares, rounded to 1 decimal place). Order by `city`.",
+      "tables": [
+        {
+          "name": "ride_bookings",
+          "description_md": "One row per completed ride.",
+          "columns": [
+            {
+              "name": "ride_id",
+              "type": "INT"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "fare",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Austin",
+              1200.0
+            ],
+            [
+              2,
+              "Austin",
+              800.0
+            ],
+            [
+              3,
+              "Denver",
+              2500.0
+            ],
+            [
+              4,
+              "Miami",
+              500.0
+            ],
+            [
+              5,
+              "Miami",
+              250.0
+            ],
+            [
+              6,
+              "Miami",
+              750.0
+            ],
+            [
+              7,
+              "Seattle",
+              1500.0
+            ],
+            [
+              8,
+              "Seattle",
+              1000.0
+            ],
+            [
+              9,
+              "Denver",
+              500.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need two different totals on the same output row: one per city and one for the whole company.",
+        "An aggregate can be computed over every row of a result without collapsing it. Think about which rows the whole-company figure should see after the cities are totalled."
+      ],
+      "notes_md": "**Pattern:** a percent-of-total report. Interviewers reach for it whenever a row must be compared with the grand total next to it.\n\n**Shape:** total each city first, then divide each city total by the sum of all city totals, which you get without losing the city rows.\n\n**Syntax:** `fn(expr) OVER ()` with empty parentheses means one window containing every row of the result. Window functions run after GROUP BY, so they can wrap an aggregate: `SUM(SUM(x)) OVER ()`.\n\n**Trap:** adding `PARTITION BY city` to the grand total makes it a per-city total, so every city shows 100.\n\n**Interview follow-up:** How would you compute the same figure with a scalar subquery instead, and which one reads better?",
+      "solutions": [
+        {
+          "label": "Window over the grouped result",
+          "explain_md": "GROUP BY collapses to one row per city, then the empty OVER () sees all city rows and sums their totals.",
+          "sql": "SELECT city,\n       SUM(fare) AS total_fares,\n       ROUND(100 * SUM(fare) / SUM(SUM(fare)) OVER (), 1) AS pct_of_total\nFROM ride_bookings\nGROUP BY city\nORDER BY city;"
+        },
+        {
+          "label": "Scalar subquery",
+          "explain_md": "The grand total is computed once in a subquery and reused for every city.",
+          "sql": "SELECT city,\n       SUM(fare) AS total_fares,\n       ROUND(100 * SUM(fare) / (SELECT SUM(fare) FROM ride_bookings), 1) AS pct_of_total\nFROM ride_bookings\nGROUP BY city\nORDER BY city;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "PARTITION BY city makes the 'grand total' a city total, so every city is 100 percent of itself.",
+          "sql": "SELECT city,\n       SUM(fare) AS total_fares,\n       ROUND(100 * SUM(fare) / SUM(SUM(fare)) OVER (PARTITION BY city), 1) AS pct_of_total\nFROM ride_bookings\nGROUP BY city\nORDER BY city;"
+        },
+        {
+          "explain_md": "Without GROUP BY the query returns one row per ride, each as a share of the grand total, not one row per city.",
+          "sql": "SELECT city,\n       fare AS total_fares,\n       ROUND(100 * fare / SUM(fare) OVER (), 1) AS pct_of_total\nFROM ride_bookings\nORDER BY city, ride_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "city",
+          "total_fares",
+          "pct_of_total"
+        ],
+        "rows": [
+          [
+            "Austin",
+            "2000.00",
+            "22.2"
+          ],
+          [
+            "Denver",
+            "3000.00",
+            "33.3"
+          ],
+          [
+            "Miami",
+            "1500.00",
+            "16.7"
+          ],
+          [
+            "Seattle",
+            "2500.00",
+            "27.8"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T302",
+      "slug": "paid-above-the-department-average",
+      "title": "Paid above the department average",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Easy",
+      "topics": [
+        "Window functions",
+        "Aggregation"
+      ],
+      "statement_md": "HR at a streaming company is auditing pay. List every employee who earns strictly more than the average salary of their own department. Return `emp_id`, `name`, `dept`, `salary` and `dept_avg` (the department average, rounded to 2 decimals). Employees with no recorded salary are not counted in any average. Order by `emp_id`.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee. `salary` is NULL when it has not been recorded yet.",
+          "columns": [
+            {
+              "name": "emp_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "dept",
+              "type": "VARCHAR(15)"
+            },
+            {
+              "name": "salary",
+              "type": "DECIMAL(9,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Asha",
+              "Engineering",
+              9000.0
+            ],
+            [
+              2,
+              "Ben",
+              "Engineering",
+              7000.0
+            ],
+            [
+              3,
+              "Chloe",
+              "Engineering",
+              8000.0
+            ],
+            [
+              4,
+              "Dev",
+              "Engineering",
+              6000.0
+            ],
+            [
+              5,
+              "Esha",
+              "Content",
+              5000.0
+            ],
+            [
+              6,
+              "Farid",
+              "Content",
+              4000.0
+            ],
+            [
+              7,
+              "Gita",
+              "Content",
+              null
+            ],
+            [
+              8,
+              "Hari",
+              "Support",
+              3500.0
+            ],
+            [
+              9,
+              "Isha",
+              "Support",
+              3500.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Each row needs the department average sitting next to it before you can compare.",
+        "A window result cannot be used in the WHERE clause of the same SELECT. Where does the comparison have to happen?"
+      ],
+      "notes_md": "**Pattern:** a per-group benchmark on detail rows. Interviewers use it for 'above average for their group' questions.\n\n**Shape:** attach the group average to every row, keeping all rows, then keep only the rows whose own value beats it.\n\n**Syntax:** `AVG(expr) OVER (PARTITION BY g)` returns the group average on every row of the group. AVG skips NULLs. Window functions are evaluated after WHERE, so filtering on one needs a wrapping query.\n\n**Trap:** turning NULL salaries into 0 before averaging drags the average down and lets more people through.\n\n**Interview follow-up:** How would you write this without a window function, and what is the cost of each approach?",
+      "solutions": [
+        {
+          "label": "Window average, filter outside",
+          "explain_md": "AVG OVER (PARTITION BY dept) puts the department average on every row; the outer query then filters.",
+          "sql": "SELECT emp_id, name, dept, salary, ROUND(dept_avg, 2) AS dept_avg\nFROM (\n  SELECT emp_id, name, dept, salary,\n         AVG(salary) OVER (PARTITION BY dept) AS dept_avg\n  FROM employees\n) t\nWHERE salary > dept_avg\nORDER BY emp_id;"
+        },
+        {
+          "label": "Join to grouped averages",
+          "explain_md": "Compute one average per department, then join it back to the detail rows.",
+          "sql": "SELECT e.emp_id, e.name, e.dept, e.salary, ROUND(a.avg_salary, 2) AS dept_avg\nFROM employees e\nJOIN (SELECT dept, AVG(salary) AS avg_salary FROM employees GROUP BY dept) a\n  ON a.dept = e.dept\nWHERE e.salary > a.avg_salary\nORDER BY e.emp_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Using the company-wide average instead of the department average returns a different set of people.",
+          "sql": "SELECT emp_id, name, dept, salary, dept_avg\nFROM (\n  SELECT emp_id, name, dept, salary,\n         ROUND(AVG(salary) OVER (), 2) AS dept_avg\n  FROM employees\n) t\nWHERE salary > dept_avg\nORDER BY emp_id;"
+        },
+        {
+          "explain_md": "COALESCE(salary, 0) counts the missing salary as zero, lowering the Content average so Farid slips through.",
+          "sql": "SELECT emp_id, name, dept, salary, dept_avg\nFROM (\n  SELECT emp_id, name, dept, salary,\n         ROUND(AVG(COALESCE(salary, 0)) OVER (PARTITION BY dept), 2) AS dept_avg\n  FROM employees\n) t\nWHERE salary > dept_avg\nORDER BY emp_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "emp_id",
+          "name",
+          "dept",
+          "salary",
+          "dept_avg"
+        ],
+        "rows": [
+          [
+            "1",
+            "Asha",
+            "Engineering",
+            "9000.00",
+            "7500.00"
+          ],
+          [
+            "3",
+            "Chloe",
+            "Engineering",
+            "8000.00",
+            "7500.00"
+          ],
+          [
+            "5",
+            "Esha",
+            "Content",
+            "5000.00",
+            "4500.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T303",
+      "slug": "orders-from-repeat-customers",
+      "title": "Orders from repeat customers",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "NULL handling"
+      ],
+      "statement_md": "The growth team at an online marketplace wants to read the individual orders placed by repeat customers, meaning customers with two or more orders in total. Return `order_id`, `customer_id`, `amount` and `orders_by_customer` (how many orders that customer has placed overall), one row per qualifying order, ordered by `order_id`. Orders placed through a guest link have no `customer_id`; they are not customers and must not appear.",
+      "tables": [
+        {
+          "name": "orders",
+          "description_md": "One row per order. `customer_id` is NULL for guest-link orders; `promo_code` is NULL when none was used.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "customer_id",
+              "type": "VARCHAR(5)"
+            },
+            {
+              "name": "order_date",
+              "type": "DATE"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            },
+            {
+              "name": "promo_code",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "C1",
+              "2025-01-03",
+              40.0,
+              "SAVE5"
+            ],
+            [
+              2,
+              "C2",
+              "2025-01-04",
+              25.0,
+              null
+            ],
+            [
+              3,
+              "C1",
+              "2025-01-10",
+              60.0,
+              null
+            ],
+            [
+              4,
+              null,
+              "2025-01-11",
+              15.0,
+              null
+            ],
+            [
+              5,
+              "C3",
+              "2025-01-12",
+              80.0,
+              null
+            ],
+            [
+              6,
+              "C2",
+              "2025-01-15",
+              30.0,
+              "SAVE5"
+            ],
+            [
+              7,
+              null,
+              "2025-01-16",
+              22.0,
+              null
+            ],
+            [
+              8,
+              "C1",
+              "2025-01-20",
+              55.0,
+              null
+            ],
+            [
+              9,
+              null,
+              "2025-01-22",
+              18.0,
+              "WELCOME"
+            ],
+            [
+              10,
+              "C4",
+              "2025-01-25",
+              90.0,
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The output keeps individual orders, so collapsing with GROUP BY alone would lose the detail you need to show.",
+        "Rows with a NULL key are grouped together when you split by that key. Decide where in the query the guest rows should disappear."
+      ],
+      "notes_md": "**Pattern:** a group-level count attached to detail rows. Interviewers use it for 'show the rows, plus a fact about their group'.\n\n**Shape:** count orders per customer while keeping every order, then keep rows whose count reaches two. Remove guests before counting.\n\n**Syntax:** `COUNT(*) OVER (PARTITION BY k)` counts rows in each partition. `COUNT(col)` skips NULLs in col, `COUNT(*)` does not. All rows with a NULL partition key form one partition together.\n\n**Trap:** if guests are not filtered out first, the NULL customer_id rows are counted as one 'customer' with three orders.\n\n**Interview follow-up:** Show the same result with GROUP BY and a join back to the orders table.",
+      "solutions": [
+        {
+          "label": "Window count, filter outside",
+          "explain_md": "Guests are removed before the count, so the count only sees real customers; the outer query keeps counts of 2 or more.",
+          "sql": "SELECT order_id, customer_id, amount, orders_by_customer\nFROM (\n  SELECT order_id, customer_id, amount,\n         COUNT(*) OVER (PARTITION BY customer_id) AS orders_by_customer\n  FROM orders\n  WHERE customer_id IS NOT NULL\n) t\nWHERE orders_by_customer >= 2\nORDER BY order_id;"
+        },
+        {
+          "label": "Join to grouped counts",
+          "explain_md": "Count per customer with HAVING, then join back. An equality join never matches NULL, so guests drop out.",
+          "sql": "SELECT o.order_id, o.customer_id, o.amount, c.n AS orders_by_customer\nFROM orders o\nJOIN (SELECT customer_id, COUNT(*) AS n\n      FROM orders\n      GROUP BY customer_id\n      HAVING COUNT(*) >= 2) c\n  ON c.customer_id = o.customer_id\nORDER BY o.order_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Not excluding NULL customer_id puts the three guest orders in one big partition, so they look like a repeat customer.",
+          "sql": "SELECT order_id, customer_id, amount, orders_by_customer\nFROM (\n  SELECT order_id, customer_id, amount,\n         COUNT(*) OVER (PARTITION BY customer_id) AS orders_by_customer\n  FROM orders\n) t\nWHERE orders_by_customer >= 2\nORDER BY order_id;"
+        },
+        {
+          "explain_md": "'> 2' instead of '>= 2' keeps only customers with three or more orders, losing the customer with exactly two.",
+          "sql": "SELECT order_id, customer_id, amount, orders_by_customer\nFROM (\n  SELECT order_id, customer_id, amount,\n         COUNT(*) OVER (PARTITION BY customer_id) AS orders_by_customer\n  FROM orders\n  WHERE customer_id IS NOT NULL\n) t\nWHERE orders_by_customer > 2\nORDER BY order_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "order_id",
+          "customer_id",
+          "amount",
+          "orders_by_customer"
+        ],
+        "rows": [
+          [
+            "1",
+            "C1",
+            "40.00",
+            "3"
+          ],
+          [
+            "2",
+            "C2",
+            "25.00",
+            "2"
+          ],
+          [
+            "3",
+            "C1",
+            "60.00",
+            "3"
+          ],
+          [
+            "6",
+            "C2",
+            "30.00",
+            "2"
+          ],
+          [
+            "8",
+            "C1",
+            "55.00",
+            "3"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T304",
+      "slug": "price-versus-the-cheapest-in-the-city",
+      "title": "Price versus the cheapest in the city",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Aggregation"
+      ],
+      "statement_md": "A stays marketplace wants every listing shown with how it sits in its city. Return `listing_id`, `title`, `city`, `nightly_price`, `cheapest_in_city`, `priciest_in_city` and `above_cheapest` (the listing's nightly price minus the cheapest nightly price in its city). Keep all listings, including those with no price yet. Order by `listing_id`.",
+      "tables": [
+        {
+          "name": "listings",
+          "description_md": "One row per listing. `nightly_price` is NULL until the host sets a price.",
+          "columns": [
+            {
+              "name": "listing_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "nightly_price",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Harbour loft",
+              "Lisbon",
+              80.0
+            ],
+            [
+              2,
+              "Tile house",
+              "Lisbon",
+              185.0
+            ],
+            [
+              3,
+              "Rooftop suite",
+              "Lisbon",
+              420.0
+            ],
+            [
+              4,
+              "Garden room",
+              "Lisbon",
+              65.0
+            ],
+            [
+              5,
+              "Machiya cottage",
+              "Kyoto",
+              240.0
+            ],
+            [
+              6,
+              "Capsule pod",
+              "Kyoto",
+              90.0
+            ],
+            [
+              7,
+              "Riverside villa",
+              "Kyoto",
+              1200.0
+            ],
+            [
+              8,
+              "Tea house",
+              "Kyoto",
+              null
+            ],
+            [
+              9,
+              "Cabin on the lake",
+              "Banff",
+              120.0
+            ],
+            [
+              10,
+              "Ski chalet",
+              "Banff",
+              120.0
+            ],
+            [
+              11,
+              "Mountain lodge",
+              "Banff",
+              350.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Every row needs the city's lowest and highest price beside it, so no row can be collapsed.",
+        "If you add an ORDER BY inside the window to one of these, think about which rows each row can then see."
+      ],
+      "notes_md": "**Pattern:** group-wide extremes attached to detail rows. Interviewers use it for 'compared with the best/worst in its group'.\n\n**Shape:** compute the minimum and maximum over each city without grouping, then subtract on the row.\n\n**Syntax:** `MIN(expr) OVER (PARTITION BY g)` and `MAX(...)` see the whole partition when there is no ORDER BY in the window. Adding ORDER BY switches the default frame to 'start of partition up to the current row (and its peers)'.\n\n**Trap:** adding ORDER BY nightly_price to the window turns MAX into a running maximum, which equals the current price when sorted ascending.\n\n**Interview follow-up:** How would you get the title of the cheapest listing in each city on every row?",
+      "solutions": [
+        {
+          "label": "Whole-partition MIN and MAX",
+          "explain_md": "No ORDER BY in the window means every row sees the full city. NULL prices are ignored by MIN and MAX, and give a NULL difference.",
+          "sql": "SELECT listing_id, title, city, nightly_price,\n       MIN(nightly_price) OVER (PARTITION BY city) AS cheapest_in_city,\n       MAX(nightly_price) OVER (PARTITION BY city) AS priciest_in_city,\n       nightly_price - MIN(nightly_price) OVER (PARTITION BY city) AS above_cheapest\nFROM listings\nORDER BY listing_id;"
+        },
+        {
+          "label": "Join to grouped extremes",
+          "explain_md": "Aggregate once per city and join back on city.",
+          "sql": "SELECT l.listing_id, l.title, l.city, l.nightly_price,\n       g.lo AS cheapest_in_city, g.hi AS priciest_in_city,\n       l.nightly_price - g.lo AS above_cheapest\nFROM listings l\nJOIN (SELECT city, MIN(nightly_price) AS lo, MAX(nightly_price) AS hi\n      FROM listings GROUP BY city) g\n  ON g.city = l.city\nORDER BY l.listing_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "MAX with ORDER BY nightly_price in the window is a running maximum, so priciest_in_city just repeats each listing's own price.",
+          "sql": "SELECT listing_id, title, city, nightly_price,\n       MIN(nightly_price) OVER (PARTITION BY city) AS cheapest_in_city,\n       MAX(nightly_price) OVER (PARTITION BY city ORDER BY nightly_price) AS priciest_in_city,\n       nightly_price - MIN(nightly_price) OVER (PARTITION BY city) AS above_cheapest\nFROM listings\nORDER BY listing_id;"
+        },
+        {
+          "explain_md": "Forgetting PARTITION BY compares every listing with the cheapest listing in the whole table.",
+          "sql": "SELECT listing_id, title, city, nightly_price,\n       MIN(nightly_price) OVER () AS cheapest_in_city,\n       MAX(nightly_price) OVER (PARTITION BY city) AS priciest_in_city,\n       nightly_price - MIN(nightly_price) OVER () AS above_cheapest\nFROM listings\nORDER BY listing_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "listing_id",
+          "title",
+          "city",
+          "nightly_price",
+          "cheapest_in_city",
+          "priciest_in_city",
+          "above_cheapest"
+        ],
+        "rows": [
+          [
+            "1",
+            "Harbour loft",
+            "Lisbon",
+            "80.00",
+            "65.00",
+            "420.00",
+            "15.00"
+          ],
+          [
+            "2",
+            "Tile house",
+            "Lisbon",
+            "185.00",
+            "65.00",
+            "420.00",
+            "120.00"
+          ],
+          [
+            "3",
+            "Rooftop suite",
+            "Lisbon",
+            "420.00",
+            "65.00",
+            "420.00",
+            "355.00"
+          ],
+          [
+            "4",
+            "Garden room",
+            "Lisbon",
+            "65.00",
+            "65.00",
+            "420.00",
+            "0.00"
+          ],
+          [
+            "5",
+            "Machiya cottage",
+            "Kyoto",
+            "240.00",
+            "90.00",
+            "1200.00",
+            "150.00"
+          ],
+          [
+            "6",
+            "Capsule pod",
+            "Kyoto",
+            "90.00",
+            "90.00",
+            "1200.00",
+            "0.00"
+          ],
+          [
+            "7",
+            "Riverside villa",
+            "Kyoto",
+            "1200.00",
+            "90.00",
+            "1200.00",
+            "1110.00"
+          ],
+          [
+            "8",
+            "Tea house",
+            "Kyoto",
+            null,
+            "90.00",
+            "1200.00",
+            null
+          ],
+          [
+            "9",
+            "Cabin on the lake",
+            "Banff",
+            "120.00",
+            "120.00",
+            "350.00",
+            "0.00"
+          ],
+          [
+            "10",
+            "Ski chalet",
+            "Banff",
+            "120.00",
+            "120.00",
+            "350.00",
+            "0.00"
+          ],
+          [
+            "11",
+            "Mountain lodge",
+            "Banff",
+            "350.00",
+            "120.00",
+            "350.00",
+            "230.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T305",
+      "slug": "cumulative-sign-ups",
+      "title": "Cumulative sign-ups",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Easy",
+      "topics": [
+        "Window functions",
+        "Running totals"
+      ],
+      "statement_md": "A Twitter-style app tracks how its user base builds up. For every day on which at least one account was created, return `created_on`, `new_accounts` (accounts created that day) and `total_accounts` (all accounts created up to and including that day). Order by `created_on`.",
+      "tables": [
+        {
+          "name": "accounts",
+          "description_md": "One row per account created.",
+          "columns": [
+            {
+              "name": "account_id",
+              "type": "INT"
+            },
+            {
+              "name": "handle",
+              "type": "VARCHAR(15)"
+            },
+            {
+              "name": "created_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "mira_codes",
+              "2025-03-01"
+            ],
+            [
+              2,
+              "jonas.runs",
+              "2025-03-01"
+            ],
+            [
+              3,
+              "leah_reads",
+              "2025-03-02"
+            ],
+            [
+              4,
+              "omar_fx",
+              "2025-03-04"
+            ],
+            [
+              5,
+              "priya_p",
+              "2025-03-04"
+            ],
+            [
+              6,
+              "kenji88",
+              "2025-03-04"
+            ],
+            [
+              7,
+              "ana_draws",
+              "2025-03-05"
+            ],
+            [
+              8,
+              "zoe_zzz",
+              "2025-03-07"
+            ],
+            [
+              9,
+              "ravi_t",
+              "2025-03-07"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Get to one row per day first; the running figure is built on top of the daily counts.",
+        "A running total is an aggregate over the daily rows ordered by date, without collapsing them."
+      ],
+      "notes_md": "**Pattern:** a cumulative (running) total over time. Interviewers use it for growth, balances and 'to date' metrics.\n\n**Shape:** count accounts per day, then add each day's count to everything before it, in date order.\n\n**Syntax:** `SUM(expr) OVER (ORDER BY d)` is a running sum: with ORDER BY and no explicit frame the window runs from the first row up to the current row (and any rows with the same d).\n\n**Trap:** running the window directly over the raw accounts, without grouping by day first, gives one row per account.\n\n**Interview follow-up:** How would you produce the same running total without window functions?",
+      "solutions": [
+        {
+          "label": "Window sum over daily counts",
+          "explain_md": "GROUP BY gives one row per day; SUM of that day's count over an ordered window accumulates it. Days are unique after grouping, so there are no ties.",
+          "sql": "SELECT created_on,\n       COUNT(*) AS new_accounts,\n       SUM(COUNT(*)) OVER (ORDER BY created_on) AS total_accounts\nFROM accounts\nGROUP BY created_on\nORDER BY created_on;"
+        },
+        {
+          "label": "Correlated subquery",
+          "explain_md": "For each day, count every account created on or before it.",
+          "sql": "SELECT d.created_on, d.new_accounts,\n       (SELECT COUNT(*) FROM accounts a WHERE a.created_on <= d.created_on) AS total_accounts\nFROM (SELECT created_on, COUNT(*) AS new_accounts\n      FROM accounts GROUP BY created_on) d\nORDER BY d.created_on;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without GROUP BY there is one output row per account instead of one per day.",
+          "sql": "SELECT created_on,\n       COUNT(*) OVER (PARTITION BY created_on) AS new_accounts,\n       COUNT(*) OVER (ORDER BY created_on) AS total_accounts\nFROM accounts\nORDER BY created_on, account_id;"
+        },
+        {
+          "explain_md": "Partitioning the running sum by day restarts it every day, so total_accounts equals new_accounts.",
+          "sql": "SELECT created_on,\n       COUNT(*) AS new_accounts,\n       SUM(COUNT(*)) OVER (PARTITION BY created_on ORDER BY created_on) AS total_accounts\nFROM accounts\nGROUP BY created_on\nORDER BY created_on;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "created_on",
+          "new_accounts",
+          "total_accounts"
+        ],
+        "rows": [
+          [
+            "2025-03-01",
+            "2",
+            "2"
+          ],
+          [
+            "2025-03-02",
+            "1",
+            "3"
+          ],
+          [
+            "2025-03-04",
+            "3",
+            "6"
+          ],
+          [
+            "2025-03-05",
+            "1",
+            "7"
+          ],
+          [
+            "2025-03-07",
+            "2",
+            "9"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T306",
+      "slug": "running-total-that-resets-each-month",
+      "title": "Running total that resets each month",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Running totals"
+      ],
+      "statement_md": "The finance team of a game-console store reviews spending as a month-to-date figure. For every purchase return `purchase_date`, `amount` and `month_to_date`: the total of all purchases from the first day of that calendar month up to and including this one. The figure starts again at the beginning of each month, and January 2026 is a different month from January 2025. Order by `purchase_date`.",
+      "tables": [
+        {
+          "name": "store_purchases",
+          "description_md": "One row per purchase; at most one purchase per day.",
+          "columns": [
+            {
+              "name": "purchase_id",
+              "type": "INT"
+            },
+            {
+              "name": "purchase_date",
+              "type": "DATE"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2025-01-05",
+              100.0
+            ],
+            [
+              2,
+              "2025-01-20",
+              250.0
+            ],
+            [
+              3,
+              "2025-02-02",
+              80.0
+            ],
+            [
+              4,
+              "2025-02-14",
+              120.0
+            ],
+            [
+              5,
+              "2025-02-27",
+              60.0
+            ],
+            [
+              6,
+              "2025-03-09",
+              300.0
+            ],
+            [
+              7,
+              "2026-01-08",
+              150.0
+            ],
+            [
+              8,
+              "2026-01-19",
+              50.0
+            ],
+            [
+              9,
+              "2026-02-03",
+              90.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The running sum has to start again whenever the month changes.",
+        "Two different years can contain the same month number. What identifies a calendar month uniquely?"
+      ],
+      "notes_md": "**Pattern:** a running total that resets per group. Interviewers use it for month-to-date, year-to-date and per-account balances.\n\n**Shape:** split the rows into calendar months, order each month by date, and accumulate within it.\n\n**Syntax:** `PARTITION BY` decides where the running total restarts; `ORDER BY` decides the accumulation order. `YEAR(d)` and `MONTH(d)` extract parts of a date; a partition can list several expressions.\n\n**Trap:** partitioning on the month number alone merges January 2025 with January 2026.\n\n**Interview follow-up:** How would you also show year-to-date next to month-to-date?",
+      "solutions": [
+        {
+          "label": "Partition by year and month",
+          "explain_md": "The partition identifies one calendar month; within it the sum accumulates in date order.",
+          "sql": "SELECT purchase_date, amount,\n       SUM(amount) OVER (PARTITION BY YEAR(purchase_date), MONTH(purchase_date)\n                         ORDER BY purchase_date\n                         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS month_to_date\nFROM store_purchases\nORDER BY purchase_date;"
+        },
+        {
+          "label": "Correlated subquery",
+          "explain_md": "For each purchase, add up purchases of the same year and month on or before its date.",
+          "sql": "SELECT p.purchase_date, p.amount,\n       (SELECT SUM(x.amount)\n        FROM store_purchases x\n        WHERE YEAR(x.purchase_date) = YEAR(p.purchase_date)\n          AND MONTH(x.purchase_date) = MONTH(p.purchase_date)\n          AND x.purchase_date <= p.purchase_date) AS month_to_date\nFROM store_purchases p\nORDER BY p.purchase_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "No PARTITION BY gives a single running total that never resets.",
+          "sql": "SELECT purchase_date, amount,\n       SUM(amount) OVER (ORDER BY purchase_date) AS month_to_date\nFROM store_purchases\nORDER BY purchase_date;"
+        },
+        {
+          "explain_md": "Partitioning by MONTH() alone puts both Januaries (and both Februaries) into the same running total.",
+          "sql": "SELECT purchase_date, amount,\n       SUM(amount) OVER (PARTITION BY MONTH(purchase_date) ORDER BY purchase_date) AS month_to_date\nFROM store_purchases\nORDER BY purchase_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "purchase_date",
+          "amount",
+          "month_to_date"
+        ],
+        "rows": [
+          [
+            "2025-01-05",
+            "100.00",
+            "100.00"
+          ],
+          [
+            "2025-01-20",
+            "250.00",
+            "350.00"
+          ],
+          [
+            "2025-02-02",
+            "80.00",
+            "80.00"
+          ],
+          [
+            "2025-02-14",
+            "120.00",
+            "200.00"
+          ],
+          [
+            "2025-02-27",
+            "60.00",
+            "260.00"
+          ],
+          [
+            "2025-03-09",
+            "300.00",
+            "300.00"
+          ],
+          [
+            "2026-01-08",
+            "150.00",
+            "150.00"
+          ],
+          [
+            "2026-01-19",
+            "50.00",
+            "200.00"
+          ],
+          [
+            "2026-02-03",
+            "90.00",
+            "90.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T307",
+      "slug": "running-total-with-same-day-rows",
+      "title": "Running total with same-day rows",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Running totals"
+      ],
+      "statement_md": "A bank statement shows the balance after every transaction, per account. Deposits are positive and withdrawals negative. Several transactions can post on the same day; apply them in `txn_id` order. Return `account_id`, `txn_id`, `txn_date`, `amount` and `balance` (the account's balance after that transaction). Order by `account_id`, `txn_date`, `txn_id`.",
+      "tables": [
+        {
+          "name": "bank_txns",
+          "description_md": "One row per transaction. Accounts start at zero.",
+          "columns": [
+            {
+              "name": "txn_id",
+              "type": "INT"
+            },
+            {
+              "name": "account_id",
+              "type": "VARCHAR(3)"
+            },
+            {
+              "name": "txn_date",
+              "type": "DATE"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "A",
+              "2025-04-01",
+              500.0
+            ],
+            [
+              2,
+              "A",
+              "2025-04-02",
+              -120.0
+            ],
+            [
+              3,
+              "A",
+              "2025-04-02",
+              -80.0
+            ],
+            [
+              4,
+              "B",
+              "2025-04-02",
+              1000.0
+            ],
+            [
+              5,
+              "A",
+              "2025-04-02",
+              40.0
+            ],
+            [
+              6,
+              "B",
+              "2025-04-03",
+              -250.0
+            ],
+            [
+              7,
+              "A",
+              "2025-04-03",
+              -60.0
+            ],
+            [
+              8,
+              "B",
+              "2025-04-03",
+              -100.0
+            ],
+            [
+              9,
+              "B",
+              "2025-04-05",
+              75.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Look closely at account A on 2 April: three transactions share a date.",
+        "When the window orders only by date, what does the default frame do with rows that have the same date?"
+      ],
+      "notes_md": "**Pattern:** a per-account running balance with ties in the ordering column. Interviewers use it to see if you know the default frame.\n\n**Shape:** order each account's transactions by date and then by id, and add each amount to everything before it, one row at a time.\n\n**Syntax:** With `ORDER BY` and no frame clause the default is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`, which treats rows with equal ORDER BY values as one group. `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` counts physical rows.\n\n**Trap:** ordering by date alone makes all same-day rows show the same balance, the one after the last of them.\n\n**Interview follow-up:** What is the difference between ROWS and RANGE, and when would you want RANGE?",
+      "solutions": [
+        {
+          "label": "Explicit ROWS frame with a tie-break",
+          "explain_md": "Ordering by date then id makes every row unique, and ROWS makes the frame end exactly at the current row.",
+          "sql": "SELECT account_id, txn_id, txn_date, amount,\n       SUM(amount) OVER (PARTITION BY account_id\n                         ORDER BY txn_date, txn_id\n                         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS balance\nFROM bank_txns\nORDER BY account_id, txn_date, txn_id;"
+        },
+        {
+          "label": "Correlated subquery",
+          "explain_md": "Sum every earlier transaction of the account, using (date, id) as the ordering key.",
+          "sql": "SELECT t.account_id, t.txn_id, t.txn_date, t.amount,\n       (SELECT SUM(x.amount)\n        FROM bank_txns x\n        WHERE x.account_id = t.account_id\n          AND (x.txn_date < t.txn_date OR (x.txn_date = t.txn_date AND x.txn_id <= t.txn_id))) AS balance\nFROM bank_txns t\nORDER BY t.account_id, t.txn_date, t.txn_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Ordering the window by date only uses the default RANGE frame, so the three same-day transactions of account A all show the balance after the last one.",
+          "sql": "SELECT account_id, txn_id, txn_date, amount,\n       SUM(amount) OVER (PARTITION BY account_id ORDER BY txn_date) AS balance\nFROM bank_txns\nORDER BY account_id, txn_date, txn_id;"
+        },
+        {
+          "explain_md": "Without PARTITION BY the two accounts are added into one balance.",
+          "sql": "SELECT account_id, txn_id, txn_date, amount,\n       SUM(amount) OVER (ORDER BY txn_date, txn_id) AS balance\nFROM bank_txns\nORDER BY account_id, txn_date, txn_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "account_id",
+          "txn_id",
+          "txn_date",
+          "amount",
+          "balance"
+        ],
+        "rows": [
+          [
+            "A",
+            "1",
+            "2025-04-01",
+            "500.00",
+            "500.00"
+          ],
+          [
+            "A",
+            "2",
+            "2025-04-02",
+            "-120.00",
+            "380.00"
+          ],
+          [
+            "A",
+            "3",
+            "2025-04-02",
+            "-80.00",
+            "300.00"
+          ],
+          [
+            "A",
+            "5",
+            "2025-04-02",
+            "40.00",
+            "340.00"
+          ],
+          [
+            "A",
+            "7",
+            "2025-04-03",
+            "-60.00",
+            "280.00"
+          ],
+          [
+            "B",
+            "4",
+            "2025-04-02",
+            "1000.00",
+            "1000.00"
+          ],
+          [
+            "B",
+            "6",
+            "2025-04-03",
+            "-250.00",
+            "750.00"
+          ],
+          [
+            "B",
+            "8",
+            "2025-04-03",
+            "-100.00",
+            "650.00"
+          ],
+          [
+            "B",
+            "9",
+            "2025-04-05",
+            "75.00",
+            "725.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T308",
+      "slug": "three-day-moving-average-of-views",
+      "title": "Three-day moving average of views",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Rolling windows"
+      ],
+      "statement_md": "A YouTube-style creator dashboard smooths a video's daily view count. For each day return `view_date`, `views` and `avg_3day`: the average views over that day and the two days before it, rounded to 1 decimal. Every day has a row. For the first two days, average over the days that exist. Order by `view_date`.",
+      "tables": [
+        {
+          "name": "video_daily_views",
+          "description_md": "One row per day for one video.",
+          "columns": [
+            {
+              "name": "view_date",
+              "type": "DATE"
+            },
+            {
+              "name": "views",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2025-06-01",
+              4000
+            ],
+            [
+              "2025-06-02",
+              8000
+            ],
+            [
+              "2025-06-03",
+              6000
+            ],
+            [
+              "2025-06-04",
+              12000
+            ],
+            [
+              "2025-06-05",
+              3000
+            ],
+            [
+              "2025-06-06",
+              9000
+            ],
+            [
+              "2025-06-07",
+              7500
+            ],
+            [
+              "2025-06-08",
+              10000
+            ],
+            [
+              "2025-06-09",
+              5000
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Each row needs an average over a small neighbourhood of rows, not over the whole table.",
+        "Count how many rows your frame includes: the day itself plus how many before it?"
+      ],
+      "notes_md": "**Pattern:** a trailing moving average. Interviewers use it for smoothing noisy daily metrics.\n\n**Shape:** order by day and average the current row with the rows just before it; at the start of the data there are fewer rows to average.\n\n**Syntax:** `AVG(expr) OVER (ORDER BY d ROWS BETWEEN n PRECEDING AND CURRENT ROW)` averages up to n+1 rows. Near the start the frame is simply shorter; no NULLs are added.\n\n**Trap:** off-by-one in the frame: 3 PRECEDING averages four days.\n\n**Interview follow-up:** How would you return NULL for the first two days instead of a partial average?",
+      "solutions": [
+        {
+          "label": "ROWS frame of three rows",
+          "explain_md": "Two preceding rows plus the current row is a three-day window; on the first two days the frame holds fewer rows.",
+          "sql": "SELECT view_date, views,\n       ROUND(AVG(views) OVER (ORDER BY view_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 1) AS avg_3day\nFROM video_daily_views\nORDER BY view_date;"
+        },
+        {
+          "label": "Self-join on the date range",
+          "explain_md": "Every day has a row, so joining each day to itself and the two days before it gives the same window.",
+          "sql": "SELECT a.view_date, a.views, ROUND(AVG(b.views), 1) AS avg_3day\nFROM video_daily_views a\nJOIN video_daily_views b ON b.view_date BETWEEN a.view_date - INTERVAL 2 DAY AND a.view_date\nGROUP BY a.view_date, a.views\nORDER BY a.view_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "3 PRECEDING plus the current row is a four-day window.",
+          "sql": "SELECT view_date, views,\n       ROUND(AVG(views) OVER (ORDER BY view_date ROWS BETWEEN 3 PRECEDING AND CURRENT ROW), 1) AS avg_3day\nFROM video_daily_views\nORDER BY view_date;"
+        },
+        {
+          "explain_md": "No frame clause with ORDER BY means a running average from the first day, not a three-day average.",
+          "sql": "SELECT view_date, views,\n       ROUND(AVG(views) OVER (ORDER BY view_date), 1) AS avg_3day\nFROM video_daily_views\nORDER BY view_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "view_date",
+          "views",
+          "avg_3day"
+        ],
+        "rows": [
+          [
+            "2025-06-01",
+            "4000",
+            "4000.0"
+          ],
+          [
+            "2025-06-02",
+            "8000",
+            "6000.0"
+          ],
+          [
+            "2025-06-03",
+            "6000",
+            "6000.0"
+          ],
+          [
+            "2025-06-04",
+            "12000",
+            "8666.7"
+          ],
+          [
+            "2025-06-05",
+            "3000",
+            "7000.0"
+          ],
+          [
+            "2025-06-06",
+            "9000",
+            "8000.0"
+          ],
+          [
+            "2025-06-07",
+            "7500",
+            "6500.0"
+          ],
+          [
+            "2025-06-08",
+            "10000",
+            "8833.3"
+          ],
+          [
+            "2025-06-09",
+            "5000",
+            "7500.0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T309",
+      "slug": "centred-moving-average",
+      "title": "Centred moving average",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Rolling windows"
+      ],
+      "statement_md": "A music-streaming analytics team wants to smooth a song's daily play counts (in thousands) without lagging behind the trend. For each day return `stream_date`, `streams_k` and `centred_avg`: the average of that day's plays, the previous logged day's plays and the next logged day's plays, rounded to 2 decimals. On the first and last rows, average the two values that exist. The pipeline did not run on weekends, so some calendar days have no row. Order by `stream_date`.",
+      "tables": [
+        {
+          "name": "daily_streams",
+          "description_md": "One row per day the pipeline ran.",
+          "columns": [
+            {
+              "name": "stream_date",
+              "type": "DATE"
+            },
+            {
+              "name": "streams_k",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              "2025-09-01",
+              100.0
+            ],
+            [
+              "2025-09-02",
+              104.0
+            ],
+            [
+              "2025-09-03",
+              98.0
+            ],
+            [
+              "2025-09-04",
+              110.0
+            ],
+            [
+              "2025-09-05",
+              107.0
+            ],
+            [
+              "2025-09-08",
+              115.0
+            ],
+            [
+              "2025-09-09",
+              90.0
+            ],
+            [
+              "2025-09-10",
+              95.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The window looks both backwards and forwards from the current row.",
+        "Some calendar days are absent, so think in rows, not in calendar days."
+      ],
+      "notes_md": "**Pattern:** a centred moving average. Interviewers use it to check that you can place a frame on both sides of the current row.\n\n**Shape:** order by date and average the row before, the row itself and the row after; at the ends the frame is shorter.\n\n**Syntax:** A frame can use `n PRECEDING`, `CURRENT ROW` and `n FOLLOWING` as either boundary: `ROWS BETWEEN a PRECEDING AND b FOLLOWING`.\n\n**Trap:** a trailing frame (`1 PRECEDING AND CURRENT ROW`) is the right shape for a different question and lags the data by half a window.\n\n**Interview follow-up:** How would the result change if you averaged by calendar days instead of logged rows?",
+      "solutions": [
+        {
+          "label": "ROWS frame one on each side",
+          "explain_md": "One row before and one row after the current row, so the window is three rows wide in the middle and two at the ends.",
+          "sql": "SELECT stream_date, streams_k,\n       ROUND(AVG(streams_k) OVER (ORDER BY stream_date ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), 2) AS centred_avg\nFROM daily_streams\nORDER BY stream_date;"
+        },
+        {
+          "label": "Number the rows, then self-join on neighbours",
+          "explain_md": "Assign a row number, then join each row to the rows numbered one less, equal and one more.",
+          "sql": "WITH numbered AS (\n  SELECT stream_date, streams_k,\n         ROW_NUMBER() OVER (ORDER BY stream_date) AS rn\n  FROM daily_streams\n)\nSELECT a.stream_date, a.streams_k, ROUND(AVG(b.streams_k), 2) AS centred_avg\nFROM numbered a\nJOIN numbered b ON b.rn BETWEEN a.rn - 1 AND a.rn + 1\nGROUP BY a.stream_date, a.streams_k\nORDER BY a.stream_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A trailing frame (previous row and current row) is not centred.",
+          "sql": "SELECT stream_date, streams_k,\n       ROUND(AVG(streams_k) OVER (ORDER BY stream_date ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), 2) AS centred_avg\nFROM daily_streams\nORDER BY stream_date;"
+        },
+        {
+          "explain_md": "With ORDER BY and no frame the default is a running average from the first row.",
+          "sql": "SELECT stream_date, streams_k,\n       ROUND(AVG(streams_k) OVER (ORDER BY stream_date), 2) AS centred_avg\nFROM daily_streams\nORDER BY stream_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "stream_date",
+          "streams_k",
+          "centred_avg"
+        ],
+        "rows": [
+          [
+            "2025-09-01",
+            "100.00",
+            "102.00"
+          ],
+          [
+            "2025-09-02",
+            "104.00",
+            "100.67"
+          ],
+          [
+            "2025-09-03",
+            "98.00",
+            "104.00"
+          ],
+          [
+            "2025-09-04",
+            "110.00",
+            "105.00"
+          ],
+          [
+            "2025-09-05",
+            "107.00",
+            "110.67"
+          ],
+          [
+            "2025-09-08",
+            "115.00",
+            "104.00"
+          ],
+          [
+            "2025-09-09",
+            "90.00",
+            "100.00"
+          ],
+          [
+            "2025-09-10",
+            "95.00",
+            "92.50"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T310",
+      "slug": "seven-calendar-day-rolling-sum",
+      "title": "Seven calendar-day rolling sum",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Rolling windows",
+        "Dates"
+      ],
+      "statement_md": "An admin dashboard for a Microsoft Teams-style product reports meetings hosted over the last seven calendar days. For each date that has a row, return `meeting_date`, `meetings` and `rolling_7d`: the sum of `meetings` for that date and the six calendar days before it, counting only the dates present in the table. Some dates have no row at all. Order by `meeting_date`.",
+      "tables": [
+        {
+          "name": "meeting_counts",
+          "description_md": "One row per date that had any meetings; quiet dates are missing.",
+          "columns": [
+            {
+              "name": "meeting_date",
+              "type": "DATE"
+            },
+            {
+              "name": "meetings",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2025-05-01",
+              10
+            ],
+            [
+              "2025-05-02",
+              12
+            ],
+            [
+              "2025-05-04",
+              8
+            ],
+            [
+              "2025-05-05",
+              15
+            ],
+            [
+              "2025-05-09",
+              20
+            ],
+            [
+              "2025-05-10",
+              5
+            ],
+            [
+              "2025-05-11",
+              7
+            ],
+            [
+              "2025-05-15",
+              30
+            ],
+            [
+              "2025-05-16",
+              4
+            ],
+            [
+              "2025-05-20",
+              9
+            ],
+            [
+              "2025-05-21",
+              11
+            ],
+            [
+              "2025-05-22",
+              6
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Some days are absent. Six rows back is not the same as six days back.",
+        "You need a window whose boundary is measured in the values of the ordering column, not in rows."
+      ],
+      "notes_md": "**Pattern:** a rolling window measured in time, not in rows. Interviewers use it to separate ROWS from RANGE.\n\n**Shape:** order by date and sum every row whose date lies within the last seven calendar days of the current row's date.\n\n**Syntax:** `RANGE BETWEEN <offset> PRECEDING AND CURRENT ROW` compares values of the single ORDER BY column. In MySQL the offset can be an interval when the ordering column is a date: `INTERVAL n DAY`. A ROWS frame ignores the values and counts rows.\n\n**Trap:** with gaps in the dates, a frame of six rows back reaches far more than six days into the past.\n\n**Interview follow-up:** How would you build the same figure with a self-join, and what changes if you want a row for every calendar date?",
+      "solutions": [
+        {
+          "label": "RANGE frame with a date interval",
+          "explain_md": "RANGE measures the frame by date value: all rows whose date is within six days before the current date, up to the current date.",
+          "sql": "SELECT meeting_date, meetings,\n       SUM(meetings) OVER (ORDER BY meeting_date\n                           RANGE BETWEEN INTERVAL 6 DAY PRECEDING AND CURRENT ROW) AS rolling_7d\nFROM meeting_counts\nORDER BY meeting_date;"
+        },
+        {
+          "label": "Self-join on the date range",
+          "explain_md": "Join each date to every row dated within the previous six days and sum.",
+          "sql": "SELECT a.meeting_date, a.meetings, SUM(b.meetings) AS rolling_7d\nFROM meeting_counts a\nJOIN meeting_counts b\n  ON b.meeting_date BETWEEN a.meeting_date - INTERVAL 6 DAY AND a.meeting_date\nGROUP BY a.meeting_date, a.meetings\nORDER BY a.meeting_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "ROWS BETWEEN 6 PRECEDING counts seven rows, however many days they span, so quiet stretches pull in old data.",
+          "sql": "SELECT meeting_date, meetings,\n       SUM(meetings) OVER (ORDER BY meeting_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rolling_7d\nFROM meeting_counts\nORDER BY meeting_date;"
+        },
+        {
+          "explain_md": "INTERVAL 7 DAY makes the window eight dates wide (the day itself plus seven earlier days).",
+          "sql": "SELECT meeting_date, meetings,\n       SUM(meetings) OVER (ORDER BY meeting_date\n                           RANGE BETWEEN INTERVAL 7 DAY PRECEDING AND CURRENT ROW) AS rolling_7d\nFROM meeting_counts\nORDER BY meeting_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "meeting_date",
+          "meetings",
+          "rolling_7d"
+        ],
+        "rows": [
+          [
+            "2025-05-01",
+            "10",
+            "10"
+          ],
+          [
+            "2025-05-02",
+            "12",
+            "22"
+          ],
+          [
+            "2025-05-04",
+            "8",
+            "30"
+          ],
+          [
+            "2025-05-05",
+            "15",
+            "45"
+          ],
+          [
+            "2025-05-09",
+            "20",
+            "43"
+          ],
+          [
+            "2025-05-10",
+            "5",
+            "48"
+          ],
+          [
+            "2025-05-11",
+            "7",
+            "47"
+          ],
+          [
+            "2025-05-15",
+            "30",
+            "62"
+          ],
+          [
+            "2025-05-16",
+            "4",
+            "46"
+          ],
+          [
+            "2025-05-20",
+            "9",
+            "43"
+          ],
+          [
+            "2025-05-21",
+            "11",
+            "54"
+          ],
+          [
+            "2025-05-22",
+            "6",
+            "30"
+          ]
+        ]
+      },
+      "dialect_note_md": "Rolling windows over dates are one of the places where MySQL, SQL Server and PostgreSQL differ most in syntax.",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T311",
+      "slug": "days-that-set-a-new-record",
+      "title": "Days that set a new record",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Running totals"
+      ],
+      "statement_md": "An online game keeps the highest score posted on its global leaderboard each day. A day sets a record when its top score is strictly greater than every earlier day's top score; the first day in the data counts as a record. Return `play_date`, `top_score` and `previous_best` (the highest top score seen before that day, NULL for the first day) for the record-setting days. Matching an earlier record does not count. Order by `play_date`.",
+      "tables": [
+        {
+          "name": "daily_top_scores",
+          "description_md": "One row per day.",
+          "columns": [
+            {
+              "name": "play_date",
+              "type": "DATE"
+            },
+            {
+              "name": "top_score",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2025-07-01",
+              2100
+            ],
+            [
+              "2025-07-02",
+              2400
+            ],
+            [
+              "2025-07-03",
+              2400
+            ],
+            [
+              "2025-07-04",
+              2300
+            ],
+            [
+              "2025-07-05",
+              2700
+            ],
+            [
+              "2025-07-06",
+              2500
+            ],
+            [
+              "2025-07-07",
+              2700
+            ],
+            [
+              "2025-07-08",
+              2900
+            ],
+            [
+              "2025-07-09",
+              2800
+            ],
+            [
+              "2025-07-10",
+              2900
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "For each day you need the best value among earlier days only, not including itself.",
+        "Which frame boundary excludes the current row, and what does an empty frame produce for the first day?"
+      ],
+      "notes_md": "**Pattern:** a running maximum of previous rows. Interviewers use it for 'new high', 'all-time best' and 'beats everything before' questions.\n\n**Shape:** for each day compute the largest value of all earlier days, then keep days that exceed it (or have no earlier day).\n\n**Syntax:** A frame can end before the current row: `ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING`. For the first row that frame is empty and `MAX` returns NULL, which fails a comparison unless you handle it.\n\n**Trap:** a frame that includes the current row can never be exceeded by the current row, and comparing with `=` also accepts ties.\n\n**Interview follow-up:** How would you list the days that set a record without using a window function?",
+      "solutions": [
+        {
+          "label": "Frame that excludes the current row",
+          "explain_md": "MAX over all earlier rows gives previous_best; days with no earlier rows (NULL) or a higher value are records.",
+          "sql": "SELECT play_date, top_score, previous_best\nFROM (\n  SELECT play_date, top_score,\n         MAX(top_score) OVER (ORDER BY play_date\n                              ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS previous_best\n  FROM daily_top_scores\n) t\nWHERE previous_best IS NULL OR top_score > previous_best\nORDER BY play_date;"
+        },
+        {
+          "label": "Correlated subquery",
+          "explain_md": "Look up the maximum of earlier dates per row, then filter the same way.",
+          "sql": "SELECT play_date, top_score, previous_best\nFROM (\n  SELECT d.play_date, d.top_score,\n         (SELECT MAX(x.top_score) FROM daily_top_scores x WHERE x.play_date < d.play_date) AS previous_best\n  FROM daily_top_scores d\n) t\nWHERE previous_best IS NULL OR top_score > previous_best\nORDER BY play_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Including the current row in the running maximum and testing equality also returns days that merely tie the record.",
+          "sql": "SELECT play_date, top_score, previous_best\nFROM (\n  SELECT play_date, top_score,\n         MAX(top_score) OVER (ORDER BY play_date) AS previous_best\n  FROM daily_top_scores\n) t\nWHERE top_score = previous_best\nORDER BY play_date;"
+        },
+        {
+          "explain_md": "Comparing only with the previous day lists every better-than-yesterday day, not just records.",
+          "sql": "SELECT play_date, top_score, prev AS previous_best\nFROM (\n  SELECT play_date, top_score,\n         LAG(top_score) OVER (ORDER BY play_date) AS prev\n  FROM daily_top_scores\n) t\nWHERE prev IS NULL OR top_score > prev\nORDER BY play_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "play_date",
+          "top_score",
+          "previous_best"
+        ],
+        "rows": [
+          [
+            "2025-07-01",
+            "2100",
+            null
+          ],
+          [
+            "2025-07-02",
+            "2400",
+            "2100"
+          ],
+          [
+            "2025-07-05",
+            "2700",
+            "2400"
+          ],
+          [
+            "2025-07-08",
+            "2900",
+            "2700"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T312",
+      "slug": "cumulative-share-of-watch-time",
+      "title": "Cumulative share of watch time",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Running totals"
+      ],
+      "statement_md": "A streaming company's content team wants a Pareto view: titles from most-watched to least, and what share of all watch hours is reached by the time each title is included. Return `title`, `watch_hours` and `cumulative_pct` (the running watch hours from the most-watched title down to this one, as a percentage of all watch hours, rounded to 1 decimal). Break ties on watch hours by `title_id`, and treat that as the order for the running figure. Order by `watch_hours` descending, then `title_id`.",
+      "tables": [
+        {
+          "name": "title_watch_hours",
+          "description_md": "One row per title, total watch hours in the period (millions).",
+          "columns": [
+            {
+              "name": "title_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "watch_hours",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Stranger Things",
+              5000.0
+            ],
+            [
+              2,
+              "Wednesday",
+              3000.0
+            ],
+            [
+              3,
+              "Squid Game",
+              3000.0
+            ],
+            [
+              4,
+              "The Crown",
+              1000.0
+            ],
+            [
+              5,
+              "Bridgerton",
+              800.0
+            ],
+            [
+              6,
+              "Ozark",
+              600.0
+            ],
+            [
+              7,
+              "Narcos",
+              400.0
+            ],
+            [
+              8,
+              "Dark",
+              200.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Two titles have identical watch hours. The order you give the window decides how they are treated.",
+        "You need both a running total and a grand total in the same expression."
+      ],
+      "notes_md": "**Pattern:** a cumulative share (Pareto / ABC analysis). Interviewers use it for 'which titles make up 80 percent of watch time'.\n\n**Shape:** order titles by watch hours descending, accumulate them, and divide by the total over all rows.\n\n**Syntax:** Combine two windows in one expression: `SUM(x) OVER (ORDER BY k, id ROWS UNBOUNDED PRECEDING)` for the running part and `SUM(x) OVER ()` for the grand total. Adding a unique tie-break column makes the order deterministic.\n\n**Trap:** ordering the running sum by watch hours alone makes tied titles share one cumulative value.\n\n**Interview follow-up:** How would you list only the titles needed to reach 80 percent of watch time?",
+      "solutions": [
+        {
+          "label": "Running sum divided by grand total",
+          "explain_md": "The running sum uses a unique ordering (hours desc, id) with a ROWS frame; the empty OVER () gives the total.",
+          "sql": "SELECT title, watch_hours,\n       ROUND(100 * SUM(watch_hours) OVER (ORDER BY watch_hours DESC, title_id\n                                          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)\n             / SUM(watch_hours) OVER (), 1) AS cumulative_pct\nFROM title_watch_hours\nORDER BY watch_hours DESC, title_id;"
+        },
+        {
+          "label": "Correlated subquery",
+          "explain_md": "For each title, add up the hours of every title that ranks at or above it in (hours desc, id) order.",
+          "sql": "SELECT p.title, p.watch_hours,\n       ROUND(100 * (SELECT SUM(x.watch_hours)\n                    FROM title_watch_hours x\n                    WHERE x.watch_hours > p.watch_hours\n                       OR (x.watch_hours = p.watch_hours AND x.title_id <= p.title_id))\n             / (SELECT SUM(watch_hours) FROM title_watch_hours), 1) AS cumulative_pct\nFROM title_watch_hours p\nORDER BY p.watch_hours DESC, p.title_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Ordering the window by watch hours only uses the default RANGE frame, so the two 3000 titles both show the figure after both of them.",
+          "sql": "SELECT title, watch_hours,\n       ROUND(100 * SUM(watch_hours) OVER (ORDER BY watch_hours DESC) / SUM(watch_hours) OVER (), 1) AS cumulative_pct\nFROM title_watch_hours\nORDER BY watch_hours DESC, title_id;"
+        },
+        {
+          "explain_md": "Ordering ascending accumulates from the least-watched title up, not from the most-watched down.",
+          "sql": "SELECT title, watch_hours,\n       ROUND(100 * SUM(watch_hours) OVER (ORDER BY watch_hours, title_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)\n             / SUM(watch_hours) OVER (), 1) AS cumulative_pct\nFROM title_watch_hours\nORDER BY watch_hours DESC, title_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "title",
+          "watch_hours",
+          "cumulative_pct"
+        ],
+        "rows": [
+          [
+            "Stranger Things",
+            "5000.00",
+            "35.7"
+          ],
+          [
+            "Wednesday",
+            "3000.00",
+            "57.1"
+          ],
+          [
+            "Squid Game",
+            "3000.00",
+            "78.6"
+          ],
+          [
+            "The Crown",
+            "1000.00",
+            "85.7"
+          ],
+          [
+            "Bridgerton",
+            "800.00",
+            "91.4"
+          ],
+          [
+            "Ozark",
+            "600.00",
+            "95.7"
+          ],
+          [
+            "Narcos",
+            "400.00",
+            "98.6"
+          ],
+          [
+            "Dark",
+            "200.00",
+            "100.0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T313",
+      "slug": "new-riders-per-day-cumulative",
+      "title": "New riders per day, cumulative",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Running totals",
+        "Cohorts"
+      ],
+      "statement_md": "A ride-hailing company wants to see how its rider base grows. For every date on which at least one ride was taken, return `ride_date`, `new_riders` (riders whose very first ride was on that date; 0 if everyone riding that day had ridden before) and `total_riders` (all riders who have ridden up to and including that date). A rider who rides twice on their first day counts once. Order by `ride_date`.",
+      "tables": [
+        {
+          "name": "rides",
+          "description_md": "One row per ride.",
+          "columns": [
+            {
+              "name": "ride_id",
+              "type": "INT"
+            },
+            {
+              "name": "rider_id",
+              "type": "VARCHAR(4)"
+            },
+            {
+              "name": "ride_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "R1",
+              "2025-02-01"
+            ],
+            [
+              2,
+              "R2",
+              "2025-02-01"
+            ],
+            [
+              3,
+              "R1",
+              "2025-02-01"
+            ],
+            [
+              4,
+              "R1",
+              "2025-02-02"
+            ],
+            [
+              5,
+              "R3",
+              "2025-02-03"
+            ],
+            [
+              6,
+              "R2",
+              "2025-02-03"
+            ],
+            [
+              7,
+              "R4",
+              "2025-02-03"
+            ],
+            [
+              8,
+              "R3",
+              "2025-02-04"
+            ],
+            [
+              9,
+              "R5",
+              "2025-02-05"
+            ],
+            [
+              10,
+              "R1",
+              "2025-02-05"
+            ],
+            [
+              11,
+              "R6",
+              "2025-02-05"
+            ],
+            [
+              12,
+              "R6",
+              "2025-02-05"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "First decide, for each rider, which single ride counts as their first.",
+        "Some days have rides but no new riders. Make sure those days still appear."
+      ],
+      "notes_md": "**Pattern:** a first-occurrence flag followed by a running total. Interviewers use it for new-versus-returning and cohort-growth questions.\n\n**Shape:** mark each rider's first ride, count marked rows per day, keep days with zero new riders, then accumulate.\n\n**Syntax:** `ROW_NUMBER() OVER (PARTITION BY k ORDER BY d, id)` numbers each key's rows from 1, so rank 1 is the first occurrence. `MIN(d)` per key also finds the first date but not which ride it was.\n\n**Trap:** counting distinct riders per day and accumulating counts returning riders again and again.\n\n**Interview follow-up:** How would you turn this into a retention figure: what share of each day's new riders rode again within a week?",
+      "solutions": [
+        {
+          "label": "First-ride flag with ROW_NUMBER",
+          "explain_md": "Row number 1 per rider is their first ride; summing those flags per day gives new riders, and a running sum of that gives the total.",
+          "sql": "WITH flagged AS (\n  SELECT ride_date, rider_id,\n         ROW_NUMBER() OVER (PARTITION BY rider_id ORDER BY ride_date, ride_id) AS rn\n  FROM rides\n), daily AS (\n  SELECT ride_date, SUM(CASE WHEN rn = 1 THEN 1 ELSE 0 END) AS new_riders\n  FROM flagged\n  GROUP BY ride_date\n)\nSELECT ride_date, new_riders,\n       SUM(new_riders) OVER (ORDER BY ride_date) AS total_riders\nFROM daily\nORDER BY ride_date;"
+        },
+        {
+          "label": "First date per rider, joined back",
+          "explain_md": "Find each rider's first date with MIN, count riders per first date, then LEFT JOIN from the list of ride dates so days with zero new riders stay.",
+          "sql": "WITH first_rides AS (\n  SELECT rider_id, MIN(ride_date) AS first_date\n  FROM rides\n  GROUP BY rider_id\n), days AS (\n  SELECT DISTINCT ride_date FROM rides\n), daily AS (\n  SELECT d.ride_date, COUNT(f.rider_id) AS new_riders\n  FROM days d\n  LEFT JOIN first_rides f ON f.first_date = d.ride_date\n  GROUP BY d.ride_date\n)\nSELECT ride_date, new_riders,\n       SUM(new_riders) OVER (ORDER BY ride_date) AS total_riders\nFROM daily\nORDER BY ride_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Counting distinct riders per day counts returning riders as new again.",
+          "sql": "WITH daily AS (\n  SELECT ride_date, COUNT(DISTINCT rider_id) AS new_riders\n  FROM rides\n  GROUP BY ride_date\n)\nSELECT ride_date, new_riders,\n       SUM(new_riders) OVER (ORDER BY ride_date) AS total_riders\nFROM daily\nORDER BY ride_date;"
+        },
+        {
+          "explain_md": "Starting from first-ride dates drops the days where nobody new rode.",
+          "sql": "WITH first_rides AS (\n  SELECT rider_id, MIN(ride_date) AS first_date\n  FROM rides\n  GROUP BY rider_id\n), daily AS (\n  SELECT first_date AS ride_date, COUNT(*) AS new_riders\n  FROM first_rides\n  GROUP BY first_date\n)\nSELECT ride_date, new_riders,\n       SUM(new_riders) OVER (ORDER BY ride_date) AS total_riders\nFROM daily\nORDER BY ride_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "ride_date",
+          "new_riders",
+          "total_riders"
+        ],
+        "rows": [
+          [
+            "2025-02-01",
+            "2",
+            "2"
+          ],
+          [
+            "2025-02-02",
+            "0",
+            "2"
+          ],
+          [
+            "2025-02-03",
+            "2",
+            "4"
+          ],
+          [
+            "2025-02-04",
+            "0",
+            "4"
+          ],
+          [
+            "2025-02-05",
+            "2",
+            "6"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T314",
+      "slug": "day-each-channel-hit-its-goal",
+      "title": "Day each channel hit its goal",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Running totals"
+      ],
+      "statement_md": "A video platform lets creators unlock monetisation once a channel's total watch hours reach a target. Watch hours accumulate over time per channel; reaching the target exactly counts. Return `channel_id`, `channel_name` and `goal_date` (the date of the entry that took the running total to the target or beyond; NULL for channels that never got there). Include every channel. Order by `channel_id`.",
+      "tables": [
+        {
+          "name": "channels",
+          "description_md": "One row per channel with its monetisation target in watch hours.",
+          "columns": [
+            {
+              "name": "channel_id",
+              "type": "INT"
+            },
+            {
+              "name": "channel_name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "goal_hours",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Pixel Kitchen",
+              1000.0
+            ],
+            [
+              2,
+              "Garage Loop",
+              500.0
+            ],
+            [
+              3,
+              "Calm Chords",
+              800.0
+            ],
+            [
+              4,
+              "Trail Notes",
+              300.0
+            ]
+          ]
+        },
+        {
+          "name": "watch_entries",
+          "description_md": "Watch hours credited to a channel; entries on the same day are applied in `entry_id` order.",
+          "columns": [
+            {
+              "name": "entry_id",
+              "type": "INT"
+            },
+            {
+              "name": "channel_id",
+              "type": "INT"
+            },
+            {
+              "name": "watch_date",
+              "type": "DATE"
+            },
+            {
+              "name": "hours",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2025-07-01",
+              300.0
+            ],
+            [
+              2,
+              1,
+              "2025-07-03",
+              400.0
+            ],
+            [
+              3,
+              1,
+              "2025-07-03",
+              100.0
+            ],
+            [
+              4,
+              1,
+              "2025-07-09",
+              250.0
+            ],
+            [
+              5,
+              2,
+              "2025-07-02",
+              200.0
+            ],
+            [
+              6,
+              2,
+              "2025-07-04",
+              300.0
+            ],
+            [
+              7,
+              2,
+              "2025-07-06",
+              100.0
+            ],
+            [
+              8,
+              3,
+              "2025-07-01",
+              900.0
+            ],
+            [
+              9,
+              3,
+              "2025-07-05",
+              50.0
+            ],
+            [
+              10,
+              4,
+              "2025-07-03",
+              100.0
+            ],
+            [
+              11,
+              4,
+              "2025-07-08",
+              120.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Build the cumulative watch hours per channel first; then ask for the earliest point where it meets the target.",
+        "A channel with no qualifying point must still be listed. Which side of the join must be the channels table?"
+      ],
+      "notes_md": "**Pattern:** a running total crossing a threshold. Interviewers use it for 'when did X first exceed Y' questions, from quotas to inventory.\n\n**Shape:** accumulate hours per channel in order, then per channel take the earliest date where the running total is at least the target; keep channels with no such date.\n\n**Syntax:** Aggregates over a running window can be filtered in an outer query or join: `MIN(d)` on rows where `running >= goal` gives the first crossing. A LEFT JOIN from the parent table keeps parents with no match.\n\n**Trap:** using `>` instead of `>=` misses a channel that lands exactly on its target, and a running total with no partition mixes channels.\n\n**Interview follow-up:** What if some entries were corrections (negative hours), so the running total could cross the target, fall and cross again?",
+      "solutions": [
+        {
+          "label": "Running total per channel, earliest crossing",
+          "explain_md": "A ROWS-framed running sum per channel marks each entry's cumulative total; the earliest date with total at least the target is the answer, and LEFT JOIN keeps unmet channels.",
+          "sql": "WITH running AS (\n  SELECT channel_id, watch_date,\n         SUM(hours) OVER (PARTITION BY channel_id\n                          ORDER BY watch_date, entry_id\n                          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS total\n  FROM watch_entries\n)\nSELECT c.channel_id, c.channel_name, MIN(r.watch_date) AS goal_date\nFROM channels c\nLEFT JOIN running r\n  ON r.channel_id = c.channel_id AND r.total >= c.goal_hours\nGROUP BY c.channel_id, c.channel_name\nORDER BY c.channel_id;"
+        },
+        {
+          "label": "Correlated subqueries",
+          "explain_md": "For each channel take the earliest entry date whose cumulative hours up to that date reach the target.",
+          "sql": "SELECT c.channel_id, c.channel_name,\n       (SELECT MIN(d.watch_date)\n        FROM watch_entries d\n        WHERE d.channel_id = c.channel_id\n          AND (SELECT SUM(x.hours)\n               FROM watch_entries x\n               WHERE x.channel_id = d.channel_id\n                 AND x.watch_date <= d.watch_date) >= c.goal_hours) AS goal_date\nFROM channels c\nORDER BY c.channel_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "'>' instead of '>=' misses the channel that landed exactly on its target and reports a later date.",
+          "sql": "WITH running AS (\n  SELECT channel_id, watch_date,\n         SUM(hours) OVER (PARTITION BY channel_id ORDER BY watch_date, entry_id) AS total\n  FROM watch_entries\n)\nSELECT c.channel_id, c.channel_name, MIN(r.watch_date) AS goal_date\nFROM channels c\nLEFT JOIN running r ON r.channel_id = c.channel_id AND r.total > c.goal_hours\nGROUP BY c.channel_id, c.channel_name\nORDER BY c.channel_id;"
+        },
+        {
+          "explain_md": "Without PARTITION BY the running total mixes all channels together, so targets are reached too early.",
+          "sql": "WITH running AS (\n  SELECT channel_id, watch_date,\n         SUM(hours) OVER (ORDER BY watch_date, entry_id) AS total\n  FROM watch_entries\n)\nSELECT c.channel_id, c.channel_name, MIN(r.watch_date) AS goal_date\nFROM channels c\nLEFT JOIN running r ON r.channel_id = c.channel_id AND r.total >= c.goal_hours\nGROUP BY c.channel_id, c.channel_name\nORDER BY c.channel_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "channel_id",
+          "channel_name",
+          "goal_date"
+        ],
+        "rows": [
+          [
+            "1",
+            "Pixel Kitchen",
+            "2025-07-09"
+          ],
+          [
+            "2",
+            "Garage Loop",
+            "2025-07-04"
+          ],
+          [
+            "3",
+            "Calm Chords",
+            "2025-07-01"
+          ],
+          [
+            "4",
+            "Trail Notes",
+            null
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T315",
+      "slug": "rolling-average-rating-alerts",
+      "title": "Rolling average rating alerts",
+      "section": "Window functions: aggregates and frames",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Running totals",
+        "Aggregation"
+      ],
+      "statement_md": "A marketplace flags products whose customer rating is slipping. After each review, the product's average rating so far is the mean of all its reviews up to and including that one. For each product, find the first review at which that running average is strictly below 3.5, ignoring the first two reviews of every product (an average over fewer than three reviews is too noisy). Return `product_id`, `review_id`, `reviewed_on` and `avg_rating` (the running average at that review, rounded to 2 decimals). Products that never drop below 3.5 are not listed. Order by `product_id`.",
+      "tables": [
+        {
+          "name": "product_reviews",
+          "description_md": "One row per review; within a product, reviews are ordered by date, then `review_id`.",
+          "columns": [
+            {
+              "name": "review_id",
+              "type": "INT"
+            },
+            {
+              "name": "product_id",
+              "type": "INT"
+            },
+            {
+              "name": "rating",
+              "type": "INT"
+            },
+            {
+              "name": "reviewed_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              5,
+              "2025-08-01"
+            ],
+            [
+              2,
+              1,
+              4,
+              "2025-08-03"
+            ],
+            [
+              3,
+              1,
+              4,
+              "2025-08-04"
+            ],
+            [
+              4,
+              1,
+              2,
+              "2025-08-10"
+            ],
+            [
+              5,
+              1,
+              2,
+              "2025-08-10"
+            ],
+            [
+              6,
+              1,
+              3,
+              "2025-08-12"
+            ],
+            [
+              7,
+              2,
+              2,
+              "2025-08-02"
+            ],
+            [
+              8,
+              2,
+              5,
+              "2025-08-05"
+            ],
+            [
+              9,
+              2,
+              3,
+              "2025-08-06"
+            ],
+            [
+              10,
+              2,
+              5,
+              "2025-08-07"
+            ],
+            [
+              11,
+              2,
+              1,
+              "2025-08-09"
+            ],
+            [
+              12,
+              3,
+              4,
+              "2025-08-01"
+            ],
+            [
+              13,
+              3,
+              4,
+              "2025-08-02"
+            ],
+            [
+              14,
+              3,
+              5,
+              "2025-08-03"
+            ],
+            [
+              15,
+              3,
+              5,
+              "2025-08-08"
+            ],
+            [
+              16,
+              4,
+              4,
+              "2025-08-01"
+            ],
+            [
+              17,
+              4,
+              4,
+              "2025-08-05"
+            ],
+            [
+              18,
+              4,
+              3,
+              "2025-08-06"
+            ],
+            [
+              19,
+              4,
+              3,
+              "2025-08-11"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "First work out the running average and the review count after every review of a product.",
+        "Several reviews may satisfy the condition. Which one do you keep, and what does 'ignoring the first two' do to the count?"
+      ],
+      "notes_md": "**Pattern:** a cumulative average with an alert on the first crossing. Interviewers use it for threshold-breach and 'when did it first go bad' questions.\n\n**Shape:** number each product's reviews in order, compute the average of all reviews so far, filter to reviews past the minimum count that sit below the threshold, then keep the earliest per product.\n\n**Syntax:** `AVG(x) OVER (PARTITION BY p ORDER BY d, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)` is a cumulative mean. A second window (`ROW_NUMBER` over the filtered rows) or a MIN on the review number picks the first match per group.\n\n**Trap:** keeping every review below the threshold instead of the first, or letting a one-review average of 2 trigger an alert; also note an average of exactly 3.5 is not below 3.5.\n\n**Interview follow-up:** How would you detect when a product's rating recovers back to 3.5 or above after an alert?",
+      "solutions": [
+        {
+          "label": "Two-step windows",
+          "explain_md": "The first CTE gives each review's number and running mean; the second keeps eligible reviews below the threshold and numbers them so the earliest per product is picked.",
+          "sql": "WITH running AS (\n  SELECT product_id, review_id, reviewed_on,\n         ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY reviewed_on, review_id) AS n,\n         AVG(rating) OVER (PARTITION BY product_id ORDER BY reviewed_on, review_id\n                           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS avg_rating\n  FROM product_reviews\n), flagged AS (\n  SELECT product_id, review_id, reviewed_on, avg_rating,\n         ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY n) AS k\n  FROM running\n  WHERE n >= 3 AND avg_rating < 3.5\n)\nSELECT product_id, review_id, reviewed_on, ROUND(avg_rating, 2) AS avg_rating\nFROM flagged\nWHERE k = 1\nORDER BY product_id;"
+        },
+        {
+          "label": "Running CTE, earliest review number by subquery",
+          "explain_md": "Same running mean and count, then keep the review whose number equals the smallest eligible number for its product.",
+          "sql": "WITH running AS (\n  SELECT product_id, review_id, reviewed_on,\n         ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY reviewed_on, review_id) AS n,\n         AVG(rating) OVER (PARTITION BY product_id ORDER BY reviewed_on, review_id\n                           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS avg_rating\n  FROM product_reviews\n)\nSELECT r.product_id, r.review_id, r.reviewed_on, ROUND(r.avg_rating, 2) AS avg_rating\nFROM running r\nWHERE r.n >= 3 AND r.avg_rating < 3.5\n  AND r.n = (SELECT MIN(x.n) FROM running x\n             WHERE x.product_id = r.product_id AND x.n >= 3 AND x.avg_rating < 3.5)\nORDER BY r.product_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Keeping every review below the threshold, not only the first, returns several rows for the same product.",
+          "sql": "WITH running AS (\n  SELECT product_id, review_id, reviewed_on,\n         ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY reviewed_on, review_id) AS n,\n         AVG(rating) OVER (PARTITION BY product_id ORDER BY reviewed_on, review_id\n                           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS avg_rating\n  FROM product_reviews\n)\nSELECT product_id, review_id, reviewed_on, ROUND(avg_rating, 2) AS avg_rating\nFROM running\nWHERE n >= 3 AND avg_rating < 3.5\nORDER BY product_id, review_id;"
+        },
+        {
+          "explain_md": "Dropping the minimum-reviews rule lets a one-review average of 2 trigger an alert.",
+          "sql": "WITH running AS (\n  SELECT product_id, review_id, reviewed_on,\n         AVG(rating) OVER (PARTITION BY product_id ORDER BY reviewed_on, review_id\n                           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS avg_rating\n  FROM product_reviews\n), flagged AS (\n  SELECT product_id, review_id, reviewed_on, avg_rating,\n         ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY reviewed_on, review_id) AS k\n  FROM running\n  WHERE avg_rating < 3.5\n)\nSELECT product_id, review_id, reviewed_on, ROUND(avg_rating, 2) AS avg_rating\nFROM flagged\nWHERE k = 1\nORDER BY product_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "product_id",
+          "review_id",
+          "reviewed_on",
+          "avg_rating"
+        ],
+        "rows": [
+          [
+            "1",
+            "5",
+            "2025-08-10",
+            "3.40"
+          ],
+          [
+            "2",
+            "9",
+            "2025-08-06",
+            "3.33"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

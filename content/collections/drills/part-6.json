@@ -1,0 +1,2085 @@
+{
+  "problems": [
+    {
+      "id": "T501",
+      "slug": "big-spenders",
+      "title": "Big spenders",
+      "section": "CTEs",
+      "difficulty": "Easy",
+      "topics": [
+        "CTEs",
+        "Aggregation"
+      ],
+      "statement_md": "The loyalty team at an Amazon-style marketplace wants to thank its best shoppers. Total what each shopper has spent across all of their orders, and return the shoppers whose lifetime total is **at least 500**. Return `name` and `total_spent`, highest spender first, then by `name`.",
+      "tables": [
+        {
+          "name": "shoppers",
+          "description_md": "One row per registered shopper. Some have never ordered.",
+          "columns": [
+            {
+              "name": "shopper_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Asha"
+            ],
+            [
+              2,
+              "Bram"
+            ],
+            [
+              3,
+              "Chen"
+            ],
+            [
+              4,
+              "Dara"
+            ],
+            [
+              5,
+              "Eli"
+            ]
+          ]
+        },
+        {
+          "name": "orders",
+          "description_md": "One row per order placed on the marketplace.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "shopper_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              300.0
+            ],
+            [
+              2,
+              1,
+              250.0
+            ],
+            [
+              3,
+              2,
+              600.0
+            ],
+            [
+              4,
+              3,
+              200.0
+            ],
+            [
+              5,
+              3,
+              150.0
+            ],
+            [
+              6,
+              3,
+              150.0
+            ],
+            [
+              7,
+              4,
+              90.0
+            ],
+            [
+              8,
+              4,
+              120.0
+            ],
+            [
+              9,
+              2,
+              40.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Decide first what one row of the intermediate result should represent.",
+        "A condition on a total cannot be tested until the totals exist; think about which step has to come first."
+      ],
+      "notes_md": "**Pattern:** a CTE to name an intermediate result (one row per shopper), then query it like a table. Interviewers reach for it when a filter depends on an aggregate.\n\n**Shape:** step one: one row per shopper with their total. Step two: join to the shopper names and keep the totals that meet the threshold.\n\n**Syntax:** `WITH name AS (SELECT ...) SELECT ... FROM name` - the CTE exists only for the one statement that follows it, and you can list several separated by commas.\n\n**Trap:** filtering the raw order rows before totalling answers a different question (it only sees big single orders). Also check the boundary: 'at least' includes the threshold itself.\n\n**Interview follow-up:** can you do this without a CTE? (Yes: HAVING on the grouped query, or a derived table; when would you still prefer the CTE?)",
+      "solutions": [
+        {
+          "label": "CTE of shopper totals",
+          "explain_md": "The CTE produces one total per shopper; the outer query filters those totals and attaches names.",
+          "sql": "WITH totals AS (\n  SELECT shopper_id, SUM(amount) AS total_spent\n  FROM orders\n  GROUP BY shopper_id\n)\nSELECT s.name, t.total_spent\nFROM totals t\nJOIN shoppers s ON s.shopper_id = t.shopper_id\nWHERE t.total_spent >= 500\nORDER BY t.total_spent DESC, s.name;"
+        },
+        {
+          "label": "GROUP BY with HAVING",
+          "explain_md": "HAVING filters groups after aggregation, so no intermediate result is needed for a plain threshold.",
+          "sql": "SELECT s.name, SUM(o.amount) AS total_spent\nFROM shoppers s\nJOIN orders o ON o.shopper_id = s.shopper_id\nGROUP BY s.shopper_id, s.name\nHAVING SUM(o.amount) >= 500\nORDER BY total_spent DESC, s.name;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Filtering rows with WHERE before totalling keeps only orders of 500 or more, so shoppers who reached 500 through several smaller orders vanish and the others are under-counted.",
+          "sql": "SELECT s.name, SUM(o.amount) AS total_spent\nFROM shoppers s\nJOIN orders o ON o.shopper_id = s.shopper_id\nWHERE o.amount >= 500\nGROUP BY s.shopper_id, s.name\nORDER BY total_spent DESC, s.name;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "name",
+          "total_spent"
+        ],
+        "rows": [
+          [
+            "Bram",
+            "640.00"
+          ],
+          [
+            "Asha",
+            "550.00"
+          ],
+          [
+            "Chen",
+            "500.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T502",
+      "slug": "average-rides-per-rider",
+      "title": "Average rides per rider",
+      "section": "CTEs",
+      "difficulty": "Easy",
+      "topics": [
+        "CTEs",
+        "Aggregation"
+      ],
+      "statement_md": "A product manager at an Uber-style ride-hailing company asks two questions about rider behaviour. Across riders who have taken at least one ride, what is the **average number of rides per rider** and the **average total fare per rider**? Return one row with `avg_rides` and `avg_spend`, both rounded to 2 decimals.",
+      "tables": [
+        {
+          "name": "rides",
+          "description_md": "One row per completed ride; every ride belongs to a rider who has ridden at least once.",
+          "columns": [
+            {
+              "name": "ride_id",
+              "type": "INT"
+            },
+            {
+              "name": "rider_id",
+              "type": "INT"
+            },
+            {
+              "name": "fare",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              100.0
+            ],
+            [
+              2,
+              1,
+              50.0
+            ],
+            [
+              3,
+              1,
+              50.0
+            ],
+            [
+              4,
+              2,
+              400.0
+            ],
+            [
+              5,
+              3,
+              20.0
+            ],
+            [
+              6,
+              3,
+              30.0
+            ],
+            [
+              7,
+              3,
+              25.0
+            ],
+            [
+              8,
+              3,
+              25.0
+            ],
+            [
+              9,
+              4,
+              150.0
+            ],
+            [
+              10,
+              4,
+              50.0
+            ],
+            [
+              11,
+              5,
+              50.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The unit being averaged is a rider, not a ride.",
+        "Produce one row per rider carrying their ride count and their total fare, then average those columns."
+      ],
+      "notes_md": "**Pattern:** aggregate of an aggregate - summarise to the right grain first, then summarise again. Interviewers reach for it when the thing being averaged is not a raw row.\n\n**Shape:** step one: one row per rider with a count and a sum. Step two: average each of those columns over riders.\n\n**Syntax:** `AVG(x)` ignores NULLs and returns a decimal even for integer input; `ROUND(value, 2)` fixes the number of decimals.\n\n**Trap:** averaging the raw rows gives the average per ride, which is a different number from the average per rider.\n\n**Interview follow-up:** how does the answer change if riders with zero rides must be included in the average?",
+      "solutions": [
+        {
+          "label": "CTE per rider, then average",
+          "explain_md": "The CTE sets the grain to one row per rider; averaging its columns gives per-rider figures.",
+          "sql": "WITH per_rider AS (\n  SELECT rider_id, COUNT(*) AS ride_count, SUM(fare) AS total_fare\n  FROM rides\n  GROUP BY rider_id\n)\nSELECT ROUND(AVG(ride_count), 2) AS avg_rides,\n       ROUND(AVG(total_fare), 2) AS avg_spend\nFROM per_rider;"
+        },
+        {
+          "label": "Totals divided by distinct riders",
+          "explain_md": "The average of per-rider sums equals the grand total divided by the number of riders, so no intermediate step is needed.",
+          "sql": "SELECT ROUND(COUNT(*) / COUNT(DISTINCT rider_id), 2) AS avg_rides,\n       ROUND(SUM(fare) / COUNT(DISTINCT rider_id), 2) AS avg_spend\nFROM rides;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "AVG over the raw ride rows returns the average fare per ride, not the average spend per rider.",
+          "sql": "WITH per_rider AS (\n  SELECT rider_id, COUNT(*) AS ride_count, SUM(fare) AS total_fare\n  FROM rides\n  GROUP BY rider_id\n)\nSELECT ROUND((SELECT AVG(ride_count) FROM per_rider), 2) AS avg_rides,\n       ROUND((SELECT AVG(fare) FROM rides), 2) AS avg_spend;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "avg_rides",
+          "avg_spend"
+        ],
+        "rows": [
+          [
+            "2.20",
+            "190.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T503",
+      "slug": "best-month-of-each-year",
+      "title": "Best month of each year",
+      "section": "CTEs",
+      "difficulty": "Medium",
+      "topics": [
+        "CTEs",
+        "Ranking",
+        "Dates"
+      ],
+      "statement_md": "The content team at a Netflix-style streaming service wants the busiest viewing month in every calendar year. Total the minutes watched by month, then return the top month of each year. If two months in the same year tie for the highest total, return both. Return `year`, `month` (the month number) and `monthly_minutes`, ordered by `year`, then `month`.",
+      "tables": [
+        {
+          "name": "watch_history",
+          "description_md": "One row per viewing session across all profiles.",
+          "columns": [
+            {
+              "name": "view_id",
+              "type": "INT"
+            },
+            {
+              "name": "watched_on",
+              "type": "DATE"
+            },
+            {
+              "name": "minutes",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2023-01-10",
+              100
+            ],
+            [
+              2,
+              "2023-01-25",
+              50
+            ],
+            [
+              3,
+              "2023-02-14",
+              200
+            ],
+            [
+              4,
+              "2023-03-05",
+              80
+            ],
+            [
+              5,
+              "2024-01-08",
+              120
+            ],
+            [
+              6,
+              "2024-02-03",
+              90
+            ],
+            [
+              7,
+              "2024-02-20",
+              30
+            ],
+            [
+              8,
+              "2024-03-11",
+              100
+            ],
+            [
+              9,
+              "2025-01-15",
+              300
+            ],
+            [
+              10,
+              "2025-02-02",
+              50
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Two steps are hiding here: totals per month first, then a comparison among the months of one year.",
+        "Decide what 'top' should do when two months share the highest total before you pick the tool."
+      ],
+      "notes_md": "**Pattern:** chained CTEs - the second step reads the first. Top-1 per group with ties kept; interviewers use it to test whether you aggregate before you rank.\n\n**Shape:** CTE one: one row per year and month with its total. CTE two (or the final query): rank or compare the months inside each year and keep the winners.\n\n**Syntax:** `YEAR(d)` and `MONTH(d)` extract parts of a date; `RANK() OVER (PARTITION BY p ORDER BY m DESC)` gives tied rows the same rank, `ROW_NUMBER()` never does.\n\n**Trap:** a numbering function that always hands out distinct numbers silently drops a tied winner. Also, grouping by month alone mixes different years together.\n\n**Interview follow-up:** how would you return the top two months per year, and what changes if ties should be broken by the earlier month?",
+      "solutions": [
+        {
+          "label": "Chained CTEs with RANK",
+          "explain_md": "RANK gives tied months the same rank 1, so every tied winner survives the filter.",
+          "sql": "WITH monthly AS (\n  SELECT YEAR(watched_on) AS yr, MONTH(watched_on) AS mo, SUM(minutes) AS monthly_minutes\n  FROM watch_history\n  GROUP BY YEAR(watched_on), MONTH(watched_on)\n), ranked AS (\n  SELECT yr, mo, monthly_minutes,\n         RANK() OVER (PARTITION BY yr ORDER BY monthly_minutes DESC) AS rnk\n  FROM monthly\n)\nSELECT yr AS year, mo AS month, monthly_minutes\nFROM ranked\nWHERE rnk = 1\nORDER BY yr, mo;"
+        },
+        {
+          "label": "Compare with the yearly maximum",
+          "explain_md": "A second CTE holds each year's maximum monthly total; joining back keeps every month that equals it, ties included.",
+          "sql": "WITH monthly AS (\n  SELECT YEAR(watched_on) AS yr, MONTH(watched_on) AS mo, SUM(minutes) AS monthly_minutes\n  FROM watch_history\n  GROUP BY YEAR(watched_on), MONTH(watched_on)\n), best AS (\n  SELECT yr, MAX(monthly_minutes) AS top_minutes\n  FROM monthly\n  GROUP BY yr\n)\nSELECT m.yr AS year, m.mo AS month, m.monthly_minutes\nFROM monthly m\nJOIN best b ON b.yr = m.yr AND b.top_minutes = m.monthly_minutes\nORDER BY m.yr, m.mo;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "ROW_NUMBER always yields exactly one row per year, so the second of two tied months is dropped.",
+          "sql": "WITH monthly AS (\n  SELECT YEAR(watched_on) AS yr, MONTH(watched_on) AS mo, SUM(minutes) AS monthly_minutes\n  FROM watch_history\n  GROUP BY YEAR(watched_on), MONTH(watched_on)\n), ranked AS (\n  SELECT yr, mo, monthly_minutes,\n         ROW_NUMBER() OVER (PARTITION BY yr ORDER BY monthly_minutes DESC, mo) AS rn\n  FROM monthly\n)\nSELECT yr AS year, mo AS month, monthly_minutes\nFROM ranked\nWHERE rn = 1\nORDER BY yr, mo;"
+        },
+        {
+          "explain_md": "Taking the longest single session per year instead of the largest monthly total finds the month of the longest session, not the busiest month.",
+          "sql": "SELECT YEAR(w.watched_on) AS year, MONTH(w.watched_on) AS month, SUM(w.minutes) AS monthly_minutes\nFROM watch_history w\nWHERE w.minutes = (SELECT MAX(x.minutes) FROM watch_history x WHERE YEAR(x.watched_on) = YEAR(w.watched_on))\nGROUP BY YEAR(w.watched_on), MONTH(w.watched_on)\nORDER BY year, month;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "year",
+          "month",
+          "monthly_minutes"
+        ],
+        "rows": [
+          [
+            "2023",
+            "2",
+            "200"
+          ],
+          [
+            "2024",
+            "1",
+            "120"
+          ],
+          [
+            "2024",
+            "2",
+            "120"
+          ],
+          [
+            "2025",
+            "1",
+            "300"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T504",
+      "slug": "months-above-the-typical-month",
+      "title": "Months above the typical month",
+      "section": "CTEs",
+      "difficulty": "Medium",
+      "topics": [
+        "CTEs",
+        "Aggregation",
+        "Dates"
+      ],
+      "statement_md": "A Spotify-style music service pays artists royalties as individual payouts. The *typical month* is the average of the monthly payout totals. Return the months whose total is **strictly above** that typical month, as `month` (formatted `YYYY-MM`) and `monthly_total`, highest total first, then by `month`.",
+      "tables": [
+        {
+          "name": "royalty_payouts",
+          "description_md": "One row per payout sent to a rights holder.",
+          "columns": [
+            {
+              "name": "payout_id",
+              "type": "INT"
+            },
+            {
+              "name": "paid_on",
+              "type": "DATE"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2025-01-03",
+              100.0
+            ],
+            [
+              2,
+              "2025-01-14",
+              200.0
+            ],
+            [
+              3,
+              "2025-01-27",
+              150.0
+            ],
+            [
+              4,
+              "2025-02-05",
+              300.0
+            ],
+            [
+              5,
+              "2025-02-19",
+              100.0
+            ],
+            [
+              6,
+              "2025-03-02",
+              50.0
+            ],
+            [
+              7,
+              "2025-03-09",
+              60.0
+            ],
+            [
+              8,
+              "2025-03-16",
+              40.0
+            ],
+            [
+              9,
+              "2025-03-30",
+              50.0
+            ],
+            [
+              10,
+              "2025-04-11",
+              500.0
+            ],
+            [
+              11,
+              "2025-05-06",
+              120.0
+            ],
+            [
+              12,
+              "2025-05-23",
+              130.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "There are two different averages you could compute here; only one of them is the 'typical month'.",
+        "The monthly totals are needed twice: once to compare, once to average. Name them once."
+      ],
+      "notes_md": "**Pattern:** one CTE read twice - the detail rows and a summary of the same detail (an average, a max, a total) in one query.\n\n**Shape:** CTE: one row per month with its total. Final query: compare each month to a single-value summary of that same CTE.\n\n**Syntax:** `DATE_FORMAT(d, '%Y-%m')` turns a date into a month label; a scalar subquery `(SELECT AVG(x) FROM cte)` can sit inside a WHERE; a CTE can be referenced as many times as you like in the statement that follows it.\n\n**Trap:** averaging the raw payout rows gives the typical payout, not the typical month, and a month needs a total before it can be compared with anything.\n\n**Interview follow-up:** how would you do it in one pass with a window function instead of reading the CTE twice?",
+      "solutions": [
+        {
+          "label": "CTE referenced in a scalar subquery",
+          "explain_md": "The CTE is used once for the rows and once inside the subquery that averages the monthly totals.",
+          "sql": "WITH monthly AS (\n  SELECT DATE_FORMAT(paid_on, '%Y-%m') AS month, SUM(amount) AS monthly_total\n  FROM royalty_payouts\n  GROUP BY DATE_FORMAT(paid_on, '%Y-%m')\n)\nSELECT month, monthly_total\nFROM monthly\nWHERE monthly_total > (SELECT AVG(monthly_total) FROM monthly)\nORDER BY monthly_total DESC, month;"
+        },
+        {
+          "label": "Cross join to a one-row average",
+          "explain_md": "A second CTE holds the single average; joining it to every month lets the comparison sit in the WHERE clause.",
+          "sql": "WITH monthly AS (\n  SELECT DATE_FORMAT(paid_on, '%Y-%m') AS month, SUM(amount) AS monthly_total\n  FROM royalty_payouts\n  GROUP BY DATE_FORMAT(paid_on, '%Y-%m')\n), typical AS (\n  SELECT AVG(monthly_total) AS avg_total FROM monthly\n)\nSELECT m.month, m.monthly_total\nFROM monthly m\nCROSS JOIN typical t\nWHERE m.monthly_total > t.avg_total\nORDER BY m.monthly_total DESC, m.month;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Comparing each month to the average payout (a raw-row average) makes every month look above 'typical'.",
+          "sql": "WITH monthly AS (\n  SELECT DATE_FORMAT(paid_on, '%Y-%m') AS month, SUM(amount) AS monthly_total\n  FROM royalty_payouts\n  GROUP BY DATE_FORMAT(paid_on, '%Y-%m')\n)\nSELECT month, monthly_total\nFROM monthly\nWHERE monthly_total > (SELECT AVG(amount) FROM royalty_payouts)\nORDER BY monthly_total DESC, month;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "month",
+          "monthly_total"
+        ],
+        "rows": [
+          [
+            "2025-04",
+            "500.00"
+          ],
+          [
+            "2025-01",
+            "450.00"
+          ],
+          [
+            "2025-02",
+            "400.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T505",
+      "slug": "month-versus-previous-month-without-windows",
+      "title": "Month versus previous month without windows",
+      "section": "CTEs",
+      "difficulty": "Medium",
+      "topics": [
+        "CTEs",
+        "Self-joins",
+        "Period comparisons"
+      ],
+      "statement_md": "At a Twitter-style app you are asked to compare monthly engagement to the previous **calendar** month without using window functions. For every month that has tweets, return `month` (`YYYY-MM`), `total_likes`, `prev_likes` and `change` (total_likes minus prev_likes). If the calendar month before it had no tweets, `prev_likes` and `change` are NULL. Order by `month`.",
+      "tables": [
+        {
+          "name": "tweets",
+          "description_md": "One row per tweet with the likes it collected. Some calendar months have no tweets at all.",
+          "columns": [
+            {
+              "name": "tweet_id",
+              "type": "INT"
+            },
+            {
+              "name": "posted_on",
+              "type": "DATE"
+            },
+            {
+              "name": "likes",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2024-10-05",
+              100
+            ],
+            [
+              2,
+              "2024-10-20",
+              50
+            ],
+            [
+              3,
+              "2024-11-02",
+              200
+            ],
+            [
+              4,
+              "2024-12-15",
+              120
+            ],
+            [
+              5,
+              "2024-12-28",
+              80
+            ],
+            [
+              6,
+              "2025-02-10",
+              90
+            ],
+            [
+              7,
+              "2025-02-11",
+              60
+            ],
+            [
+              8,
+              "2025-03-03",
+              300
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "A month label like '2025-01' is not arithmetic-friendly; give each month a single whole number that increases by exactly one from one month to the next.",
+        "Look at the data: one calendar month is missing between December and February. Your join should not pretend otherwise."
+      ],
+      "notes_md": "**Pattern:** period-over-period comparison with a self-join on a time index. Interviewers ask for it to see whether you can work without LAG and whether you notice missing periods.\n\n**Shape:** CTE of monthly totals that also carries a month index; join the CTE to itself, matching each month with the row whose index is one lower; keep months that have no match.\n\n**Syntax:** `YEAR(d) * 12 + MONTH(d)` counts months on one running scale; an outer join keeps rows from the left side even when nothing matches on the right.\n\n**Trap:** matching 'the previous row' instead of 'the previous calendar month' compares months across a gap and reports a change that never happened.\n\n**Interview follow-up:** how is this different with LAG, and how would you make LAG respect missing months?",
+      "solutions": [
+        {
+          "label": "CTE self-join on a month index",
+          "explain_md": "Subtracting one from the index finds exactly the previous calendar month; a LEFT JOIN keeps months whose predecessor is missing, with NULLs.",
+          "sql": "WITH monthly AS (\n  SELECT DATE_FORMAT(posted_on, '%Y-%m') AS month,\n         YEAR(posted_on) * 12 + MONTH(posted_on) AS idx,\n         SUM(likes) AS total_likes\n  FROM tweets\n  GROUP BY DATE_FORMAT(posted_on, '%Y-%m'), YEAR(posted_on) * 12 + MONTH(posted_on)\n)\nSELECT cur.month, cur.total_likes, prev.total_likes AS prev_likes,\n       cur.total_likes - prev.total_likes AS `change`\nFROM monthly cur\nLEFT JOIN monthly prev ON prev.idx = cur.idx - 1\nORDER BY cur.month;"
+        },
+        {
+          "label": "Correlated subquery for the previous month",
+          "explain_md": "Instead of a join, a scalar subquery looks up the total of the month whose index is one lower.",
+          "sql": "WITH monthly AS (\n  SELECT DATE_FORMAT(posted_on, '%Y-%m') AS month,\n         YEAR(posted_on) * 12 + MONTH(posted_on) AS idx,\n         SUM(likes) AS total_likes\n  FROM tweets\n  GROUP BY DATE_FORMAT(posted_on, '%Y-%m'), YEAR(posted_on) * 12 + MONTH(posted_on)\n)\nSELECT m.month, m.total_likes,\n       (SELECT p.total_likes FROM monthly p WHERE p.idx = m.idx - 1) AS prev_likes,\n       m.total_likes - (SELECT p.total_likes FROM monthly p WHERE p.idx = m.idx - 1) AS `change`\nFROM monthly m\nORDER BY m.month;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "LAG takes the previous existing row, so February is compared with December across the missing January.",
+          "sql": "WITH monthly AS (\n  SELECT DATE_FORMAT(posted_on, '%Y-%m') AS month, SUM(likes) AS total_likes\n  FROM tweets\n  GROUP BY DATE_FORMAT(posted_on, '%Y-%m')\n)\nSELECT month, total_likes,\n       LAG(total_likes) OVER (ORDER BY month) AS prev_likes,\n       total_likes - LAG(total_likes) OVER (ORDER BY month) AS `change`\nFROM monthly\nORDER BY month;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "month",
+          "total_likes",
+          "prev_likes",
+          "change"
+        ],
+        "rows": [
+          [
+            "2024-10",
+            "150",
+            null,
+            null
+          ],
+          [
+            "2024-11",
+            "200",
+            "150",
+            "50"
+          ],
+          [
+            "2024-12",
+            "200",
+            "200",
+            "0"
+          ],
+          [
+            "2025-02",
+            "150",
+            null,
+            null
+          ],
+          [
+            "2025-03",
+            "300",
+            "150",
+            "150"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T506",
+      "slug": "two-latest-uploads-per-channel",
+      "title": "Two latest uploads per channel",
+      "section": "CTEs",
+      "difficulty": "Medium",
+      "topics": [
+        "CTEs",
+        "Window functions",
+        "Top N per group"
+      ],
+      "statement_md": "A YouTube-style platform wants each channel's two most recent uploads for a 'Latest videos' shelf. Recency is decided by `uploaded_on`; when two videos share an upload date, the one with the higher `video_id` is more recent. Return `channel_id`, `video_id`, `uploaded_on` and `views` for those videos, ordered by `channel_id`, then `uploaded_on` descending, then `video_id` descending. Channels with a single video appear once.",
+      "tables": [
+        {
+          "name": "videos",
+          "description_md": "One row per uploaded video. Several videos can share an upload date.",
+          "columns": [
+            {
+              "name": "video_id",
+              "type": "INT"
+            },
+            {
+              "name": "channel_id",
+              "type": "INT"
+            },
+            {
+              "name": "uploaded_on",
+              "type": "DATE"
+            },
+            {
+              "name": "views",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2025-01-05",
+              4000
+            ],
+            [
+              2,
+              1,
+              "2025-02-10",
+              6000
+            ],
+            [
+              3,
+              1,
+              "2025-02-10",
+              2500
+            ],
+            [
+              4,
+              1,
+              "2025-03-15",
+              8000
+            ],
+            [
+              5,
+              2,
+              "2025-01-20",
+              10000
+            ],
+            [
+              6,
+              3,
+              "2025-02-01",
+              3000
+            ],
+            [
+              7,
+              3,
+              "2025-02-28",
+              7000
+            ],
+            [
+              8,
+              4,
+              "2025-01-02",
+              1500
+            ],
+            [
+              9,
+              4,
+              "2025-01-30",
+              5500
+            ],
+            [
+              10,
+              4,
+              "2025-03-01",
+              4500
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need a position number inside each channel, but SQL will not let you filter on it in the same SELECT that computes it.",
+        "Compute the position in an inner step, filter in the outer one, and make the tie rule part of the ordering."
+      ],
+      "notes_md": "**Pattern:** a window function inside a CTE, filtered outside - the standard top-N-per-group move. Interviewers reach for it whenever 'latest N per something' appears.\n\n**Shape:** CTE: every video plus its recency position within its channel. Outer query: keep positions 1 and 2 and sort.\n\n**Syntax:** window functions are evaluated after WHERE, so `WHERE rn <= 2` on the same level fails; `ROW_NUMBER() OVER (PARTITION BY p ORDER BY a DESC, b DESC)` accepts several sort keys to settle ties.\n\n**Trap:** a ranking function that gives ties the same number lets extra rows through when the tie sits on the cut-off line; LIMIT cannot be applied per group.\n\n**Interview follow-up:** what if the shelf should show all videos from the two most recent upload *dates* instead?",
+      "solutions": [
+        {
+          "label": "ROW_NUMBER in a CTE",
+          "explain_md": "ROW_NUMBER with a full tie-break gives each channel's videos distinct positions; the outer WHERE keeps the first two.",
+          "sql": "WITH ranked AS (\n  SELECT channel_id, video_id, uploaded_on, views,\n         ROW_NUMBER() OVER (PARTITION BY channel_id ORDER BY uploaded_on DESC, video_id DESC) AS rn\n  FROM videos\n)\nSELECT channel_id, video_id, uploaded_on, views\nFROM ranked\nWHERE rn <= 2\nORDER BY channel_id, uploaded_on DESC, video_id DESC;"
+        },
+        {
+          "label": "Count more recent videos",
+          "explain_md": "A video is among a channel's latest two when fewer than two of that channel's videos are more recent.",
+          "sql": "SELECT v.channel_id, v.video_id, v.uploaded_on, v.views\nFROM videos v\nWHERE (SELECT COUNT(*)\n       FROM videos x\n       WHERE x.channel_id = v.channel_id\n         AND (x.uploaded_on > v.uploaded_on OR (x.uploaded_on = v.uploaded_on AND x.video_id > v.video_id))) < 2\nORDER BY v.channel_id, v.uploaded_on DESC, v.video_id DESC;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "RANK on the date alone gives the two uploads on 2025-02-10 the same rank 2, so channel 1 keeps three videos.",
+          "sql": "WITH ranked AS (\n  SELECT channel_id, video_id, uploaded_on, views,\n         RANK() OVER (PARTITION BY channel_id ORDER BY uploaded_on DESC) AS rnk\n  FROM videos\n)\nSELECT channel_id, video_id, uploaded_on, views\nFROM ranked\nWHERE rnk <= 2\nORDER BY channel_id, uploaded_on DESC, video_id DESC;"
+        },
+        {
+          "explain_md": "LIMIT applies to the whole result, not to each channel.",
+          "sql": "SELECT channel_id, video_id, uploaded_on, views\nFROM videos\nORDER BY channel_id, uploaded_on DESC, video_id DESC\nLIMIT 2;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "channel_id",
+          "video_id",
+          "uploaded_on",
+          "views"
+        ],
+        "rows": [
+          [
+            "1",
+            "4",
+            "2025-03-15",
+            "8000"
+          ],
+          [
+            "1",
+            "3",
+            "2025-02-10",
+            "2500"
+          ],
+          [
+            "2",
+            "5",
+            "2025-01-20",
+            "10000"
+          ],
+          [
+            "3",
+            "7",
+            "2025-02-28",
+            "7000"
+          ],
+          [
+            "3",
+            "6",
+            "2025-02-01",
+            "3000"
+          ],
+          [
+            "4",
+            "10",
+            "2025-03-01",
+            "4500"
+          ],
+          [
+            "4",
+            "9",
+            "2025-01-30",
+            "5500"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T507",
+      "slug": "join-to-premium-funnel",
+      "title": "Join to Premium funnel",
+      "section": "CTEs",
+      "difficulty": "Medium",
+      "topics": [
+        "CTEs",
+        "Funnels",
+        "Aggregation"
+      ],
+      "statement_md": "Growth at a LinkedIn-style network wants a three-step funnel: members who **joined**, members who also **completed their profile**, and members who also **subscribed to Premium**. A member counts at a step only if they reached every earlier step, and each member counts once per step however many events they logged. Return one row with `joined`, `profile_complete`, `premium`, `completion_pct` (profile_complete as a percent of joined) and `premium_pct` (premium as a percent of profile_complete), both rounded to 1 decimal.",
+      "tables": [
+        {
+          "name": "member_events",
+          "description_md": "One row per logged event. `step` is 'joined', 'profile_complete' or 'premium'. Events can repeat, and a data import left one Premium member with no profile-complete event.",
+          "columns": [
+            {
+              "name": "event_id",
+              "type": "INT"
+            },
+            {
+              "name": "member_id",
+              "type": "INT"
+            },
+            {
+              "name": "step",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "occurred_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "joined",
+              "2025-03-01"
+            ],
+            [
+              2,
+              2,
+              "joined",
+              "2025-03-01"
+            ],
+            [
+              3,
+              3,
+              "joined",
+              "2025-03-02"
+            ],
+            [
+              4,
+              4,
+              "joined",
+              "2025-03-02"
+            ],
+            [
+              5,
+              5,
+              "joined",
+              "2025-03-03"
+            ],
+            [
+              6,
+              6,
+              "joined",
+              "2025-03-03"
+            ],
+            [
+              7,
+              7,
+              "joined",
+              "2025-03-04"
+            ],
+            [
+              8,
+              8,
+              "joined",
+              "2025-03-04"
+            ],
+            [
+              9,
+              9,
+              "joined",
+              "2025-03-05"
+            ],
+            [
+              10,
+              10,
+              "joined",
+              "2025-03-05"
+            ],
+            [
+              11,
+              1,
+              "profile_complete",
+              "2025-03-02"
+            ],
+            [
+              12,
+              2,
+              "profile_complete",
+              "2025-03-02"
+            ],
+            [
+              13,
+              3,
+              "profile_complete",
+              "2025-03-03"
+            ],
+            [
+              14,
+              3,
+              "profile_complete",
+              "2025-03-04"
+            ],
+            [
+              15,
+              4,
+              "profile_complete",
+              "2025-03-03"
+            ],
+            [
+              16,
+              5,
+              "profile_complete",
+              "2025-03-05"
+            ],
+            [
+              17,
+              6,
+              "profile_complete",
+              "2025-03-05"
+            ],
+            [
+              18,
+              7,
+              "profile_complete",
+              "2025-03-06"
+            ],
+            [
+              19,
+              1,
+              "premium",
+              "2025-03-04"
+            ],
+            [
+              20,
+              2,
+              "premium",
+              "2025-03-04"
+            ],
+            [
+              21,
+              2,
+              "premium",
+              "2025-04-04"
+            ],
+            [
+              22,
+              4,
+              "premium",
+              "2025-03-09"
+            ],
+            [
+              23,
+              9,
+              "premium",
+              "2025-03-08"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Think of the funnel as one list of members per step, each step starting from the previous list.",
+        "Duplicate events and a step reached without the earlier one are both planted in the data; count people, not rows."
+      ],
+      "notes_md": "**Pattern:** funnel analysis with one CTE per step, each built on the one before. Interviewers use it to check you separate 'people' from 'events' and respect step order.\n\n**Shape:** CTE per step with distinct members; each later CTE keeps only members present in the earlier one. Final query counts each CTE and divides.\n\n**Syntax:** `COUNT(DISTINCT member_id)` counts people; `ROUND(100.0 * a / b, 1)` makes a percent with one decimal; the denominator for later steps is the previous step, not the first.\n\n**Trap:** counting each step independently credits a member who skipped a step, and counting rows instead of distinct members double-counts repeat events.\n\n**Interview follow-up:** how would you also require that each step happened on or after the previous one in time?",
+      "solutions": [
+        {
+          "label": "One CTE per step",
+          "explain_md": "Each CTE keeps only members who appear in the previous step, so a member is counted at a step only if every earlier step happened.",
+          "sql": "WITH s1 AS (\n  SELECT DISTINCT member_id FROM member_events WHERE step = 'joined'\n), s2 AS (\n  SELECT DISTINCT e.member_id\n  FROM member_events e\n  JOIN s1 ON s1.member_id = e.member_id\n  WHERE e.step = 'profile_complete'\n), s3 AS (\n  SELECT DISTINCT e.member_id\n  FROM member_events e\n  JOIN s2 ON s2.member_id = e.member_id\n  WHERE e.step = 'premium'\n)\nSELECT (SELECT COUNT(*) FROM s1) AS joined,\n       (SELECT COUNT(*) FROM s2) AS profile_complete,\n       (SELECT COUNT(*) FROM s3) AS premium,\n       ROUND(100.0 * (SELECT COUNT(*) FROM s2) / (SELECT COUNT(*) FROM s1), 1) AS completion_pct,\n       ROUND(100.0 * (SELECT COUNT(*) FROM s3) / (SELECT COUNT(*) FROM s2), 1) AS premium_pct;"
+        },
+        {
+          "label": "Flags per member, then sum",
+          "explain_md": "Reduce events to one row per member with a flag per step, then count members who have all flags up to each step.",
+          "sql": "WITH flags AS (\n  SELECT member_id,\n         MAX(CASE WHEN step = 'joined' THEN 1 ELSE 0 END) AS f1,\n         MAX(CASE WHEN step = 'profile_complete' THEN 1 ELSE 0 END) AS f2,\n         MAX(CASE WHEN step = 'premium' THEN 1 ELSE 0 END) AS f3\n  FROM member_events\n  GROUP BY member_id\n), counts AS (\n  SELECT SUM(f1) AS c1,\n         SUM(CASE WHEN f1 = 1 AND f2 = 1 THEN 1 ELSE 0 END) AS c2,\n         SUM(CASE WHEN f1 = 1 AND f2 = 1 AND f3 = 1 THEN 1 ELSE 0 END) AS c3\n  FROM flags\n)\nSELECT c1 AS joined, c2 AS profile_complete, c3 AS premium,\n       ROUND(100.0 * c2 / c1, 1) AS completion_pct,\n       ROUND(100.0 * c3 / c2, 1) AS premium_pct\nFROM counts;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Counting each step on its own credits member 9, who subscribed without completing a profile, and the percentages shift with it.",
+          "sql": "WITH counts AS (\n  SELECT COUNT(DISTINCT CASE WHEN step = 'joined' THEN member_id END) AS c1,\n         COUNT(DISTINCT CASE WHEN step = 'profile_complete' THEN member_id END) AS c2,\n         COUNT(DISTINCT CASE WHEN step = 'premium' THEN member_id END) AS c3\n  FROM member_events\n)\nSELECT c1 AS joined, c2 AS profile_complete, c3 AS premium,\n       ROUND(100.0 * c2 / c1, 1) AS completion_pct,\n       ROUND(100.0 * c3 / c2, 1) AS premium_pct\nFROM counts;"
+        },
+        {
+          "explain_md": "Counting event rows instead of distinct members inflates the later steps through repeat events.",
+          "sql": "WITH counts AS (\n  SELECT SUM(step = 'joined') AS c1,\n         SUM(step = 'profile_complete') AS c2,\n         SUM(step = 'premium') AS c3\n  FROM member_events\n)\nSELECT c1 AS joined, c2 AS profile_complete, c3 AS premium,\n       ROUND(100.0 * c2 / c1, 1) AS completion_pct,\n       ROUND(100.0 * c3 / c2, 1) AS premium_pct\nFROM counts;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "joined",
+          "profile_complete",
+          "premium",
+          "completion_pct",
+          "premium_pct"
+        ],
+        "rows": [
+          [
+            "10",
+            "7",
+            "3",
+            "70.0",
+            "42.9"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T508",
+      "slug": "teams-and-their-active-channels",
+      "title": "Teams and their active channels",
+      "section": "CTEs",
+      "difficulty": "Medium",
+      "topics": [
+        "CTEs",
+        "Joins",
+        "NULL handling"
+      ],
+      "statement_md": "An admin report for a Microsoft Teams-style workspace must list **every** team with the number of its channels whose `status` is 'active' and the total members across those active channels. Teams with no active channel appear with 0 and 0. A channel can have a NULL `member_count` while its roster syncs. Return `team_name`, `active_channels` and `active_members`, ordered by `active_channels` descending, then `team_name`.",
+      "tables": [
+        {
+          "name": "teams",
+          "description_md": "One row per team.",
+          "columns": [
+            {
+              "name": "team_id",
+              "type": "INT"
+            },
+            {
+              "name": "team_name",
+              "type": "VARCHAR(25)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Finance Ops"
+            ],
+            [
+              2,
+              "Platform Eng"
+            ],
+            [
+              3,
+              "Brand Marketing"
+            ],
+            [
+              4,
+              "Legal"
+            ],
+            [
+              5,
+              "Customer Support"
+            ]
+          ]
+        },
+        {
+          "name": "channels",
+          "description_md": "One row per channel. `status` is 'active', 'read_only' or 'archived'; `member_count` may be NULL.",
+          "columns": [
+            {
+              "name": "channel_id",
+              "type": "INT"
+            },
+            {
+              "name": "team_id",
+              "type": "INT"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "member_count",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              2,
+              "active",
+              120
+            ],
+            [
+              2,
+              2,
+              "active",
+              80
+            ],
+            [
+              3,
+              2,
+              "archived",
+              50
+            ],
+            [
+              4,
+              1,
+              "active",
+              30
+            ],
+            [
+              5,
+              1,
+              "archived",
+              20
+            ],
+            [
+              6,
+              3,
+              "archived",
+              45
+            ],
+            [
+              7,
+              3,
+              "read_only",
+              10
+            ],
+            [
+              8,
+              5,
+              "active",
+              15
+            ],
+            [
+              9,
+              5,
+              "active",
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Two teams in the data have nothing that qualifies, and one has no channels at all; the report must still show them.",
+        "Summarise the channels first, then attach the summary to the team list, and think about what a missing summary should become."
+      ],
+      "notes_md": "**Pattern:** summarise a child table in a CTE, then outer-join it to the parent list and zero-fill. Interviewers reach for it when 'every X, including those with none' is required.\n\n**Shape:** CTE: active channels per team (count and member sum). Final query: start from the team list, attach the CTE, replace missing values with zero.\n\n**Syntax:** `COALESCE(a, b)` returns the first non-NULL argument; `SUM` ignores NULLs but returns NULL when there is nothing to sum; `COUNT(col)` skips NULLs while `COUNT(*)` counts rows.\n\n**Trap:** an inner join, or a status test in WHERE after an outer join, throws away exactly the teams the report exists to show. Counting rows with `COUNT(*)` after an outer join counts the empty match as 1.\n\n**Interview follow-up:** why does moving the status test from WHERE into the ON clause change the result?",
+      "solutions": [
+        {
+          "label": "CTE then LEFT JOIN with COALESCE",
+          "explain_md": "The CTE collapses active channels to one row per team; the LEFT JOIN keeps all teams and COALESCE turns the missing summaries into zero.",
+          "sql": "WITH active AS (\n  SELECT team_id, COUNT(*) AS active_channels, SUM(member_count) AS active_members\n  FROM channels\n  WHERE status = 'active'\n  GROUP BY team_id\n)\nSELECT t.team_name,\n       COALESCE(a.active_channels, 0) AS active_channels,\n       COALESCE(a.active_members, 0) AS active_members\nFROM teams t\nLEFT JOIN active a ON a.team_id = t.team_id\nORDER BY active_channels DESC, t.team_name;"
+        },
+        {
+          "label": "Single LEFT JOIN with the filter in ON",
+          "explain_md": "Putting the status test in the join condition keeps teams without a match; COUNT on a channel column ignores the NULL-filled row.",
+          "sql": "SELECT t.team_name,\n       COUNT(c.channel_id) AS active_channels,\n       COALESCE(SUM(c.member_count), 0) AS active_members\nFROM teams t\nLEFT JOIN channels c ON c.team_id = t.team_id AND c.status = 'active'\nGROUP BY t.team_id, t.team_name\nORDER BY active_channels DESC, t.team_name;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "An inner join to the summary drops teams with no active channel.",
+          "sql": "WITH active AS (\n  SELECT team_id, COUNT(*) AS active_channels, SUM(member_count) AS active_members\n  FROM channels\n  WHERE status = 'active'\n  GROUP BY team_id\n)\nSELECT t.team_name, a.active_channels, a.active_members\nFROM teams t\nJOIN active a ON a.team_id = t.team_id\nORDER BY a.active_channels DESC, t.team_name;"
+        },
+        {
+          "explain_md": "COUNT(*) after the outer join counts the NULL-filled row as one channel, so empty teams show 1 instead of 0.",
+          "sql": "SELECT t.team_name,\n       COUNT(*) AS active_channels,\n       COALESCE(SUM(c.member_count), 0) AS active_members\nFROM teams t\nLEFT JOIN channels c ON c.team_id = t.team_id AND c.status = 'active'\nGROUP BY t.team_id, t.team_name\nORDER BY active_channels DESC, t.team_name;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "team_name",
+          "active_channels",
+          "active_members"
+        ],
+        "rows": [
+          [
+            "Customer Support",
+            "2",
+            "15"
+          ],
+          [
+            "Platform Eng",
+            "2",
+            "200"
+          ],
+          [
+            "Finance Ops",
+            "1",
+            "30"
+          ],
+          [
+            "Brand Marketing",
+            "0",
+            "0"
+          ],
+          [
+            "Legal",
+            "0",
+            "0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T509",
+      "slug": "spend-grew-every-year",
+      "title": "Spend grew every year",
+      "section": "CTEs",
+      "difficulty": "Hard",
+      "topics": [
+        "CTEs",
+        "Period comparisons",
+        "Window functions"
+      ],
+      "statement_md": "A retail bank wants to find card accounts whose yearly spend rose **every year** over their history, for a rewards upgrade. Total spend per account per calendar year. An account qualifies if it has transactions in at least two different years and, going from its first to its last transaction year, each calendar year's spend is strictly higher than the year before. A calendar year with no transactions counts as zero spend, which breaks the streak. Return `account_id`, `first_year`, `last_year`, `first_year_spend` and `last_year_spend`, ordered by `account_id`.",
+      "tables": [
+        {
+          "name": "card_transactions",
+          "description_md": "One row per card transaction (purchases only).",
+          "columns": [
+            {
+              "name": "txn_id",
+              "type": "INT"
+            },
+            {
+              "name": "account_id",
+              "type": "INT"
+            },
+            {
+              "name": "txn_date",
+              "type": "DATE"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1001,
+              "2022-03-10",
+              60.0
+            ],
+            [
+              2,
+              1001,
+              "2022-09-01",
+              40.0
+            ],
+            [
+              3,
+              1001,
+              "2023-05-05",
+              150.0
+            ],
+            [
+              4,
+              1001,
+              "2024-02-02",
+              120.0
+            ],
+            [
+              5,
+              1001,
+              "2024-11-11",
+              80.0
+            ],
+            [
+              6,
+              1002,
+              "2022-01-15",
+              300.0
+            ],
+            [
+              7,
+              1002,
+              "2023-06-06",
+              250.0
+            ],
+            [
+              8,
+              1002,
+              "2024-07-07",
+              400.0
+            ],
+            [
+              9,
+              1003,
+              "2022-04-04",
+              50.0
+            ],
+            [
+              10,
+              1003,
+              "2024-04-04",
+              500.0
+            ],
+            [
+              11,
+              1004,
+              "2023-03-03",
+              80.0
+            ],
+            [
+              12,
+              1004,
+              "2024-08-08",
+              120.0
+            ],
+            [
+              13,
+              1005,
+              "2024-10-10",
+              900.0
+            ],
+            [
+              14,
+              1006,
+              "2022-02-02",
+              100.0
+            ],
+            [
+              15,
+              1006,
+              "2023-02-02",
+              100.0
+            ],
+            [
+              16,
+              1007,
+              "2021-05-01",
+              10.0
+            ],
+            [
+              17,
+              1007,
+              "2022-05-01",
+              20.0
+            ],
+            [
+              18,
+              1007,
+              "2023-05-01",
+              30.0
+            ],
+            [
+              19,
+              1007,
+              "2024-05-01",
+              35.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Build yearly totals first; the comparison is between consecutive rows of those totals.",
+        "Look at accounts 1002, 1003, 1005 and 1006 in the data: each fails for a different reason. One of them has a year missing entirely."
+      ],
+      "notes_md": "**Pattern:** chained CTEs - yearly totals, then a comparison with the previous year, then a verdict per account. Interviewers use it to test period-over-period logic and how you treat gaps.\n\n**Shape:** CTE one: spend per account per year. CTE two: attach the previous year's year-number and spend. Final query: group by account and require that no row breaks the rule, with at least two years.\n\n**Syntax:** `LAG(expr, 1) OVER (PARTITION BY c ORDER BY y)` reads the prior row, not the prior calendar year, so also fetch the prior row's year and check it is exactly one less; `HAVING SUM(CASE WHEN bad THEN 1 ELSE 0 END) = 0` checks that no row is bad.\n\n**Trap:** the previous row is not the previous year when a year is missing; 'no decline' (>=) is not the same as 'grew' (>); and a single-year account has no comparison at all, so passes vacuously unless you require two years.\n\n**Interview follow-up:** how would you list the longest streak of growth years instead of requiring the whole history to grow?",
+      "solutions": [
+        {
+          "label": "LAG with a consecutive-year check",
+          "explain_md": "Each row carries the previous row's year and spend; a row is bad if the years are not consecutive or the spend did not rise. Accounts with no bad rows and two or more years qualify.",
+          "sql": "WITH yearly AS (\n  SELECT account_id, YEAR(txn_date) AS yr, SUM(amount) AS spend\n  FROM card_transactions\n  GROUP BY account_id, YEAR(txn_date)\n), steps AS (\n  SELECT account_id, yr, spend,\n         LAG(yr) OVER (PARTITION BY account_id ORDER BY yr) AS prev_yr,\n         LAG(spend) OVER (PARTITION BY account_id ORDER BY yr) AS prev_spend\n  FROM yearly\n)\nSELECT account_id, MIN(yr) AS first_year, MAX(yr) AS last_year,\n       MIN(spend) AS first_year_spend, MAX(spend) AS last_year_spend\nFROM steps\nGROUP BY account_id\nHAVING COUNT(*) >= 2\n   AND SUM(CASE WHEN prev_yr IS NOT NULL AND (yr <> prev_yr + 1 OR spend <= prev_spend) THEN 1 ELSE 0 END) = 0\nORDER BY account_id;"
+        },
+        {
+          "label": "Self-join on year minus one",
+          "explain_md": "Joining each year to exactly the previous calendar year exposes declines; a no-gap check compares the span of years with the number of years.",
+          "sql": "WITH yearly AS (\n  SELECT account_id, YEAR(txn_date) AS yr, SUM(amount) AS spend\n  FROM card_transactions\n  GROUP BY account_id, YEAR(txn_date)\n)\nSELECT a.account_id, MIN(a.yr) AS first_year, MAX(a.yr) AS last_year,\n       MIN(a.spend) AS first_year_spend, MAX(a.spend) AS last_year_spend\nFROM yearly a\nLEFT JOIN yearly b ON b.account_id = a.account_id AND b.yr = a.yr - 1\nGROUP BY a.account_id\nHAVING COUNT(*) >= 2\n   AND MAX(a.yr) - MIN(a.yr) + 1 = COUNT(*)\n   AND SUM(CASE WHEN b.spend IS NOT NULL AND a.spend <= b.spend THEN 1 ELSE 0 END) = 0\nORDER BY a.account_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Comparing to the previous existing row instead of the previous calendar year lets account 1003 qualify across the empty year 2023.",
+          "sql": "WITH yearly AS (\n  SELECT account_id, YEAR(txn_date) AS yr, SUM(amount) AS spend\n  FROM card_transactions\n  GROUP BY account_id, YEAR(txn_date)\n), steps AS (\n  SELECT account_id, yr, spend,\n         LAG(spend) OVER (PARTITION BY account_id ORDER BY yr) AS prev_spend\n  FROM yearly\n)\nSELECT account_id, MIN(yr) AS first_year, MAX(yr) AS last_year,\n       MIN(spend) AS first_year_spend, MAX(spend) AS last_year_spend\nFROM steps\nGROUP BY account_id\nHAVING COUNT(*) >= 2\n   AND SUM(CASE WHEN prev_spend IS NOT NULL AND spend <= prev_spend THEN 1 ELSE 0 END) = 0\nORDER BY account_id;"
+        },
+        {
+          "explain_md": "Without requiring two years, an account with one year of data has no bad row and slips through.",
+          "sql": "WITH yearly AS (\n  SELECT account_id, YEAR(txn_date) AS yr, SUM(amount) AS spend\n  FROM card_transactions\n  GROUP BY account_id, YEAR(txn_date)\n), steps AS (\n  SELECT account_id, yr, spend,\n         LAG(yr) OVER (PARTITION BY account_id ORDER BY yr) AS prev_yr,\n         LAG(spend) OVER (PARTITION BY account_id ORDER BY yr) AS prev_spend\n  FROM yearly\n)\nSELECT account_id, MIN(yr) AS first_year, MAX(yr) AS last_year,\n       MIN(spend) AS first_year_spend, MAX(spend) AS last_year_spend\nFROM steps\nGROUP BY account_id\nHAVING SUM(CASE WHEN prev_yr IS NOT NULL AND (yr <> prev_yr + 1 OR spend <= prev_spend) THEN 1 ELSE 0 END) = 0\nORDER BY account_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "account_id",
+          "first_year",
+          "last_year",
+          "first_year_spend",
+          "last_year_spend"
+        ],
+        "rows": [
+          [
+            "1001",
+            "2022",
+            "2024",
+            "100.00",
+            "200.00"
+          ],
+          [
+            "1004",
+            "2023",
+            "2024",
+            "80.00",
+            "120.00"
+          ],
+          [
+            "1007",
+            "2021",
+            "2024",
+            "10.00",
+            "35.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T510",
+      "slug": "most-common-companion-game",
+      "title": "Most common companion game",
+      "section": "CTEs",
+      "difficulty": "Hard",
+      "topics": [
+        "CTEs",
+        "Self-joins",
+        "Top N per group"
+      ],
+      "statement_md": "For an Xbox-style store recommender, find each game's most common companion: the other game that appears in the largest number of **distinct gamers'** libraries alongside it. If two companions tie, choose the one that comes first alphabetically. Return `game`, `companion` and `gamers_together` for every game that ever shares a library with another game, ordered by `game`.",
+      "tables": [
+        {
+          "name": "library_entries",
+          "description_md": "One row per game in a gamer's library. A game can be listed twice for one gamer (re-installed on a second console).",
+          "columns": [
+            {
+              "name": "entry_id",
+              "type": "INT"
+            },
+            {
+              "name": "gamer_id",
+              "type": "INT"
+            },
+            {
+              "name": "game",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "Forza Horizon"
+            ],
+            [
+              2,
+              1,
+              "Halo Infinite"
+            ],
+            [
+              3,
+              1,
+              "Starfield"
+            ],
+            [
+              4,
+              2,
+              "Forza Horizon"
+            ],
+            [
+              5,
+              2,
+              "Halo Infinite"
+            ],
+            [
+              6,
+              3,
+              "Forza Horizon"
+            ],
+            [
+              7,
+              3,
+              "Starfield"
+            ],
+            [
+              8,
+              4,
+              "Minecraft"
+            ],
+            [
+              9,
+              4,
+              "Celeste"
+            ],
+            [
+              10,
+              5,
+              "Minecraft"
+            ],
+            [
+              11,
+              5,
+              "Celeste"
+            ],
+            [
+              12,
+              5,
+              "Forza Horizon"
+            ],
+            [
+              13,
+              6,
+              "Halo Infinite"
+            ],
+            [
+              14,
+              6,
+              "Starfield"
+            ],
+            [
+              15,
+              6,
+              "Starfield"
+            ],
+            [
+              16,
+              7,
+              "Celeste"
+            ],
+            [
+              17,
+              8,
+              "Tetris"
+            ],
+            [
+              18,
+              8,
+              "Bastion"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Build a table of game pairs with how many gamers own both before picking a winner per game.",
+        "A pair must be visible from both games' point of view, and a gamer with a repeated entry must count once."
+      ],
+      "notes_md": "**Pattern:** market-basket pair counts. A self-join on the gamer id creates pairs, a CTE holds the counts, and top-1 per group picks the companion. Interviewers love it because it combines three skills.\n\n**Shape:** CTE one: each ordered pair of different games with the number of distinct gamers owning both. CTE two (or outer step): rank the partners of each game by count, ties broken alphabetically, and keep the first.\n\n**Syntax:** `JOIN ... ON a.gamer_id = b.gamer_id AND a.game <> b.game` produces both A-B and B-A, which is what you want when every game needs its own best partner; `COUNT(DISTINCT col)` counts each value once.\n\n**Trap:** counting entries instead of distinct gamers inflates pairs when a game repeats in one library; a ranking function that shares rank 1 returns every tied partner.\n\n**Interview follow-up:** how would you count each unordered pair only once to list the top ten pairs overall?",
+      "solutions": [
+        {
+          "label": "Pair CTE then ROW_NUMBER",
+          "explain_md": "The self-join yields every ordered pair; counting distinct gamers removes repeat-entry inflation, and ROW_NUMBER with an alphabetical tie-break picks exactly one companion.",
+          "sql": "WITH pairs AS (\n  SELECT a.game, b.game AS companion, COUNT(DISTINCT a.gamer_id) AS gamers_together\n  FROM library_entries a\n  JOIN library_entries b ON b.gamer_id = a.gamer_id AND b.game <> a.game\n  GROUP BY a.game, b.game\n), ranked AS (\n  SELECT game, companion, gamers_together,\n         ROW_NUMBER() OVER (PARTITION BY game ORDER BY gamers_together DESC, companion) AS rn\n  FROM pairs\n)\nSELECT game, companion, gamers_together\nFROM ranked\nWHERE rn = 1\nORDER BY game;"
+        },
+        {
+          "label": "NOT EXISTS a better partner",
+          "explain_md": "A pair wins when no other partner of the same game has a higher count, or an equal count with an alphabetically earlier name.",
+          "sql": "WITH pairs AS (\n  SELECT a.game, b.game AS companion, COUNT(DISTINCT a.gamer_id) AS gamers_together\n  FROM library_entries a\n  JOIN library_entries b ON b.gamer_id = a.gamer_id AND b.game <> a.game\n  GROUP BY a.game, b.game\n)\nSELECT p.game, p.companion, p.gamers_together\nFROM pairs p\nWHERE NOT EXISTS (\n  SELECT 1 FROM pairs q\n  WHERE q.game = p.game\n    AND (q.gamers_together > p.gamers_together\n         OR (q.gamers_together = p.gamers_together AND q.companion < p.companion))\n)\nORDER BY p.game;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Counting entries instead of distinct gamers double-counts the repeated Starfield entry, so Starfield looks like the favourite companion of Halo Infinite and the reverse.",
+          "sql": "WITH pairs AS (\n  SELECT a.game, b.game AS companion, COUNT(*) AS gamers_together\n  FROM library_entries a\n  JOIN library_entries b ON b.gamer_id = a.gamer_id AND b.game <> a.game\n  GROUP BY a.game, b.game\n), ranked AS (\n  SELECT game, companion, gamers_together,\n         ROW_NUMBER() OVER (PARTITION BY game ORDER BY gamers_together DESC, companion) AS rn\n  FROM pairs\n)\nSELECT game, companion, gamers_together\nFROM ranked\nWHERE rn = 1\nORDER BY game;"
+        },
+        {
+          "explain_md": "RANK shares first place between tied companions, so Forza Horizon, Halo Infinite and Starfield each return two rows instead of one.",
+          "sql": "WITH pairs AS (\n  SELECT a.game, b.game AS companion, COUNT(DISTINCT a.gamer_id) AS gamers_together\n  FROM library_entries a\n  JOIN library_entries b ON b.gamer_id = a.gamer_id AND b.game <> a.game\n  GROUP BY a.game, b.game\n), ranked AS (\n  SELECT game, companion, gamers_together,\n         RANK() OVER (PARTITION BY game ORDER BY gamers_together DESC) AS rnk\n  FROM pairs\n)\nSELECT game, companion, gamers_together\nFROM ranked\nWHERE rnk = 1\nORDER BY game, companion;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "game",
+          "companion",
+          "gamers_together"
+        ],
+        "rows": [
+          [
+            "Bastion",
+            "Tetris",
+            "1"
+          ],
+          [
+            "Celeste",
+            "Minecraft",
+            "2"
+          ],
+          [
+            "Forza Horizon",
+            "Halo Infinite",
+            "2"
+          ],
+          [
+            "Halo Infinite",
+            "Forza Horizon",
+            "2"
+          ],
+          [
+            "Minecraft",
+            "Celeste",
+            "2"
+          ],
+          [
+            "Starfield",
+            "Forza Horizon",
+            "2"
+          ],
+          [
+            "Tetris",
+            "Bastion",
+            "1"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T511",
+      "slug": "first-week-posting-rate-by-cohort",
+      "title": "First-week posting rate by cohort",
+      "section": "CTEs",
+      "difficulty": "Hard",
+      "topics": [
+        "CTEs",
+        "Cohorts",
+        "Dates"
+      ],
+      "statement_md": "Growth at an Instagram-style app defines a new account as **activated** if it published at least one post on its join date or within the following 7 days (so up to and including join date + 7). Group accounts into cohorts by join month and return `cohort_month` (`YYYY-MM`), `new_accounts`, `activated` and `activation_pct` (activated as a percent of new_accounts, rounded to 1 decimal), ordered by `cohort_month`. Accounts with no qualifying post still count in `new_accounts`.",
+      "tables": [
+        {
+          "name": "ig_accounts",
+          "description_md": "One row per account.",
+          "columns": [
+            {
+              "name": "account_id",
+              "type": "INT"
+            },
+            {
+              "name": "joined_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2025-01-03"
+            ],
+            [
+              2,
+              "2025-01-10"
+            ],
+            [
+              3,
+              "2025-01-15"
+            ],
+            [
+              4,
+              "2025-01-20"
+            ],
+            [
+              5,
+              "2025-01-28"
+            ],
+            [
+              6,
+              "2025-02-02"
+            ],
+            [
+              7,
+              "2025-02-09"
+            ],
+            [
+              8,
+              "2025-02-14"
+            ],
+            [
+              9,
+              "2025-02-20"
+            ],
+            [
+              10,
+              "2025-02-27"
+            ]
+          ]
+        },
+        {
+          "name": "ig_posts",
+          "description_md": "One row per published post. Some posts pre-date the account's join date because of an old-app migration.",
+          "columns": [
+            {
+              "name": "post_id",
+              "type": "INT"
+            },
+            {
+              "name": "account_id",
+              "type": "INT"
+            },
+            {
+              "name": "posted_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2025-01-03"
+            ],
+            [
+              2,
+              1,
+              "2025-01-04"
+            ],
+            [
+              3,
+              1,
+              "2025-01-05"
+            ],
+            [
+              4,
+              2,
+              "2025-01-17"
+            ],
+            [
+              5,
+              3,
+              "2025-01-23"
+            ],
+            [
+              6,
+              4,
+              "2025-01-18"
+            ],
+            [
+              7,
+              6,
+              "2025-02-05"
+            ],
+            [
+              8,
+              7,
+              "2025-02-12"
+            ],
+            [
+              9,
+              7,
+              "2025-02-13"
+            ],
+            [
+              10,
+              8,
+              "2025-02-25"
+            ],
+            [
+              11,
+              9,
+              "2025-02-20"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Decide what one row per account should look like (activated or not) before grouping into cohorts.",
+        "Check the boundaries in the data: day 7 exactly, day 8, a post before joining, and accounts with several qualifying posts."
+      ],
+      "notes_md": "**Pattern:** cohort retention / activation. One CTE defines the cohort, another defines who met the activity condition, and a join on a date window connects them. Interviewers use it to check date-window logic and fan-out awareness.\n\n**Shape:** CTE one: accounts with their cohort month. CTE two: distinct accounts with at least one post inside their own window. Final query: left-join, group by cohort, count all accounts and the activated ones.\n\n**Syntax:** `d + INTERVAL 7 DAY` adds days to a date; `BETWEEN lo AND hi` is inclusive at both ends; a window bound for each account means the join condition compares the post date with that account's join date, not a fixed date.\n\n**Trap:** joining accounts to all their posts multiplies accounts by posts, so an account with three posts is counted three times; a missing lower bound lets pre-join posts activate an account.\n\n**Interview follow-up:** how would you turn this into a retention table for day 1, day 7 and day 30?",
+      "solutions": [
+        {
+          "label": "Cohort CTE plus activated-accounts CTE",
+          "explain_md": "The activated CTE has one distinct row per qualifying account, so the join cannot multiply accounts; the LEFT JOIN keeps never-activated accounts in the denominator.",
+          "sql": "WITH cohort AS (\n  SELECT account_id, joined_on, DATE_FORMAT(joined_on, '%Y-%m') AS cohort_month\n  FROM ig_accounts\n), activated AS (\n  SELECT DISTINCT c.account_id\n  FROM cohort c\n  JOIN ig_posts p\n    ON p.account_id = c.account_id\n   AND p.posted_on BETWEEN c.joined_on AND c.joined_on + INTERVAL 7 DAY\n)\nSELECT c.cohort_month,\n       COUNT(*) AS new_accounts,\n       COUNT(a.account_id) AS activated,\n       ROUND(100.0 * COUNT(a.account_id) / COUNT(*), 1) AS activation_pct\nFROM cohort c\nLEFT JOIN activated a ON a.account_id = c.account_id\nGROUP BY c.cohort_month\nORDER BY c.cohort_month;"
+        },
+        {
+          "label": "EXISTS per account",
+          "explain_md": "A correlated EXISTS asks whether any post falls in the account's window, so each account contributes one row no matter how many posts match.",
+          "sql": "WITH cohort AS (\n  SELECT account_id, joined_on, DATE_FORMAT(joined_on, '%Y-%m') AS cohort_month,\n         CASE WHEN EXISTS (\n           SELECT 1 FROM ig_posts p\n           WHERE p.account_id = ig_accounts.account_id\n             AND p.posted_on >= ig_accounts.joined_on\n             AND p.posted_on <= ig_accounts.joined_on + INTERVAL 7 DAY\n         ) THEN 1 ELSE 0 END AS is_activated\n  FROM ig_accounts\n)\nSELECT cohort_month,\n       COUNT(*) AS new_accounts,\n       SUM(is_activated) AS activated,\n       ROUND(100.0 * SUM(is_activated) / COUNT(*), 1) AS activation_pct\nFROM cohort\nGROUP BY cohort_month\nORDER BY cohort_month;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Joining accounts to posts without de-duplicating counts an account once per qualifying post, so account 1 counts three times.",
+          "sql": "WITH cohort AS (\n  SELECT account_id, joined_on, DATE_FORMAT(joined_on, '%Y-%m') AS cohort_month\n  FROM ig_accounts\n)\nSELECT c.cohort_month,\n       COUNT(DISTINCT c.account_id) AS new_accounts,\n       COUNT(p.post_id) AS activated,\n       ROUND(100.0 * COUNT(p.post_id) / COUNT(DISTINCT c.account_id), 1) AS activation_pct\nFROM cohort c\nLEFT JOIN ig_posts p\n  ON p.account_id = c.account_id\n AND p.posted_on BETWEEN c.joined_on AND c.joined_on + INTERVAL 7 DAY\nGROUP BY c.cohort_month\nORDER BY c.cohort_month;"
+        },
+        {
+          "explain_md": "With only an upper bound, a post made before joining activates account 4.",
+          "sql": "WITH cohort AS (\n  SELECT account_id, joined_on, DATE_FORMAT(joined_on, '%Y-%m') AS cohort_month\n  FROM ig_accounts\n), activated AS (\n  SELECT DISTINCT c.account_id\n  FROM cohort c\n  JOIN ig_posts p\n    ON p.account_id = c.account_id\n   AND p.posted_on <= c.joined_on + INTERVAL 7 DAY\n)\nSELECT c.cohort_month,\n       COUNT(*) AS new_accounts,\n       COUNT(a.account_id) AS activated,\n       ROUND(100.0 * COUNT(a.account_id) / COUNT(*), 1) AS activation_pct\nFROM cohort c\nLEFT JOIN activated a ON a.account_id = c.account_id\nGROUP BY c.cohort_month\nORDER BY c.cohort_month;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "cohort_month",
+          "new_accounts",
+          "activated",
+          "activation_pct"
+        ],
+        "rows": [
+          [
+            "2025-01",
+            "5",
+            "2",
+            "40.0"
+          ],
+          [
+            "2025-02",
+            "5",
+            "3",
+            "60.0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T512",
+      "slug": "top-property-type-per-month-and-its-share",
+      "title": "Top property type per month and its share",
+      "section": "CTEs",
+      "difficulty": "Hard",
+      "topics": [
+        "CTEs",
+        "Ranking",
+        "Aggregation"
+      ],
+      "statement_md": "An Airbnb-style stays marketplace wants, for each check-in month, the property type that earned the most booking revenue and how much of that month's revenue it accounted for. If two types tie for the top spot, return both. Return `month` (`YYYY-MM`), `property_type`, `type_revenue`, `month_revenue` (all types that month) and `share_pct` (the type's percent of the month's revenue, rounded to 1 decimal), ordered by `month`, then `property_type`.",
+      "tables": [
+        {
+          "name": "stay_bookings",
+          "description_md": "One row per confirmed booking.",
+          "columns": [
+            {
+              "name": "booking_id",
+              "type": "INT"
+            },
+            {
+              "name": "checkin_date",
+              "type": "DATE"
+            },
+            {
+              "name": "property_type",
+              "type": "VARCHAR(15)"
+            },
+            {
+              "name": "revenue",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2025-01-04",
+              "Cabin",
+              100.0
+            ],
+            [
+              2,
+              "2025-01-19",
+              "Cabin",
+              50.0
+            ],
+            [
+              3,
+              "2025-01-22",
+              "Apartment",
+              90.0
+            ],
+            [
+              4,
+              "2025-01-30",
+              "House",
+              60.0
+            ],
+            [
+              5,
+              "2025-02-03",
+              "Apartment",
+              120.0
+            ],
+            [
+              6,
+              "2025-02-17",
+              "Apartment",
+              80.0
+            ],
+            [
+              7,
+              "2025-02-09",
+              "House",
+              200.0
+            ],
+            [
+              8,
+              "2025-02-21",
+              "Cabin",
+              120.0
+            ],
+            [
+              9,
+              "2025-03-05",
+              "House",
+              150.0
+            ],
+            [
+              10,
+              "2025-03-18",
+              "House",
+              100.0
+            ],
+            [
+              11,
+              "2025-03-25",
+              "Apartment",
+              100.0
+            ],
+            [
+              12,
+              "2025-03-29",
+              "Cabin",
+              50.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need two different totals per month: one per property type and one for the whole month. Keep them in separate steps.",
+        "The denominator of the share is the month's own revenue, not the revenue of the whole table."
+      ],
+      "notes_md": "**Pattern:** three chained CTEs - totals per type, month totals, then ranking - the classic 'winner and its share' report. Interviewers use it to see if you can structure a multi-step query cleanly.\n\n**Shape:** CTE one: revenue per month and property type. CTE two: revenue per month. CTE three: join them and rank the types within each month. Final query: keep the top rank and compute the percentage.\n\n**Syntax:** `RANK() OVER (PARTITION BY m ORDER BY r DESC)` shares rank 1 between tied types; `ROUND(100.0 * part / whole, 1)` makes a one-decimal percent.\n\n**Trap:** a ranking function that never ties drops one of two joint winners; a share measured against the grand total is a share of the wrong denominator.\n\n**Interview follow-up:** how would you also show the runner-up type and the gap between first and second place?",
+      "solutions": [
+        {
+          "label": "Three chained CTEs with RANK",
+          "explain_md": "Type totals and month totals are built separately, joined, and ranked within the month; RANK keeps tied winners and the share uses the month total.",
+          "sql": "WITH type_month AS (\n  SELECT DATE_FORMAT(checkin_date, '%Y-%m') AS month, property_type, SUM(revenue) AS type_revenue\n  FROM stay_bookings\n  GROUP BY DATE_FORMAT(checkin_date, '%Y-%m'), property_type\n), month_total AS (\n  SELECT month, SUM(type_revenue) AS month_revenue\n  FROM type_month\n  GROUP BY month\n), ranked AS (\n  SELECT c.month, c.property_type, c.type_revenue, t.month_revenue,\n         RANK() OVER (PARTITION BY c.month ORDER BY c.type_revenue DESC) AS rnk\n  FROM type_month c\n  JOIN month_total t ON t.month = c.month\n)\nSELECT month, property_type, type_revenue, month_revenue,\n       ROUND(100.0 * type_revenue / month_revenue, 1) AS share_pct\nFROM ranked\nWHERE rnk = 1\nORDER BY month, property_type;"
+        },
+        {
+          "label": "Compare with the monthly maximum",
+          "explain_md": "A CTE of the highest type total per month lets a join keep every type equal to it, with no ranking function.",
+          "sql": "WITH type_month AS (\n  SELECT DATE_FORMAT(checkin_date, '%Y-%m') AS month, property_type, SUM(revenue) AS type_revenue\n  FROM stay_bookings\n  GROUP BY DATE_FORMAT(checkin_date, '%Y-%m'), property_type\n), month_total AS (\n  SELECT month, SUM(type_revenue) AS month_revenue, MAX(type_revenue) AS top_revenue\n  FROM type_month\n  GROUP BY month\n)\nSELECT c.month, c.property_type, c.type_revenue, t.month_revenue,\n       ROUND(100.0 * c.type_revenue / t.month_revenue, 1) AS share_pct\nFROM type_month c\nJOIN month_total t ON t.month = c.month AND c.type_revenue = t.top_revenue\nORDER BY c.month, c.property_type;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "ROW_NUMBER gives each month exactly one winner, so February's joint leaders are cut to one.",
+          "sql": "WITH type_month AS (\n  SELECT DATE_FORMAT(checkin_date, '%Y-%m') AS month, property_type, SUM(revenue) AS type_revenue\n  FROM stay_bookings\n  GROUP BY DATE_FORMAT(checkin_date, '%Y-%m'), property_type\n), month_total AS (\n  SELECT month, SUM(type_revenue) AS month_revenue\n  FROM type_month\n  GROUP BY month\n), ranked AS (\n  SELECT c.month, c.property_type, c.type_revenue, t.month_revenue,\n         ROW_NUMBER() OVER (PARTITION BY c.month ORDER BY c.type_revenue DESC, c.property_type) AS rn\n  FROM type_month c\n  JOIN month_total t ON t.month = c.month\n)\nSELECT month, property_type, type_revenue, month_revenue,\n       ROUND(100.0 * type_revenue / month_revenue, 1) AS share_pct\nFROM ranked\nWHERE rn = 1\nORDER BY month, property_type;"
+        },
+        {
+          "explain_md": "Dividing by the table's grand total gives each type's share of all bookings, not of its own month.",
+          "sql": "WITH type_month AS (\n  SELECT DATE_FORMAT(checkin_date, '%Y-%m') AS month, property_type, SUM(revenue) AS type_revenue\n  FROM stay_bookings\n  GROUP BY DATE_FORMAT(checkin_date, '%Y-%m'), property_type\n), month_total AS (\n  SELECT month, SUM(type_revenue) AS month_revenue\n  FROM type_month\n  GROUP BY month\n), ranked AS (\n  SELECT c.month, c.property_type, c.type_revenue, t.month_revenue,\n         RANK() OVER (PARTITION BY c.month ORDER BY c.type_revenue DESC) AS rnk\n  FROM type_month c\n  JOIN month_total t ON t.month = c.month\n)\nSELECT month, property_type, type_revenue, month_revenue,\n       ROUND(100.0 * type_revenue / (SELECT SUM(revenue) FROM stay_bookings), 1) AS share_pct\nFROM ranked\nWHERE rnk = 1\nORDER BY month, property_type;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "month",
+          "property_type",
+          "type_revenue",
+          "month_revenue",
+          "share_pct"
+        ],
+        "rows": [
+          [
+            "2025-01",
+            "Cabin",
+            "150.00",
+            "300.00",
+            "50.0"
+          ],
+          [
+            "2025-02",
+            "Apartment",
+            "200.00",
+            "520.00",
+            "38.5"
+          ],
+          [
+            "2025-02",
+            "House",
+            "200.00",
+            "520.00",
+            "38.5"
+          ],
+          [
+            "2025-03",
+            "House",
+            "250.00",
+            "400.00",
+            "62.5"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

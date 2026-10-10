@@ -16,6 +16,9 @@ unchecked item in "Pending". The throwaway MySQL used for verification starts wi
 - Clean app look (top nav, decluttered), Handbook in a calm reading layout. Remove "See also" and the big navbox.
 
 ## Completed
+- [x] 2026-10-09 Interview topic drills collection (93, T101-T612, 7 sections: joins inner/outer, joins self/anti/semi/range,
+      ranking, aggregates and frames, value functions, CTEs, recursive CTEs), product-style settings. Verified real MySQL +
+      node engine + in-browser WASM. Reviewer pass pending. Not committed.
 - [x] 2026-10-09 SQL Basics collection (48, B001-B048, 8 sections) — user found the set too hard / window-heavy.
       Verified real MySQL + engine; reviewer FAIL on Notes spoilers -> fixed. Library filter bar (difficulty toggles,
       topic dropdown, multi-select) + section headings. Not committed yet.

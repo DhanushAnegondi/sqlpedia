@@ -1,0 +1,2173 @@
+{
+  "problems": [
+    {
+      "id": "T113",
+      "slug": "employees-and-their-managers",
+      "title": "Employees and their managers",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Easy",
+      "topics": [
+        "Self-joins",
+        "Joins"
+      ],
+      "statement_md": "The org directory behind a Microsoft Teams-style chat app keeps one row per employee, and each row points at the `emp_id` of that person's manager. Return every employee as `emp_id`, `employee` (their name) and `manager` (their manager's name). Everyone must appear, including the person nobody reports to, whose `manager` is NULL. Order by `emp_id`.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee. `manager_id` points at another row of this table and is NULL for the top of the company.",
+          "columns": [
+            {
+              "name": "emp_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "job_title",
+              "type": "VARCHAR(25)"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ada Quinn",
+              "CEO",
+              null
+            ],
+            [
+              2,
+              "Ben Ortiz",
+              "VP Engineering",
+              1
+            ],
+            [
+              3,
+              "Cleo Park",
+              "VP Sales",
+              1
+            ],
+            [
+              4,
+              "Dev Shah",
+              "Engineering Manager",
+              2
+            ],
+            [
+              5,
+              "Eli Novak",
+              "Staff Engineer",
+              2
+            ],
+            [
+              6,
+              "Fay Lund",
+              "Account Executive",
+              3
+            ],
+            [
+              7,
+              "Gus Rowe",
+              "Sales Operations",
+              3
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The same table plays two roles in this question: the employee and the manager. Think about how to refer to it twice in one query.",
+        "Count the rows in your result. Does it have as many rows as the table has employees?"
+      ],
+      "notes_md": "**Pattern:** Self-join, used whenever a row refers to another row of the same table (manager, parent, referrer). An interviewer reaches for it on org charts and category trees.\n\n**Shape:** read the table twice under different aliases, one standing for the employee and one for the manager, and connect the employee's pointer column to the manager's key. Decide what happens to rows that have no partner.\n\n**Syntax:** a table alias such as `FROM employees AS e` gives each copy its own name; without distinct aliases the column names are ambiguous. `LEFT JOIN` keeps every row from the left side and fills the right side's columns with NULL when nothing matches.\n\n**Trap:** an inner join quietly drops the top of the hierarchy because its pointer is NULL and NULL never equals anything. Also easy to get backwards: which side's key is compared to which side's pointer.\n\n**Interview follow-up:** how would you list each manager with the number of people who report to them directly?",
+      "solutions": [
+        {
+          "label": "LEFT self-join",
+          "explain_md": "Both aliases read the same table. The employee's `manager_id` is matched to the manager's `emp_id`; LEFT JOIN keeps the employee with a NULL pointer and gives a NULL manager name.",
+          "sql": "SELECT e.emp_id, e.name AS employee, m.name AS manager\nFROM employees e\nLEFT JOIN employees m ON m.emp_id = e.manager_id\nORDER BY e.emp_id;"
+        },
+        {
+          "label": "Correlated subquery",
+          "explain_md": "Looks up the manager's name per employee; no match (NULL pointer) yields NULL, so the top person is kept without any join.",
+          "sql": "SELECT e.emp_id, e.name AS employee,\n       (SELECT m.name FROM employees m WHERE m.emp_id = e.manager_id) AS manager\nFROM employees e\nORDER BY e.emp_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "An inner join drops the employee whose `manager_id` is NULL, because NULL = anything is never true. The CEO disappears.",
+          "sql": "SELECT e.emp_id, e.name AS employee, m.name AS manager\nFROM employees e\nJOIN employees m ON m.emp_id = e.manager_id\nORDER BY e.emp_id;"
+        },
+        {
+          "explain_md": "The comparison is reversed: it pairs each person with someone whose pointer targets them, i.e. a person with their reports, so the names in `manager` are the wrong people.",
+          "sql": "SELECT e.emp_id, e.name AS employee, m.name AS manager\nFROM employees e\nLEFT JOIN employees m ON m.manager_id = e.emp_id\nORDER BY e.emp_id, m.emp_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "emp_id",
+          "employee",
+          "manager"
+        ],
+        "rows": [
+          [
+            "1",
+            "Ada Quinn",
+            null
+          ],
+          [
+            "2",
+            "Ben Ortiz",
+            "Ada Quinn"
+          ],
+          [
+            "3",
+            "Cleo Park",
+            "Ada Quinn"
+          ],
+          [
+            "4",
+            "Dev Shah",
+            "Ben Ortiz"
+          ],
+          [
+            "5",
+            "Eli Novak",
+            "Ben Ortiz"
+          ],
+          [
+            "6",
+            "Fay Lund",
+            "Cleo Park"
+          ],
+          [
+            "7",
+            "Gus Rowe",
+            "Cleo Park"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T114",
+      "slug": "teammates-who-joined-the-same-year",
+      "title": "Teammates who joined the same year",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Medium",
+      "topics": [
+        "Self-joins"
+      ],
+      "statement_md": "An online game studio wants to send a veteran badge to pairs of guildmates who created their accounts in the same calendar year. Return one row per pair as `guild`, `handle_a` and `handle_b`, where `handle_a` is the player with the smaller `player_id`. A pair must appear once, never twice in swapped order, and nobody is paired with themselves. Order by `guild`, then the two ids.",
+      "tables": [
+        {
+          "name": "players",
+          "description_md": "One row per player account; each player belongs to one guild.",
+          "columns": [
+            {
+              "name": "player_id",
+              "type": "INT"
+            },
+            {
+              "name": "handle",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "guild",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "created_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "NovaKnight",
+              "Night Owls",
+              "2021-03-01"
+            ],
+            [
+              2,
+              "BlitzBee",
+              "Night Owls",
+              "2021-09-15"
+            ],
+            [
+              3,
+              "CrimsonFox",
+              "Night Owls",
+              "2022-01-10"
+            ],
+            [
+              4,
+              "DuskRunner",
+              "Night Owls",
+              "2021-11-30"
+            ],
+            [
+              5,
+              "EmberWolf",
+              "Pixel Raiders",
+              "2021-05-05"
+            ],
+            [
+              6,
+              "FrostByte",
+              "Pixel Raiders",
+              "2022-02-02"
+            ],
+            [
+              7,
+              "GlitchQueen",
+              "Pixel Raiders",
+              "2022-08-08"
+            ],
+            [
+              8,
+              "HexHunter",
+              "Crimson Tide",
+              "2021-04-04"
+            ],
+            [
+              9,
+              "IronIvy",
+              "Crimson Tide",
+              "2023-01-01"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need to compare every player with every other player. Which conditions say 'same guild' and 'same year'?",
+        "A pair (BlitzBee, DuskRunner) and the pair (DuskRunner, BlitzBee) describe the same two people. What condition on the ids keeps only one of them and also removes (BlitzBee, BlitzBee)?"
+      ],
+      "notes_md": "**Pattern:** Self-join that builds unordered pairs. Interviewers use it for 'find pairs of rows that share an attribute'.\n\n**Shape:** read the table twice, match the shared attributes with equality, and add one extra condition on the ids so each pair is produced in one orientation only.\n\n**Syntax:** `YEAR(date_col)` returns the calendar year as a number. A strict inequality between the two ids (`<`) removes self-pairs and mirrored duplicates in one step; `<>` only removes self-pairs.\n\n**Trap:** forgetting the id condition gives people paired with themselves and every pair twice; `<>` alone still doubles every pair.\n\n**Interview follow-up:** how would you count, per guild, how many such pairs exist without listing them?",
+      "solutions": [
+        {
+          "label": "Self-join with a.player_id < b.player_id",
+          "explain_md": "Equality on guild and creation year finds the pairs; the strict id inequality keeps exactly one orientation of each pair and removes self-pairs.",
+          "sql": "SELECT a.guild, a.handle AS handle_a, b.handle AS handle_b\nFROM players a\nJOIN players b\n  ON a.guild = b.guild\n AND YEAR(a.created_on) = YEAR(b.created_on)\n AND a.player_id < b.player_id\nORDER BY a.guild, a.player_id, b.player_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "With no id condition every player is paired with themselves and every real pair appears in both orders.",
+          "sql": "SELECT a.guild, a.handle AS handle_a, b.handle AS handle_b\nFROM players a\nJOIN players b\n  ON a.guild = b.guild\n AND YEAR(a.created_on) = YEAR(b.created_on)\nORDER BY a.guild, a.player_id, b.player_id;"
+        },
+        {
+          "explain_md": "`<>` removes self-pairs but keeps both (BlitzBee, DuskRunner) and (DuskRunner, BlitzBee), so each pair is doubled.",
+          "sql": "SELECT a.guild, a.handle AS handle_a, b.handle AS handle_b\nFROM players a\nJOIN players b\n  ON a.guild = b.guild\n AND YEAR(a.created_on) = YEAR(b.created_on)\n AND a.player_id <> b.player_id\nORDER BY a.guild, a.player_id, b.player_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "guild",
+          "handle_a",
+          "handle_b"
+        ],
+        "rows": [
+          [
+            "Night Owls",
+            "NovaKnight",
+            "BlitzBee"
+          ],
+          [
+            "Night Owls",
+            "NovaKnight",
+            "DuskRunner"
+          ],
+          [
+            "Night Owls",
+            "BlitzBee",
+            "DuskRunner"
+          ],
+          [
+            "Pixel Raiders",
+            "FrostByte",
+            "GlitchQueen"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T115",
+      "slug": "streams-up-on-the-day-before",
+      "title": "Streams up on the day before",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Medium",
+      "topics": [
+        "Self-joins",
+        "Dates",
+        "Period comparisons"
+      ],
+      "statement_md": "A Spotify-style analytics table logs total daily streams for a new single, but the ingestion job failed on a few days, so some dates are missing. Return the days with strictly more streams than the previous calendar day, as `stream_date`, `streams` and `prev_streams` (the previous calendar day's count). A day whose previous calendar day has no row must not be compared with anything. Order by `stream_date`.",
+      "tables": [
+        {
+          "name": "daily_streams",
+          "description_md": "One row per day with data; some dates are absent.",
+          "columns": [
+            {
+              "name": "stream_date",
+              "type": "DATE"
+            },
+            {
+              "name": "streams",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2025-03-01",
+              1200
+            ],
+            [
+              "2025-03-02",
+              1850
+            ],
+            [
+              "2025-03-03",
+              1700
+            ],
+            [
+              "2025-03-04",
+              1760
+            ],
+            [
+              "2025-03-06",
+              2900
+            ],
+            [
+              "2025-03-07",
+              2400
+            ],
+            [
+              "2025-03-08",
+              2450
+            ],
+            [
+              "2025-03-09",
+              2450
+            ],
+            [
+              "2025-03-10",
+              3100
+            ],
+            [
+              "2025-03-12",
+              3500
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Look at the dates: 2025-03-05 and 2025-03-11 are missing. What should happen to the rows of 2025-03-06 and 2025-03-12?",
+        "'The previous row' and 'the previous calendar day' are not the same thing when days are missing."
+      ],
+      "notes_md": "**Pattern:** Period-over-period comparison on a table that may have gaps. A self-join on a date offset is the robust form; interviewers like it because it does not silently trust row order.\n\n**Shape:** pair each day with the row whose date is exactly one day earlier; only days that find such a partner can be compared. Then filter on the counts.\n\n**Syntax:** `date_col - INTERVAL 1 DAY` shifts a date back by one day; `DATEDIFF(later, earlier)` returns the number of days between two dates as an integer.\n\n**Trap:** comparing with the previous row (for example via a window function) instead of the previous date: across a gap it compares days that are not adjacent.\n\n**Interview follow-up:** how would you solve it with LAG, and what extra check does it need?",
+      "solutions": [
+        {
+          "label": "Self-join on the previous date",
+          "explain_md": "Joining on the exact previous calendar date means a day with no partner (after a gap) simply has no row to compare, and the stream filter finishes the job.",
+          "sql": "SELECT t.stream_date, t.streams, p.streams AS prev_streams\nFROM daily_streams t\nJOIN daily_streams p ON p.stream_date = t.stream_date - INTERVAL 1 DAY\nWHERE t.streams > p.streams\nORDER BY t.stream_date;"
+        },
+        {
+          "label": "LAG with a date check",
+          "explain_md": "LAG fetches the previous row's date and count; the DATEDIFF test rejects previous rows that are not exactly one day earlier.",
+          "sql": "SELECT stream_date, streams, prev_streams\nFROM (\n  SELECT stream_date, streams,\n         LAG(stream_date) OVER (ORDER BY stream_date) AS prev_date,\n         LAG(streams) OVER (ORDER BY stream_date) AS prev_streams\n  FROM daily_streams\n) x\nWHERE DATEDIFF(stream_date, prev_date) = 1\n  AND streams > prev_streams\nORDER BY stream_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Using the previous row regardless of its date treats 2025-03-06 as higher than 'yesterday' although 2025-03-05 has no row, and does the same for 2025-03-12.",
+          "sql": "SELECT stream_date, streams, prev_streams\nFROM (\n  SELECT stream_date, streams,\n         LAG(streams) OVER (ORDER BY stream_date) AS prev_streams\n  FROM daily_streams\n) x\nWHERE streams > prev_streams\nORDER BY stream_date;"
+        },
+        {
+          "explain_md": "The date offset points the wrong way: each day is compared with the next day, so the result answers 'more than tomorrow'.",
+          "sql": "SELECT t.stream_date, t.streams, p.streams AS prev_streams\nFROM daily_streams t\nJOIN daily_streams p ON p.stream_date = t.stream_date + INTERVAL 1 DAY\nWHERE t.streams > p.streams\nORDER BY t.stream_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "stream_date",
+          "streams",
+          "prev_streams"
+        ],
+        "rows": [
+          [
+            "2025-03-02",
+            "1850",
+            "1200"
+          ],
+          [
+            "2025-03-04",
+            "1760",
+            "1700"
+          ],
+          [
+            "2025-03-08",
+            "2450",
+            "2400"
+          ],
+          [
+            "2025-03-10",
+            "3100",
+            "2450"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T116",
+      "slug": "titles-nobody-has-watched",
+      "title": "Titles nobody has watched",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Easy",
+      "topics": [
+        "Anti-joins",
+        "Joins"
+      ],
+      "statement_md": "The content team at a Netflix-like streaming company wants to review catalogue titles that no profile has ever started. Return the `title_id` and `title` of every title that does not appear in the watch history, ordered by `title_id`.",
+      "tables": [
+        {
+          "name": "titles",
+          "description_md": "One row per catalogue title.",
+          "columns": [
+            {
+              "name": "title_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(25)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Stranger Things"
+            ],
+            [
+              2,
+              "The Crown"
+            ],
+            [
+              3,
+              "Wednesday"
+            ],
+            [
+              4,
+              "Bridgerton"
+            ],
+            [
+              5,
+              "Squid Game"
+            ],
+            [
+              6,
+              "Ozark"
+            ],
+            [
+              7,
+              "Dark"
+            ],
+            [
+              8,
+              "Narcos"
+            ]
+          ]
+        },
+        {
+          "name": "watch_history",
+          "description_md": "One row per viewing session of a title by a profile.",
+          "columns": [
+            {
+              "name": "watch_id",
+              "type": "INT"
+            },
+            {
+              "name": "profile_id",
+              "type": "INT"
+            },
+            {
+              "name": "title_id",
+              "type": "INT"
+            },
+            {
+              "name": "minutes_watched",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              100,
+              2,
+              45
+            ],
+            [
+              2,
+              100,
+              5,
+              50
+            ],
+            [
+              3,
+              101,
+              2,
+              12
+            ],
+            [
+              4,
+              101,
+              1,
+              60
+            ],
+            [
+              5,
+              102,
+              5,
+              48
+            ],
+            [
+              6,
+              103,
+              1,
+              52
+            ],
+            [
+              7,
+              103,
+              2,
+              58
+            ],
+            [
+              8,
+              104,
+              8,
+              7
+            ],
+            [
+              9,
+              105,
+              5,
+              55
+            ],
+            [
+              10,
+              105,
+              2,
+              40
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You are looking for titles with no matching viewing sessions. Some titles appear many times in `watch_history`.",
+        "After combining the two tables so that unmatched titles are kept, what does an unmatched row look like on the watch-history side?"
+      ],
+      "notes_md": "**Pattern:** Anti-join, 'rows in A with no match in B'. Interviewers ask it as 'customers who never ordered', 'titles never watched'.\n\n**Shape:** either keep every title and look for the ones whose partner columns are empty, or ask for titles for which no matching session exists. Both express 'absence' without counting.\n\n**Syntax:** `LEFT JOIN ... WHERE right.key IS NULL` keeps the unmatched left rows (test a column that can never be NULL in a real match, such as the key). `NOT EXISTS (subquery)` is true when the subquery returns no rows.\n\n**Trap:** joining on `<>` does not mean 'has no match' - it pairs each title with every session of a different title.\n\n**Interview follow-up:** is there a difference in result or performance between the LEFT JOIN and NOT EXISTS forms?",
+      "solutions": [
+        {
+          "label": "LEFT JOIN, keep the unmatched",
+          "explain_md": "Every title is kept; those with no session get NULLs on the right, and the IS NULL test on the session key isolates them.",
+          "sql": "SELECT t.title_id, t.title\nFROM titles t\nLEFT JOIN watch_history w ON w.title_id = t.title_id\nWHERE w.watch_id IS NULL\nORDER BY t.title_id;"
+        },
+        {
+          "label": "NOT EXISTS",
+          "explain_md": "States the rule directly: keep the title when no session refers to it.",
+          "sql": "SELECT t.title_id, t.title\nFROM titles t\nWHERE NOT EXISTS (\n  SELECT 1 FROM watch_history w WHERE w.title_id = t.title_id\n)\nORDER BY t.title_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A `<>` join matches each title with every session of another title, so almost every title shows up.",
+          "sql": "SELECT DISTINCT t.title_id, t.title\nFROM titles t\nJOIN watch_history w ON w.title_id <> t.title_id\nORDER BY t.title_id;"
+        },
+        {
+          "explain_md": "The unmatched-row test is on a title column, which is never NULL after a LEFT JOIN from titles, so the filter removes everything.",
+          "sql": "SELECT t.title_id, t.title\nFROM titles t\nLEFT JOIN watch_history w ON w.title_id = t.title_id\nWHERE t.title IS NULL\nORDER BY t.title_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "title_id",
+          "title"
+        ],
+        "rows": [
+          [
+            "3",
+            "Wednesday"
+          ],
+          [
+            "4",
+            "Bridgerton"
+          ],
+          [
+            "6",
+            "Ozark"
+          ],
+          [
+            "7",
+            "Dark"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T117",
+      "slug": "tweets-from-accounts-you-have-not-muted",
+      "title": "Tweets from accounts you have not muted",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Medium",
+      "topics": [
+        "Anti-joins",
+        "NULL handling"
+      ],
+      "statement_md": "A Twitter-style app lets users mute accounts, and the timeline must hide tweets from muted accounts. Return `tweet_id`, `author_handle` and `body` of the tweets whose author is not on the `mute_list`, ordered by `tweet_id`. A tweet from a deleted account has no author handle and cannot match any mute entry, so it is shown; one mute entry is a keyword mute and has no handle either.",
+      "tables": [
+        {
+          "name": "tweets",
+          "description_md": "One row per tweet. `author_handle` is NULL when the author account was deleted.",
+          "columns": [
+            {
+              "name": "tweet_id",
+              "type": "INT"
+            },
+            {
+              "name": "author_handle",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "body",
+              "type": "VARCHAR(50)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "daily_dana",
+              "Shipped the new dashboard today"
+            ],
+            [
+              2,
+              "spam_sprout",
+              "Win a free phone!!!"
+            ],
+            [
+              3,
+              "coffee_cal",
+              "Third espresso before noon"
+            ],
+            [
+              4,
+              "bot_bridget",
+              "Follow for follow"
+            ],
+            [
+              5,
+              null,
+              "[This account no longer exists]"
+            ],
+            [
+              6,
+              "rustacean_rae",
+              "Borrow checker finally clicked"
+            ],
+            [
+              7,
+              "night_nico",
+              "Anyone up for ranked tonight?"
+            ]
+          ]
+        },
+        {
+          "name": "mute_list",
+          "description_md": "Mute entries. `muted_handle` is NULL for a keyword mute.",
+          "columns": [
+            {
+              "name": "mute_id",
+              "type": "INT"
+            },
+            {
+              "name": "muted_handle",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "mute_kind",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "spam_sprout",
+              "account"
+            ],
+            [
+              2,
+              "bot_bridget",
+              "account"
+            ],
+            [
+              3,
+              null,
+              "keyword"
+            ],
+            [
+              4,
+              "zed_zero",
+              "account"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Check the `mute_list` table carefully, including its NULL row. How does a comparison against NULL behave?",
+        "Think about a form of 'no matching row exists' that does not compare a value to the whole list at once."
+      ],
+      "notes_md": "**Pattern:** Anti-join over a list that may contain NULLs. Interviewers use this to see whether you know why NOT IN is risky.\n\n**Shape:** keep a tweet when no mute entry carries the same handle. Express it as an existence test or by looking for the unmatched side of an outer join.\n\n**Syntax:** `x NOT IN (a, b, NULL)` evaluates to unknown for every x that is not a or b, so it never keeps the row. `NOT EXISTS (subquery)` only asks whether any row comes back, and a NULL never matches an equality.\n\n**Trap:** `NOT IN (SELECT ...)` against a column containing a NULL returns an empty result.\n\n**Interview follow-up:** can you make NOT IN safe, and which form would you prefer in production?",
+      "solutions": [
+        {
+          "label": "NOT EXISTS",
+          "explain_md": "The correlated test only asks whether a mute entry with the same handle exists. A NULL handle matches nothing, so the deleted-account tweet is kept and the keyword-mute row is harmless.",
+          "sql": "SELECT t.tweet_id, t.author_handle, t.body\nFROM tweets t\nWHERE NOT EXISTS (\n  SELECT 1 FROM mute_list m WHERE m.muted_handle = t.author_handle\n)\nORDER BY t.tweet_id;"
+        },
+        {
+          "label": "LEFT JOIN, keep the unmatched",
+          "explain_md": "Tweets whose author is not muted find no mute row, so the mute key is NULL for them.",
+          "sql": "SELECT t.tweet_id, t.author_handle, t.body\nFROM tweets t\nLEFT JOIN mute_list m ON m.muted_handle = t.author_handle\nWHERE m.mute_id IS NULL\nORDER BY t.tweet_id;"
+        },
+        {
+          "label": "NOT IN with the NULL removed",
+          "explain_md": "NOT IN is safe once NULLs are removed from the list. A tweet with no author needs its own test, because comparing a NULL with a list never yields true.",
+          "sql": "SELECT t.tweet_id, t.author_handle, t.body\nFROM tweets t\nWHERE t.author_handle IS NULL\n   OR t.author_handle NOT IN (SELECT muted_handle FROM mute_list WHERE muted_handle IS NOT NULL)\nORDER BY t.tweet_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The mute list contains a NULL handle, so `NOT IN` evaluates to unknown for every tweet and the query returns nothing.",
+          "sql": "SELECT tweet_id, author_handle, body\nFROM tweets\nWHERE author_handle NOT IN (SELECT muted_handle FROM mute_list)\nORDER BY tweet_id;"
+        },
+        {
+          "explain_md": "A `<>` join pairs each tweet with every mute entry that differs, so muted authors' tweets appear too.",
+          "sql": "SELECT DISTINCT t.tweet_id, t.author_handle, t.body\nFROM tweets t\nJOIN mute_list m ON m.muted_handle <> t.author_handle\nORDER BY t.tweet_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "tweet_id",
+          "author_handle",
+          "body"
+        ],
+        "rows": [
+          [
+            "1",
+            "daily_dana",
+            "Shipped the new dashboard today"
+          ],
+          [
+            "3",
+            "coffee_cal",
+            "Third espresso before noon"
+          ],
+          [
+            "5",
+            null,
+            "[This account no longer exists]"
+          ],
+          [
+            "6",
+            "rustacean_rae",
+            "Borrow checker finally clicked"
+          ],
+          [
+            "7",
+            "night_nico",
+            "Anyone up for ranked tonight?"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T118",
+      "slug": "cards-with-no-recent-transactions",
+      "title": "Cards with no recent transactions",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Medium",
+      "topics": [
+        "Anti-joins",
+        "Dates"
+      ],
+      "statement_md": "Treat 2025-06-30 as today. A bank's fraud team wants a list of dormant cards: cards with no transaction on or after 2025-06-01, including cards that have never been used. Return `card_id` and `holder_name`, one row per card, ordered by `card_id`.",
+      "tables": [
+        {
+          "name": "cards",
+          "description_md": "One row per issued card.",
+          "columns": [
+            {
+              "name": "card_id",
+              "type": "INT"
+            },
+            {
+              "name": "holder_name",
+              "type": "VARCHAR(25)"
+            },
+            {
+              "name": "card_type",
+              "type": "VARCHAR(10)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Mara Lindqvist",
+              "Credit"
+            ],
+            [
+              2,
+              "Theo Brandt",
+              "Debit"
+            ],
+            [
+              3,
+              "Nia Okafor",
+              "Prepaid"
+            ],
+            [
+              4,
+              "Ravi Menon",
+              "Credit"
+            ],
+            [
+              5,
+              "Elsa Moreau",
+              "Debit"
+            ],
+            [
+              6,
+              "Jonas Weber",
+              "Credit"
+            ],
+            [
+              7,
+              "Lucia Ferrer",
+              "Debit"
+            ],
+            [
+              8,
+              "Kenji Mori",
+              "Prepaid"
+            ]
+          ]
+        },
+        {
+          "name": "card_transactions",
+          "description_md": "One row per card transaction.",
+          "columns": [
+            {
+              "name": "txn_id",
+              "type": "INT"
+            },
+            {
+              "name": "card_id",
+              "type": "INT"
+            },
+            {
+              "name": "txn_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2025-01-05"
+            ],
+            [
+              2,
+              1,
+              "2025-06-20"
+            ],
+            [
+              3,
+              2,
+              "2025-04-10"
+            ],
+            [
+              4,
+              4,
+              "2025-06-01"
+            ],
+            [
+              5,
+              5,
+              "2025-05-31"
+            ],
+            [
+              6,
+              6,
+              "2025-06-29"
+            ],
+            [
+              7,
+              7,
+              "2025-03-03"
+            ],
+            [
+              8,
+              7,
+              "2025-05-10"
+            ],
+            [
+              9,
+              6,
+              "2025-02-14"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "A card that was used in January and again last week is still active. Does your result contain such a card?",
+        "The date test describes which transactions count as 'recent'. Where in the query should it live so that cards without any recent transaction are not lost?"
+      ],
+      "notes_md": "**Pattern:** Anti-join with a condition on the other side. Interviewers use it for 'no activity in the last N days'.\n\n**Shape:** the match is not just 'same card' but 'same card and a recent transaction'. Keep the cards for which that kind of match does not exist.\n\n**Syntax:** in an outer join, a condition in `ON` decides what counts as a match, while the same condition in `WHERE` filters the rows afterwards (and turns the outer join into an inner one for that column). `NOT EXISTS` can carry the same extra condition inside its subquery.\n\n**Trap:** filtering for old transactions instead of excluding recent ones: a card with an old and a recent transaction is wrongly returned, and cards with no transactions disappear or are repeated.\n\n**Interview follow-up:** how would you report the date of each returned card's last transaction (NULL if none)?",
+      "solutions": [
+        {
+          "label": "LEFT JOIN with the date in ON",
+          "explain_md": "Only transactions from 2025-06-01 on can match. A card with no such transaction gets NULLs and is kept by the IS NULL test, including cards that were never used.",
+          "sql": "SELECT c.card_id, c.holder_name\nFROM cards c\nLEFT JOIN card_transactions t\n  ON t.card_id = c.card_id\n AND t.txn_date >= '2025-06-01'\nWHERE t.txn_id IS NULL\nORDER BY c.card_id;"
+        },
+        {
+          "label": "NOT EXISTS",
+          "explain_md": "States it directly: no transaction for the card on or after the cutoff.",
+          "sql": "SELECT c.card_id, c.holder_name\nFROM cards c\nWHERE NOT EXISTS (\n  SELECT 1 FROM card_transactions t\n  WHERE t.card_id = c.card_id AND t.txn_date >= '2025-06-01'\n)\nORDER BY c.card_id;"
+        },
+        {
+          "label": "Latest transaction per card",
+          "explain_md": "Compute each card's most recent transaction and keep those with none or an old one.",
+          "sql": "SELECT c.card_id, c.holder_name\nFROM cards c\nLEFT JOIN card_transactions t ON t.card_id = c.card_id\nGROUP BY c.card_id, c.holder_name\nHAVING MAX(t.txn_date) IS NULL OR MAX(t.txn_date) < '2025-06-01'\nORDER BY c.card_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Looking for old transactions returns cards that have one old transaction even when they were also used recently, and repeats a card once per old transaction.",
+          "sql": "SELECT c.card_id, c.holder_name\nFROM cards c\nLEFT JOIN card_transactions t ON t.card_id = c.card_id\nWHERE t.txn_date < '2025-06-01' OR t.txn_date IS NULL\nORDER BY c.card_id;"
+        },
+        {
+          "explain_md": "Excluding only cards that have never been used answers a different question; cards whose last transaction is old are missing.",
+          "sql": "SELECT card_id, holder_name\nFROM cards\nWHERE card_id NOT IN (SELECT card_id FROM card_transactions)\nORDER BY card_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "card_id",
+          "holder_name"
+        ],
+        "rows": [
+          [
+            "2",
+            "Theo Brandt"
+          ],
+          [
+            "3",
+            "Nia Okafor"
+          ],
+          [
+            "5",
+            "Elsa Moreau"
+          ],
+          [
+            "7",
+            "Lucia Ferrer"
+          ],
+          [
+            "8",
+            "Kenji Mori"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T119",
+      "slug": "customers-with-a-big-order",
+      "title": "Customers with a big order",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Easy",
+      "topics": [
+        "Subqueries",
+        "Joins"
+      ],
+      "statement_md": "On an Amazon-style marketplace, a big order is one with an order total of 500.00 or more. Return the `customer_id` and `name` of every customer who has placed at least one big order, each customer once, ordered by `customer_id`.",
+      "tables": [
+        {
+          "name": "customers",
+          "description_md": "One row per customer.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Hollis"
+            ],
+            [
+              2,
+              "Imani"
+            ],
+            [
+              3,
+              "Joaquin"
+            ],
+            [
+              4,
+              "Kerry"
+            ],
+            [
+              5,
+              "Lior"
+            ],
+            [
+              6,
+              "Mina"
+            ]
+          ]
+        },
+        {
+          "name": "orders",
+          "description_md": "One row per order.",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INT"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "total",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              620.0
+            ],
+            [
+              2,
+              1,
+              515.0
+            ],
+            [
+              3,
+              1,
+              80.0
+            ],
+            [
+              4,
+              2,
+              500.0
+            ],
+            [
+              5,
+              2,
+              45.0
+            ],
+            [
+              6,
+              3,
+              499.99
+            ],
+            [
+              7,
+              4,
+              900.0
+            ],
+            [
+              8,
+              4,
+              950.0
+            ],
+            [
+              9,
+              5,
+              30.0
+            ],
+            [
+              10,
+              3,
+              120.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You only need to know whether a customer has at least one qualifying order, not how many.",
+        "Hollis and Kerry each have two big orders. How many rows should each of them contribute to the result?"
+      ],
+      "notes_md": "**Pattern:** Semi-join, 'rows in A that have at least one match in B' without multiplying them. Interviewers ask 'customers who ordered X' and watch for duplicates.\n\n**Shape:** filter customers by the existence of a qualifying order, rather than combining both tables row by row.\n\n**Syntax:** `EXISTS (subquery)` is true as soon as one row comes back, and the select list is ignored. `x IN (subquery)` tests membership in the set of returned values. Neither multiplies the outer rows.\n\n**Trap:** a plain JOIN returns one row per matching order, so customers with several big orders repeat. Also check the boundary: 'or more' includes exactly 500.00.\n\n**Interview follow-up:** when would you prefer JOIN with DISTINCT over EXISTS, and what does it cost?",
+      "solutions": [
+        {
+          "label": "EXISTS",
+          "explain_md": "Each customer is kept once if at least one big order refers to them, however many there are.",
+          "sql": "SELECT c.customer_id, c.name\nFROM customers c\nWHERE EXISTS (\n  SELECT 1 FROM orders o\n  WHERE o.customer_id = c.customer_id AND o.total >= 500\n)\nORDER BY c.customer_id;"
+        },
+        {
+          "label": "IN",
+          "explain_md": "Membership in the set of customers who have a big order; a set has no duplicates to multiply the rows.",
+          "sql": "SELECT customer_id, name\nFROM customers\nWHERE customer_id IN (SELECT customer_id FROM orders WHERE total >= 500)\nORDER BY customer_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A plain join returns one row per big order, so Hollis and Kerry each appear twice.",
+          "sql": "SELECT c.customer_id, c.name\nFROM customers c\nJOIN orders o ON o.customer_id = c.customer_id\nWHERE o.total >= 500\nORDER BY c.customer_id;"
+        },
+        {
+          "explain_md": "A strict `>` leaves out Imani, whose only big order is exactly 500.00.",
+          "sql": "SELECT customer_id, name\nFROM customers\nWHERE customer_id IN (SELECT customer_id FROM orders WHERE total > 500)\nORDER BY customer_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "name"
+        ],
+        "rows": [
+          [
+            "1",
+            "Hollis"
+          ],
+          [
+            "2",
+            "Imani"
+          ],
+          [
+            "4",
+            "Kerry"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T120",
+      "slug": "listeners-who-played-both-genres",
+      "title": "Listeners who played both genres",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Relational division"
+      ],
+      "statement_md": "A Spotify-style music service plans a crossover playlist and needs every user who has played at least one Jazz track and at least one Lo-fi track (they may have played other genres too). Return `user_id` and `display_name`, one row per user, ordered by `user_id`.",
+      "tables": [
+        {
+          "name": "users",
+          "description_md": "One row per listener.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "display_name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Rhea"
+            ],
+            [
+              2,
+              "Sam"
+            ],
+            [
+              3,
+              "Tia"
+            ],
+            [
+              4,
+              "Uma"
+            ],
+            [
+              5,
+              "Vik"
+            ],
+            [
+              6,
+              "Wen"
+            ]
+          ]
+        },
+        {
+          "name": "track_plays",
+          "description_md": "One row per track played by a user.",
+          "columns": [
+            {
+              "name": "play_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "genre",
+              "type": "VARCHAR(15)"
+            },
+            {
+              "name": "played_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "Jazz",
+              "2025-05-01"
+            ],
+            [
+              2,
+              1,
+              "Lo-fi",
+              "2025-05-03"
+            ],
+            [
+              3,
+              2,
+              "Jazz",
+              "2025-05-01"
+            ],
+            [
+              4,
+              2,
+              "Jazz",
+              "2025-05-08"
+            ],
+            [
+              5,
+              3,
+              "Lo-fi",
+              "2025-05-02"
+            ],
+            [
+              6,
+              3,
+              "Jazz",
+              "2025-05-04"
+            ],
+            [
+              7,
+              3,
+              "Pop",
+              "2025-05-06"
+            ],
+            [
+              8,
+              4,
+              "Lo-fi",
+              "2025-05-01"
+            ],
+            [
+              9,
+              4,
+              "Lo-fi",
+              "2025-05-05"
+            ],
+            [
+              10,
+              4,
+              "Lo-fi",
+              "2025-05-09"
+            ],
+            [
+              11,
+              5,
+              "Jazz",
+              "2025-05-02"
+            ],
+            [
+              12,
+              5,
+              "Lo-fi",
+              "2025-05-07"
+            ],
+            [
+              13,
+              5,
+              "Lo-fi",
+              "2025-05-10"
+            ],
+            [
+              14,
+              6,
+              "Pop",
+              "2025-05-03"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Each play is its own row, so one row can never be both a Jazz row and a Lo-fi row. You have to combine information from several rows of the same user.",
+        "Some users played the same genre several times. Count what you need carefully."
+      ],
+      "notes_md": "**Pattern:** 'Has all of these' (a small relational-division problem). Interviewers phrase it as 'users who did A and B' and wait for the single-row mistake.\n\n**Shape:** either check, for each required genre, that the user has a play of that genre, or group the user's qualifying plays and require that the number of distinct genres equals the number required.\n\n**Syntax:** `COUNT(DISTINCT col)` counts different values, ignoring repeats; `HAVING` filters groups after aggregation, `WHERE` filters rows before it; `col IN ('A', 'B')` is shorthand for an OR of equalities.\n\n**Trap:** requiring one row to equal two different values returns nothing; and counting rows instead of distinct genres lets repeat plays of one genre stand in for the second.\n\n**Interview follow-up:** how would the query change for users who played Jazz but never Lo-fi?",
+      "solutions": [
+        {
+          "label": "Group and count distinct genres",
+          "explain_md": "Restrict to the two genres, group per user, and require both distinct genres to be present. Repeat plays do not count twice.",
+          "sql": "SELECT u.user_id, u.display_name\nFROM users u\nJOIN track_plays p ON p.user_id = u.user_id\nWHERE p.genre IN ('Jazz', 'Lo-fi')\nGROUP BY u.user_id, u.display_name\nHAVING COUNT(DISTINCT p.genre) = 2\nORDER BY u.user_id;"
+        },
+        {
+          "label": "Two EXISTS tests",
+          "explain_md": "One existence test per required genre, combined with AND.",
+          "sql": "SELECT u.user_id, u.display_name\nFROM users u\nWHERE EXISTS (SELECT 1 FROM track_plays p WHERE p.user_id = u.user_id AND p.genre = 'Jazz')\n  AND EXISTS (SELECT 1 FROM track_plays p WHERE p.user_id = u.user_id AND p.genre = 'Lo-fi')\nORDER BY u.user_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A single play row has one genre, so it cannot equal both values; the result is empty.",
+          "sql": "SELECT u.user_id, u.display_name\nFROM users u\nJOIN track_plays p ON p.user_id = u.user_id\nWHERE p.genre = 'Jazz' AND p.genre = 'Lo-fi'\nORDER BY u.user_id;"
+        },
+        {
+          "explain_md": "Counting rows instead of distinct genres accepts Sam (two Jazz plays) and rejects Vik (one Jazz and two Lo-fi plays).",
+          "sql": "SELECT u.user_id, u.display_name\nFROM users u\nJOIN track_plays p ON p.user_id = u.user_id\nWHERE p.genre IN ('Jazz', 'Lo-fi')\nGROUP BY u.user_id, u.display_name\nHAVING COUNT(*) = 2\nORDER BY u.user_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "user_id",
+          "display_name"
+        ],
+        "rows": [
+          [
+            "1",
+            "Rhea"
+          ],
+          [
+            "3",
+            "Tia"
+          ],
+          [
+            "5",
+            "Vik"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T121",
+      "slug": "rank-tier-for-every-player",
+      "title": "Rank tier for every player",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins"
+      ],
+      "statement_md": "An online game shows each player's rank tier, which depends on their rating according to the `rank_tiers` table. Return `player_id`, `handle`, `rating` and `tier`, ordered by `player_id`. A player who has not finished placement matches has a NULL rating and should still be listed, with a NULL tier.",
+      "tables": [
+        {
+          "name": "players",
+          "description_md": "One row per player. `rating` is NULL until placement matches are finished.",
+          "columns": [
+            {
+              "name": "player_id",
+              "type": "INT"
+            },
+            {
+              "name": "handle",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "rating",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "ZenithZed",
+              3000
+            ],
+            [
+              2,
+              "MiraMage",
+              2500
+            ],
+            [
+              3,
+              "PixelPete",
+              2499
+            ],
+            [
+              4,
+              "QuietQuokka",
+              2000
+            ],
+            [
+              5,
+              "RogueRita",
+              1999
+            ],
+            [
+              6,
+              "SolarSam",
+              1500
+            ],
+            [
+              7,
+              "TidalTess",
+              1499
+            ],
+            [
+              8,
+              "UmbraUli",
+              1000
+            ],
+            [
+              9,
+              "VoltVera",
+              999
+            ],
+            [
+              10,
+              "WispWill",
+              0
+            ],
+            [
+              11,
+              "XenoXia",
+              null
+            ]
+          ]
+        },
+        {
+          "name": "rank_tiers",
+          "description_md": "Inclusive rating ranges: a rating belongs to a tier when it lies between `min_rating` and `max_rating`, both ends included.",
+          "columns": [
+            {
+              "name": "tier",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "min_rating",
+              "type": "INT"
+            },
+            {
+              "name": "max_rating",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "Diamond",
+              2500,
+              3000
+            ],
+            [
+              "Platinum",
+              2000,
+              2499
+            ],
+            [
+              "Gold",
+              1500,
+              1999
+            ],
+            [
+              "Silver",
+              1000,
+              1499
+            ],
+            [
+              "Bronze",
+              0,
+              999
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The two tables share no common column. What relationship between a rating and a tier's limits connects them?",
+        "Ratings such as 2500, 2499, 1000 and 0 sit exactly on tier limits. Check where each of them lands."
+      ],
+      "notes_md": "**Pattern:** Range join (non-equi join) to a lookup table of bands. Interviewers use it for grades, tax brackets, age groups, rank tiers.\n\n**Shape:** match each rating to the tier whose limits contain it, keeping players that match nothing.\n\n**Syntax:** `x BETWEEN lo AND hi` is the same as `x >= lo AND x <= hi` (both ends included). A join condition does not have to be an equality; any boolean expression works in `ON`.\n\n**Trap:** a half-open or one-sided condition: using only the lower limit matches a rating to every tier beneath it, and a strict comparison drops ratings that sit on a limit.\n\n**Interview follow-up:** what happens if two tiers overlap, and how would you catch it?",
+      "solutions": [
+        {
+          "label": "LEFT JOIN with BETWEEN",
+          "explain_md": "The rating is joined to the tier that contains it; LEFT JOIN keeps the player whose NULL rating matches no tier.",
+          "sql": "SELECT p.player_id, p.handle, p.rating, t.tier\nFROM players p\nLEFT JOIN rank_tiers t ON p.rating BETWEEN t.min_rating AND t.max_rating\nORDER BY p.player_id;"
+        },
+        {
+          "label": "Scalar subquery",
+          "explain_md": "Looks up the matching tier for each player; no match gives NULL.",
+          "sql": "SELECT p.player_id, p.handle, p.rating,\n       (SELECT t.tier FROM rank_tiers t\n        WHERE p.rating BETWEEN t.min_rating AND t.max_rating) AS tier\nFROM players p\nORDER BY p.player_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Only checking the lower limit matches a rating to every tier whose minimum it reaches, so most players get several rows.",
+          "sql": "SELECT p.player_id, p.handle, p.rating, t.tier\nFROM players p\nLEFT JOIN rank_tiers t ON p.rating >= t.min_rating\nORDER BY p.player_id, t.tier;"
+        },
+        {
+          "explain_md": "Making the lower limit strict loses every rating that sits exactly on a minimum (2500, 2000, 1500, 1000, 0) - they get a NULL tier.",
+          "sql": "SELECT p.player_id, p.handle, p.rating, t.tier\nFROM players p\nLEFT JOIN rank_tiers t ON p.rating > t.min_rating AND p.rating <= t.max_rating\nORDER BY p.player_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "player_id",
+          "handle",
+          "rating",
+          "tier"
+        ],
+        "rows": [
+          [
+            "1",
+            "ZenithZed",
+            "3000",
+            "Diamond"
+          ],
+          [
+            "2",
+            "MiraMage",
+            "2500",
+            "Diamond"
+          ],
+          [
+            "3",
+            "PixelPete",
+            "2499",
+            "Platinum"
+          ],
+          [
+            "4",
+            "QuietQuokka",
+            "2000",
+            "Platinum"
+          ],
+          [
+            "5",
+            "RogueRita",
+            "1999",
+            "Gold"
+          ],
+          [
+            "6",
+            "SolarSam",
+            "1500",
+            "Gold"
+          ],
+          [
+            "7",
+            "TidalTess",
+            "1499",
+            "Silver"
+          ],
+          [
+            "8",
+            "UmbraUli",
+            "1000",
+            "Silver"
+          ],
+          [
+            "9",
+            "VoltVera",
+            "999",
+            "Bronze"
+          ],
+          [
+            "10",
+            "WispWill",
+            "0",
+            "Bronze"
+          ],
+          [
+            "11",
+            "XenoXia",
+            null,
+            null
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T122",
+      "slug": "rate-in-force-on-the-ride-date",
+      "title": "Rate in force on the ride date",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Slowly changing dimensions",
+        "Dates"
+      ],
+      "statement_md": "An Uber-style ride-hailing company changes its per-kilometre rate by city over time. `rate_card` records every rate with the first and last day it applied; the rate still in force has no end date. For each ride return `ride_id`, `city`, `ride_date`, `rate_per_km` (the rate in force on the ride date) and `fare` (`distance_km * rate_per_km`). Order by `ride_id`.",
+      "tables": [
+        {
+          "name": "rides",
+          "description_md": "One row per completed ride.",
+          "columns": [
+            {
+              "name": "ride_id",
+              "type": "INT"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "ride_date",
+              "type": "DATE"
+            },
+            {
+              "name": "distance_km",
+              "type": "DECIMAL(5,1)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Austin",
+              "2025-02-10",
+              8.0
+            ],
+            [
+              2,
+              "Austin",
+              "2025-03-31",
+              5.0
+            ],
+            [
+              3,
+              "Austin",
+              "2025-04-01",
+              10.0
+            ],
+            [
+              4,
+              "Austin",
+              "2025-09-01",
+              4.0
+            ],
+            [
+              5,
+              "Boston",
+              "2025-05-31",
+              6.0
+            ],
+            [
+              6,
+              "Boston",
+              "2025-06-01",
+              7.5
+            ],
+            [
+              7,
+              "Austin",
+              "2025-10-05",
+              12.0
+            ],
+            [
+              8,
+              "Boston",
+              "2025-08-15",
+              3.0
+            ]
+          ]
+        },
+        {
+          "name": "rate_card",
+          "description_md": "One row per rate period. `valid_from` and `valid_to` are both inclusive days; `valid_to` is NULL for the current rate.",
+          "columns": [
+            {
+              "name": "city",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "rate_per_km",
+              "type": "DECIMAL(5,2)"
+            },
+            {
+              "name": "valid_from",
+              "type": "DATE"
+            },
+            {
+              "name": "valid_to",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              "Austin",
+              1.2,
+              "2025-01-01",
+              "2025-03-31"
+            ],
+            [
+              "Austin",
+              1.45,
+              "2025-04-01",
+              "2025-08-31"
+            ],
+            [
+              "Austin",
+              1.7,
+              "2025-09-01",
+              null
+            ],
+            [
+              "Boston",
+              1.5,
+              "2025-01-01",
+              "2025-05-31"
+            ],
+            [
+              "Boston",
+              1.8,
+              "2025-06-01",
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Each ride should match exactly one rate row of its city. Which two dates in `rate_card` bracket the ride date?",
+        "What does a NULL `valid_to` mean, and what does a comparison with NULL do?"
+      ],
+      "notes_md": "**Pattern:** Range join to a history table (slowly changing dimension / effective dating). Interviewers ask for 'the value as of a date'.\n\n**Shape:** match on the city, then require the ride date to fall inside the rate period; the open-ended period needs its own treatment.\n\n**Syntax:** `d BETWEEN a AND b` is inclusive on both ends and is unknown when `b` is NULL. `COALESCE(x, fallback)` replaces a NULL with a stand-in value; `IS NULL` is the only reliable NULL test.\n\n**Trap:** joining to the current rate only, or a BETWEEN that silently discards the open-ended row.\n\n**Interview follow-up:** how would you stop two overlapping rate periods from double-counting a ride?",
+      "solutions": [
+        {
+          "label": "Range join with an open end",
+          "explain_md": "The ride matches the period that started on or before the date and has not ended before it; NULL `valid_to` means still open.",
+          "sql": "SELECT r.ride_id, r.city, r.ride_date, c.rate_per_km,\n       r.distance_km * c.rate_per_km AS fare\nFROM rides r\nJOIN rate_card c\n  ON c.city = r.city\n AND r.ride_date >= c.valid_from\n AND (c.valid_to IS NULL OR r.ride_date <= c.valid_to)\nORDER BY r.ride_id;"
+        },
+        {
+          "label": "Latest rate started on or before the date",
+          "explain_md": "Pick the rate period with the greatest start date that is not after the ride date; no end date is needed.",
+          "sql": "SELECT r.ride_id, r.city, r.ride_date, c.rate_per_km,\n       r.distance_km * c.rate_per_km AS fare\nFROM rides r\nJOIN rate_card c\n  ON c.city = r.city\n AND c.valid_from = (\n       SELECT MAX(c2.valid_from) FROM rate_card c2\n       WHERE c2.city = r.city AND c2.valid_from <= r.ride_date)\nORDER BY r.ride_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Always using the current rate rewrites history: older rides are charged today's rate.",
+          "sql": "SELECT r.ride_id, r.city, r.ride_date, c.rate_per_km,\n       r.distance_km * c.rate_per_km AS fare\nFROM rides r\nJOIN rate_card c ON c.city = r.city AND c.valid_to IS NULL\nORDER BY r.ride_id;"
+        },
+        {
+          "explain_md": "BETWEEN is unknown when `valid_to` is NULL, so every ride taken under a still-current rate disappears.",
+          "sql": "SELECT r.ride_id, r.city, r.ride_date, c.rate_per_km,\n       r.distance_km * c.rate_per_km AS fare\nFROM rides r\nJOIN rate_card c\n  ON c.city = r.city\n AND r.ride_date BETWEEN c.valid_from AND c.valid_to\nORDER BY r.ride_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "ride_id",
+          "city",
+          "ride_date",
+          "rate_per_km",
+          "fare"
+        ],
+        "rows": [
+          [
+            "1",
+            "Austin",
+            "2025-02-10",
+            "1.20",
+            "9.600"
+          ],
+          [
+            "2",
+            "Austin",
+            "2025-03-31",
+            "1.20",
+            "6.000"
+          ],
+          [
+            "3",
+            "Austin",
+            "2025-04-01",
+            "1.45",
+            "14.500"
+          ],
+          [
+            "4",
+            "Austin",
+            "2025-09-01",
+            "1.70",
+            "6.800"
+          ],
+          [
+            "5",
+            "Boston",
+            "2025-05-31",
+            "1.50",
+            "9.000"
+          ],
+          [
+            "6",
+            "Boston",
+            "2025-06-01",
+            "1.80",
+            "13.500"
+          ],
+          [
+            "7",
+            "Austin",
+            "2025-10-05",
+            "1.70",
+            "20.400"
+          ],
+          [
+            "8",
+            "Boston",
+            "2025-08-15",
+            "1.80",
+            "5.400"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T123",
+      "slug": "double-booked-calendars",
+      "title": "Double-booked calendars",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Hard",
+      "topics": [
+        "Self-joins",
+        "Dates"
+      ],
+      "statement_md": "An Outlook-style calendar export lists every event with its owner and time range. Return every pair of events belonging to the same owner whose time ranges overlap, as `owner`, `event_a` and `event_b`, where `event_a` is the smaller `event_id`. An event that ends exactly when another starts is not a conflict. Each pair appears once; order by `owner`, `event_a`, `event_b`.",
+      "tables": [
+        {
+          "name": "calendar_events",
+          "description_md": "One row per calendar event. `ends_at` is the moment the event is over.",
+          "columns": [
+            {
+              "name": "event_id",
+              "type": "INT"
+            },
+            {
+              "name": "owner",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(25)"
+            },
+            {
+              "name": "starts_at",
+              "type": "DATETIME"
+            },
+            {
+              "name": "ends_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "maya",
+              "Sprint planning",
+              "2025-03-10 09:00:00",
+              "2025-03-10 10:00:00"
+            ],
+            [
+              2,
+              "maya",
+              "1:1 with manager",
+              "2025-03-10 09:30:00",
+              "2025-03-10 10:30:00"
+            ],
+            [
+              3,
+              "maya",
+              "Design review",
+              "2025-03-10 10:30:00",
+              "2025-03-10 11:30:00"
+            ],
+            [
+              4,
+              "maya",
+              "Quarterly review",
+              "2025-03-10 13:00:00",
+              "2025-03-10 14:00:00"
+            ],
+            [
+              5,
+              "maya",
+              "Customer call",
+              "2025-03-10 13:15:00",
+              "2025-03-10 13:45:00"
+            ],
+            [
+              6,
+              "maya",
+              "Lunch and learn",
+              "2025-03-10 12:30:00",
+              "2025-03-10 13:30:00"
+            ],
+            [
+              7,
+              "owen",
+              "Standup",
+              "2025-03-10 09:00:00",
+              "2025-03-10 10:00:00"
+            ],
+            [
+              8,
+              "owen",
+              "Budget sync",
+              "2025-03-10 10:00:00",
+              "2025-03-10 11:00:00"
+            ],
+            [
+              9,
+              "owen",
+              "Interview loop",
+              "2025-03-10 09:00:00",
+              "2025-03-10 10:00:00"
+            ],
+            [
+              10,
+              "zara",
+              "Offsite prep",
+              "2025-03-10 09:00:00",
+              "2025-03-10 10:00:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Two time ranges overlap when each one starts before the other one ends. Test it on a pair where one event sits completely inside another.",
+        "Look at the calendars of maya and owen: some events touch end-to-start, and a lower `event_id` does not always start earlier."
+      ],
+      "notes_md": "**Pattern:** Interval overlap via a self-join. Interviewers ask for 'conflicting bookings', 'overlapping shifts', 'concurrent sessions'.\n\n**Shape:** pair events of the same owner, keep each pair in one orientation, and apply the overlap test that holds for every arrangement (partial overlap, containment, identical ranges).\n\n**Syntax:** an overlap test is two comparisons joined by AND, each comparing one range's start with the other range's end; use strict `<` when touching ends must not count. `a.id < b.id` yields each unordered pair once.\n\n**Trap:** only testing whether the second event starts inside the first misses pairs where the second starts earlier; non-strict comparisons turn back-to-back events into conflicts.\n\n**Interview follow-up:** how would you find the maximum number of events running at the same time for one owner instead?",
+      "solutions": [
+        {
+          "label": "Self-join with the two-sided overlap test",
+          "explain_md": "Two ranges overlap exactly when each starts before the other ends. Strict comparisons treat an event that ends at 10:00 and one that starts at 10:00 as compatible, and the id condition lists each pair once.",
+          "sql": "SELECT a.owner, a.event_id AS event_a, b.event_id AS event_b\nFROM calendar_events a\nJOIN calendar_events b\n  ON a.owner = b.owner\n AND a.event_id < b.event_id\n AND a.starts_at < b.ends_at\n AND b.starts_at < a.ends_at\nORDER BY a.owner, a.event_id, b.event_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Non-strict comparisons make back-to-back events (09:00-10:00 then 10:00-11:00) count as conflicts.",
+          "sql": "SELECT a.owner, a.event_id AS event_a, b.event_id AS event_b\nFROM calendar_events a\nJOIN calendar_events b\n  ON a.owner = b.owner\n AND a.event_id < b.event_id\n AND a.starts_at <= b.ends_at\n AND b.starts_at <= a.ends_at\nORDER BY a.owner, a.event_id, b.event_id;"
+        },
+        {
+          "explain_md": "Checking only that the later-numbered event starts inside the earlier one misses pairs in which the higher id starts before the lower id.",
+          "sql": "SELECT a.owner, a.event_id AS event_a, b.event_id AS event_b\nFROM calendar_events a\nJOIN calendar_events b\n  ON a.owner = b.owner\n AND a.event_id < b.event_id\n AND b.starts_at >= a.starts_at\n AND b.starts_at < a.ends_at\nORDER BY a.owner, a.event_id, b.event_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "owner",
+          "event_a",
+          "event_b"
+        ],
+        "rows": [
+          [
+            "maya",
+            "1",
+            "2"
+          ],
+          [
+            "maya",
+            "4",
+            "5"
+          ],
+          [
+            "maya",
+            "4",
+            "6"
+          ],
+          [
+            "maya",
+            "5",
+            "6"
+          ],
+          [
+            "owen",
+            "7",
+            "9"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T124",
+      "slug": "mutual-connections",
+      "title": "Mutual connections",
+      "section": "Joins: self, anti, semi and range",
+      "difficulty": "Hard",
+      "topics": [
+        "Self-joins",
+        "Joins"
+      ],
+      "statement_md": "A LinkedIn-style network stores each connection once, as `member_a` and `member_b` with `member_a < member_b`; a connection works in both directions. For every connection return `member_a`, `member_b` and `mutual_connections`, the number of other members connected to both of them (0 if none). Order by `member_a`, `member_b`.",
+      "tables": [
+        {
+          "name": "connections",
+          "description_md": "One row per connection, stored once with `member_a < member_b`.",
+          "columns": [
+            {
+              "name": "member_a",
+              "type": "INT"
+            },
+            {
+              "name": "member_b",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              3
+            ],
+            [
+              1,
+              5
+            ],
+            [
+              2,
+              3
+            ],
+            [
+              2,
+              4
+            ],
+            [
+              3,
+              4
+            ],
+            [
+              4,
+              6
+            ],
+            [
+              5,
+              6
+            ],
+            [
+              7,
+              8
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "A connection stored as (1, 2) also means 2 is connected to 1, but the table only lists one direction. What would make both directions visible to a join?",
+        "Connections with no mutual connection must still appear, with a count of 0."
+      ],
+      "notes_md": "**Pattern:** Graph neighbours with a self-join ('friends of friends', 'common connections'). Interviewers use it to test whether you notice that stored-once pairs need symmetrising.\n\n**Shape:** first build a list of directed links that contains both directions of every connection; then, for each connection, find members linked to both people and count them, keeping connections with none.\n\n**Syntax:** `UNION ALL` appends the rows of a second query to the first and keeps duplicates (`UNION` removes them). `COUNT(col)` counts non-NULL values, so on an outer-joined column it counts only real matches while `COUNT(*)` counts the unmatched row too.\n\n**Trap:** using the table as stored sees only half the links, so a mutual connection with a smaller or larger id than both people is missed; inner joins drop connections with zero mutual ones.\n\n**Interview follow-up:** how would you suggest new connections: people with the most mutual connections who are not yet connected?",
+      "solutions": [
+        {
+          "label": "Symmetrise, then join twice",
+          "explain_md": "The CTE lists every link in both directions. For each connection, one join finds the contacts of member_a and a second finds those of member_b with the same other member; COUNT on the second side counts real matches only.",
+          "sql": "WITH links AS (\n  SELECT member_a AS u, member_b AS v FROM connections\n  UNION ALL\n  SELECT member_b, member_a FROM connections\n)\nSELECT c.member_a, c.member_b, COUNT(l2.v) AS mutual_connections\nFROM connections c\nLEFT JOIN links l1 ON l1.u = c.member_a\nLEFT JOIN links l2 ON l2.u = c.member_b AND l2.v = l1.v\nGROUP BY c.member_a, c.member_b\nORDER BY c.member_a, c.member_b;"
+        },
+        {
+          "label": "Correlated count over the symmetric list",
+          "explain_md": "For each connection, count the members that appear as a neighbour of both people.",
+          "sql": "WITH links AS (\n  SELECT member_a AS u, member_b AS v FROM connections\n  UNION ALL\n  SELECT member_b, member_a FROM connections\n)\nSELECT c.member_a, c.member_b,\n       (SELECT COUNT(*)\n        FROM links x JOIN links y ON y.v = x.v\n        WHERE x.u = c.member_a AND y.u = c.member_b) AS mutual_connections\nFROM connections c\nORDER BY c.member_a, c.member_b;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without symmetrising, only mutual connections whose id is larger than both people are found, and connections with none disappear.",
+          "sql": "SELECT c.member_a, c.member_b, COUNT(*) AS mutual_connections\nFROM connections c\nJOIN connections x ON x.member_a = c.member_a\nJOIN connections y ON y.member_a = c.member_b AND y.member_b = x.member_b\nGROUP BY c.member_a, c.member_b\nORDER BY c.member_a, c.member_b;"
+        },
+        {
+          "explain_md": "Symmetrised but with inner joins: connections that have no mutual connection vanish instead of showing 0.",
+          "sql": "WITH links AS (\n  SELECT member_a AS u, member_b AS v FROM connections\n  UNION ALL\n  SELECT member_b, member_a FROM connections\n)\nSELECT c.member_a, c.member_b, COUNT(*) AS mutual_connections\nFROM connections c\nJOIN links l1 ON l1.u = c.member_a\nJOIN links l2 ON l2.u = c.member_b AND l2.v = l1.v\nGROUP BY c.member_a, c.member_b\nORDER BY c.member_a, c.member_b;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "member_a",
+          "member_b",
+          "mutual_connections"
+        ],
+        "rows": [
+          [
+            "1",
+            "2",
+            "1"
+          ],
+          [
+            "1",
+            "3",
+            "1"
+          ],
+          [
+            "1",
+            "5",
+            "0"
+          ],
+          [
+            "2",
+            "3",
+            "2"
+          ],
+          [
+            "2",
+            "4",
+            "1"
+          ],
+          [
+            "3",
+            "4",
+            "1"
+          ],
+          [
+            "4",
+            "6",
+            "0"
+          ],
+          [
+            "5",
+            "6",
+            "0"
+          ],
+          [
+            "7",
+            "8",
+            "0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

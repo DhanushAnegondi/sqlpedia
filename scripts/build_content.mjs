@@ -115,7 +115,7 @@ function loadCollections() {
   if (existsSync(join(legacy, "index.json")))
     for (const s of read(join(legacy, "index.json")).sets) out.push(legacyCollection(read(join(legacy, `${s.id}.json`))));
   // Display order
-  const ORDER = ["basics", "patterns", "apple", "campus", "shoplite"];
+  const ORDER = ["basics", "drills", "patterns", "apple", "campus", "shoplite"];
   return out.sort((a, b) => (ORDER.indexOf(a.id) + 99 * (ORDER.indexOf(a.id) < 0)) - (ORDER.indexOf(b.id) + 99 * (ORDER.indexOf(b.id) < 0)));
 }
 

@@ -36,6 +36,7 @@ Task board: `ledger/TASKS.md`. Content formats: `content/SCHEMA.md`. Project ski
 | Collection | Source | Problems | Tables |
 |---|---|---|---|
 | SQL Basics | `content/collections/basics/` (_meta + part-1..4, `section` per problem) | 48 | own per problem |
+| Interview topic drills | `content/collections/drills/` (_meta + part-1..7: joins x2, ranking, aggregates/frames, value functions, CTEs, recursive CTEs) | 93 | own per problem |
 | Interview Patterns | `content/collections/patterns/` (_meta + part-a/b/c) | 48 | own per problem |
 | Apple SDE – Data prep | `content/collections/apple.json` (from `Apple_prep/.sql_cheatsheet_validation/validated_bank.json` via `scripts/authoring/import_apple_bank.py`) | 60 | own per problem |
 | Campus | `sets/campus/` (MySQL-native, `## Topic N` sections) | 31 | shared dataset |
@@ -50,6 +51,8 @@ Rules:
 - Anything visible before Reveal (statement, hints, notes, MySQL notes, starter query) may warn about a
   difference or name the pattern family, never the solution technique. (lessons.md)
 - Original wording only — never copy DataLemur / LeetCode questions, names or data.
+- Settings: recognisable product-style data (Twitter, Netflix, Amazon, Outlook, Instagram, banks, games ...),
+  invented user names; no two adjacent problems on the same product.
 - Source sets (`starter_pac/`, `sets/<id>/`) are read-only; ShopLite/Campus parsing rules are in
   `scripts/import.mjs` (sections `## Tier X — …` or `## Topic N — …`, `### Q<n> · title`, `<details>` folds,
   `-- @Q<n>` solution markers, `-- TRAP`, `-- @noeq`).

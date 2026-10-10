@@ -1,0 +1,2437 @@
+{
+  "problems": [
+    {
+      "id": "T401",
+      "slug": "day-over-day-change-in-active-users",
+      "title": "Day-over-day change in active users",
+      "section": "Value functions",
+      "difficulty": "Easy",
+      "topics": [
+        "Value functions",
+        "Period comparisons"
+      ],
+      "statement_md": "The growth team at a Twitter-style app keeps one row per day with the number of daily active users. Return `activity_date`, `active_users` and `day_change`, the difference between that day's count and the previous day's count (NULL on the first day). Order by `activity_date`.",
+      "tables": [
+        {
+          "name": "daily_active_users",
+          "description_md": "One row per calendar day; every day is present.",
+          "columns": [
+            {
+              "name": "activity_date",
+              "type": "DATE"
+            },
+            {
+              "name": "active_users",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2025-03-04",
+              1480
+            ],
+            [
+              "2025-03-01",
+              1200
+            ],
+            [
+              "2025-03-02",
+              1350
+            ],
+            [
+              "2025-03-03",
+              1100
+            ],
+            [
+              "2025-03-05",
+              1100
+            ],
+            [
+              "2025-03-06",
+              1620
+            ],
+            [
+              "2025-03-07",
+              1500
+            ],
+            [
+              "2025-03-08",
+              1710
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need a value that lives on a different row than the one you are looking at.",
+        "Rows have no inherent order in a table, so the order that defines 'previous day' has to be stated explicitly."
+      ],
+      "notes_md": "**Pattern:** Row-to-row comparison. Interviewers reach for it on 'change since yesterday', 'versus last period' and 'time between events'.\n\n**Shape:** Sort the rows by date, bring the previous row's count alongside the current one, then subtract. The first row has nothing before it.\n\n**Syntax:** `LAG(expr, offset, default) OVER (PARTITION BY p ORDER BY o)` returns `expr` from `offset` rows earlier in the window order. `offset` defaults to 1 and `default` to NULL, so the first row gets NULL.\n\n**Trap:** Looking the wrong way. The sibling function reads rows after the current one, and a descending sort inside the window flips what 'before' means; both produce plausible numbers with the wrong sign.\n\n**Interview follow-up:** How would you get the same result without a window function? (A self-join, and what assumption about missing days it carries.)",
+      "solutions": [
+        {
+          "label": "LAG",
+          "explain_md": "LAG pulls the previous day's count onto each row; subtracting gives the change, and the first day has no earlier row so it stays NULL.",
+          "sql": "SELECT activity_date, active_users,\n       active_users - LAG(active_users) OVER (ORDER BY activity_date) AS day_change\nFROM daily_active_users\nORDER BY activity_date;"
+        },
+        {
+          "label": "Self-join on the previous date",
+          "explain_md": "A LEFT JOIN to the row dated one day earlier gives the same figure, and keeps the first day with NULL. It only works because no day is missing.",
+          "sql": "SELECT cur.activity_date, cur.active_users,\n       cur.active_users - prev.active_users AS day_change\nFROM daily_active_users cur\nLEFT JOIN daily_active_users prev\n  ON prev.activity_date = DATE_SUB(cur.activity_date, INTERVAL 1 DAY)\nORDER BY cur.activity_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "LEAD looks at the next day, so each change is measured forward instead of backward (and the last day is NULL instead of the first).",
+          "sql": "SELECT activity_date, active_users,\n       active_users - LEAD(active_users) OVER (ORDER BY activity_date) AS day_change\nFROM daily_active_users\nORDER BY activity_date;"
+        },
+        {
+          "explain_md": "Ordering the window descending makes 'previous' mean 'the following day', so every change has the wrong sign.",
+          "sql": "SELECT activity_date, active_users,\n       active_users - LAG(active_users) OVER (ORDER BY activity_date DESC) AS day_change\nFROM daily_active_users\nORDER BY activity_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "activity_date",
+          "active_users",
+          "day_change"
+        ],
+        "rows": [
+          [
+            "2025-03-01",
+            "1200",
+            null
+          ],
+          [
+            "2025-03-02",
+            "1350",
+            "150"
+          ],
+          [
+            "2025-03-03",
+            "1100",
+            "-250"
+          ],
+          [
+            "2025-03-04",
+            "1480",
+            "380"
+          ],
+          [
+            "2025-03-05",
+            "1100",
+            "-380"
+          ],
+          [
+            "2025-03-06",
+            "1620",
+            "520"
+          ],
+          [
+            "2025-03-07",
+            "1500",
+            "-120"
+          ],
+          [
+            "2025-03-08",
+            "1710",
+            "210"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T402",
+      "slug": "days-until-the-next-booking",
+      "title": "Days until the next booking",
+      "section": "Value functions",
+      "difficulty": "Easy",
+      "topics": [
+        "Value functions",
+        "Dates"
+      ],
+      "statement_md": "An Airbnb-style host dashboard wants to know how quickly guests come back. For every booking return `booking_id`, `guest_id`, `checkin_date` and `days_to_next_booking`, the number of days from this check-in to the same guest's following check-in (NULL if there is no later booking). Order by `guest_id`, then `checkin_date`.",
+      "tables": [
+        {
+          "name": "bookings",
+          "description_md": "One row per booking. A guest can book many times; every check-in date is distinct.",
+          "columns": [
+            {
+              "name": "booking_id",
+              "type": "INT"
+            },
+            {
+              "name": "guest_id",
+              "type": "INT"
+            },
+            {
+              "name": "checkin_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              107,
+              4,
+              "2025-02-01"
+            ],
+            [
+              101,
+              1,
+              "2025-01-10"
+            ],
+            [
+              106,
+              3,
+              "2025-03-05"
+            ],
+            [
+              104,
+              2,
+              "2025-01-15"
+            ],
+            [
+              102,
+              1,
+              "2025-02-03"
+            ],
+            [
+              108,
+              4,
+              "2025-02-28"
+            ],
+            [
+              105,
+              2,
+              "2025-01-22"
+            ],
+            [
+              103,
+              1,
+              "2025-04-20"
+            ],
+            [
+              109,
+              4,
+              "2025-03-30"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Each guest has their own timeline; the 'next' row must come from the same guest.",
+        "The last booking of every guest has no later row, so its answer is NULL, not zero."
+      ],
+      "notes_md": "**Pattern:** Look-ahead within a group. 'Time until the next event' and 'time between consecutive events' per user are classic follow-ups to a plain comparison.\n\n**Shape:** Split the rows by guest, order each guest's bookings by date, bring the following check-in onto the current row, then take the day difference.\n\n**Syntax:** `LEAD(expr, offset, default) OVER (PARTITION BY p ORDER BY o)` reads `expr` from `offset` rows later (default 1, default value NULL). `DATEDIFF(a, b)` is `a - b` in days.\n\n**Trap:** Forgetting to split by guest: the last booking of one guest then 'sees' the first booking of the next guest. Also the argument order of DATEDIFF, which flips the sign.\n\n**Interview follow-up:** How would you find the average gap per guest, and what happens to guests with a single booking?",
+      "solutions": [
+        {
+          "label": "LEAD per guest",
+          "explain_md": "PARTITION BY guest_id keeps each guest's timeline separate, so a guest's last booking gets NULL from LEAD and DATEDIFF of NULL is NULL.",
+          "sql": "SELECT booking_id, guest_id, checkin_date,\n       DATEDIFF(LEAD(checkin_date) OVER (PARTITION BY guest_id ORDER BY checkin_date), checkin_date) AS days_to_next_booking\nFROM bookings\nORDER BY guest_id, checkin_date;"
+        },
+        {
+          "label": "Correlated subquery",
+          "explain_md": "For each booking, find the smallest later check-in of the same guest; with none, MIN is NULL.",
+          "sql": "SELECT b.booking_id, b.guest_id, b.checkin_date,\n       DATEDIFF((SELECT MIN(n.checkin_date) FROM bookings n\n                 WHERE n.guest_id = b.guest_id AND n.checkin_date > b.checkin_date), b.checkin_date) AS days_to_next_booking\nFROM bookings b\nORDER BY b.guest_id, b.checkin_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without PARTITION BY the window runs over all guests in date order, so a guest's last booking is measured to someone else's next booking.",
+          "sql": "SELECT booking_id, guest_id, checkin_date,\n       DATEDIFF(LEAD(checkin_date) OVER (ORDER BY checkin_date), checkin_date) AS days_to_next_booking\nFROM bookings\nORDER BY guest_id, checkin_date;"
+        },
+        {
+          "explain_md": "DATEDIFF with the arguments swapped returns negative numbers.",
+          "sql": "SELECT booking_id, guest_id, checkin_date,\n       DATEDIFF(checkin_date, LEAD(checkin_date) OVER (PARTITION BY guest_id ORDER BY checkin_date)) AS days_to_next_booking\nFROM bookings\nORDER BY guest_id, checkin_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "booking_id",
+          "guest_id",
+          "checkin_date",
+          "days_to_next_booking"
+        ],
+        "rows": [
+          [
+            "101",
+            "1",
+            "2025-01-10",
+            "24"
+          ],
+          [
+            "102",
+            "1",
+            "2025-02-03",
+            "76"
+          ],
+          [
+            "103",
+            "1",
+            "2025-04-20",
+            null
+          ],
+          [
+            "104",
+            "2",
+            "2025-01-15",
+            "7"
+          ],
+          [
+            "105",
+            "2",
+            "2025-01-22",
+            null
+          ],
+          [
+            "106",
+            "3",
+            "2025-03-05",
+            null
+          ],
+          [
+            "107",
+            "4",
+            "2025-02-01",
+            "27"
+          ],
+          [
+            "108",
+            "4",
+            "2025-02-28",
+            "30"
+          ],
+          [
+            "109",
+            "4",
+            "2025-03-30",
+            null
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T403",
+      "slug": "rides-versus-three-months-earlier",
+      "title": "Rides versus three months earlier",
+      "section": "Value functions",
+      "difficulty": "Medium",
+      "topics": [
+        "Value functions",
+        "Period comparisons"
+      ],
+      "statement_md": "An Uber-style ops team stores completed rides per city per month. Return `city`, `month_start`, `completed_rides`, `rides_3m_earlier` (the same city's count three months before; NULL when there is no such month) and `change_vs_3m` (current minus that figure). Order by `city`, then `month_start`.",
+      "tables": [
+        {
+          "name": "ride_totals",
+          "description_md": "One row per city per month; every month from January to June 2025 is present for both cities.",
+          "columns": [
+            {
+              "name": "city",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "month_start",
+              "type": "DATE"
+            },
+            {
+              "name": "completed_rides",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "Lisbon",
+              "2025-01-01",
+              4200
+            ],
+            [
+              "Lisbon",
+              "2025-02-01",
+              4500
+            ],
+            [
+              "Lisbon",
+              "2025-03-01",
+              3900
+            ],
+            [
+              "Lisbon",
+              "2025-04-01",
+              5100
+            ],
+            [
+              "Lisbon",
+              "2025-05-01",
+              4800
+            ],
+            [
+              "Lisbon",
+              "2025-06-01",
+              5600
+            ],
+            [
+              "Austin",
+              "2025-01-01",
+              6100
+            ],
+            [
+              "Austin",
+              "2025-02-01",
+              5900
+            ],
+            [
+              "Austin",
+              "2025-03-01",
+              6400
+            ],
+            [
+              "Austin",
+              "2025-04-01",
+              6000
+            ],
+            [
+              "Austin",
+              "2025-05-01",
+              6900
+            ],
+            [
+              "Austin",
+              "2025-06-01",
+              7200
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The comparison row is not the neighbour: it is a fixed number of rows away.",
+        "Early months have no row that far back, and each city must only look at its own history."
+      ],
+      "notes_md": "**Pattern:** Period-over-period with a longer lag (quarter-over-quarter, same month last year when data is monthly). Interviewers check you know the offset argument exists.\n\n**Shape:** Order each city's months, reach back a fixed number of rows to fetch the earlier count, then subtract it from the current one.\n\n**Syntax:** `LAG(expr, offset)` takes the row `offset` positions earlier in the window order; the offset counts rows, not calendar units, so it is only a calendar offset when no month is missing.\n\n**Trap:** Leaving out the offset (it silently defaults to 1) or leaving out the partition so one city borrows another city's months.\n\n**Interview follow-up:** What if some months were missing? (Then a row offset is wrong and you would join on the shifted date instead.)",
+      "solutions": [
+        {
+          "label": "LAG with an offset",
+          "explain_md": "LAG(completed_rides, 3) reaches three rows back inside each city, so the first three months of each city get NULL.",
+          "sql": "WITH x AS (\n  SELECT city, month_start, completed_rides,\n         LAG(completed_rides, 3) OVER (PARTITION BY city ORDER BY month_start) AS rides_3m_earlier\n  FROM ride_totals\n)\nSELECT city, month_start, completed_rides, rides_3m_earlier,\n       completed_rides - rides_3m_earlier AS change_vs_3m\nFROM x\nORDER BY city, month_start;"
+        },
+        {
+          "label": "Self-join on the shifted month",
+          "explain_md": "Joining each row to the same city three months earlier is robust to missing months, and the LEFT JOIN keeps the first months with NULL.",
+          "sql": "SELECT cur.city, cur.month_start, cur.completed_rides,\n       old.completed_rides AS rides_3m_earlier,\n       cur.completed_rides - old.completed_rides AS change_vs_3m\nFROM ride_totals cur\nLEFT JOIN ride_totals old\n  ON old.city = cur.city AND old.month_start = DATE_SUB(cur.month_start, INTERVAL 3 MONTH)\nORDER BY cur.city, cur.month_start;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The offset defaults to 1, so this compares with last month, not three months ago.",
+          "sql": "WITH x AS (\n  SELECT city, month_start, completed_rides,\n         LAG(completed_rides) OVER (PARTITION BY city ORDER BY month_start) AS rides_3m_earlier\n  FROM ride_totals\n)\nSELECT city, month_start, completed_rides, rides_3m_earlier,\n       completed_rides - rides_3m_earlier AS change_vs_3m\nFROM x\nORDER BY city, month_start;"
+        },
+        {
+          "explain_md": "Without PARTITION BY the second city's first months are compared with the first city's last months.",
+          "sql": "WITH x AS (\n  SELECT city, month_start, completed_rides,\n         LAG(completed_rides, 3) OVER (ORDER BY city, month_start) AS rides_3m_earlier\n  FROM ride_totals\n)\nSELECT city, month_start, completed_rides, rides_3m_earlier,\n       completed_rides - rides_3m_earlier AS change_vs_3m\nFROM x\nORDER BY city, month_start;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "city",
+          "month_start",
+          "completed_rides",
+          "rides_3m_earlier",
+          "change_vs_3m"
+        ],
+        "rows": [
+          [
+            "Austin",
+            "2025-01-01",
+            "6100",
+            null,
+            null
+          ],
+          [
+            "Austin",
+            "2025-02-01",
+            "5900",
+            null,
+            null
+          ],
+          [
+            "Austin",
+            "2025-03-01",
+            "6400",
+            null,
+            null
+          ],
+          [
+            "Austin",
+            "2025-04-01",
+            "6000",
+            "6100",
+            "-100"
+          ],
+          [
+            "Austin",
+            "2025-05-01",
+            "6900",
+            "5900",
+            "1000"
+          ],
+          [
+            "Austin",
+            "2025-06-01",
+            "7200",
+            "6400",
+            "800"
+          ],
+          [
+            "Lisbon",
+            "2025-01-01",
+            "4200",
+            null,
+            null
+          ],
+          [
+            "Lisbon",
+            "2025-02-01",
+            "4500",
+            null,
+            null
+          ],
+          [
+            "Lisbon",
+            "2025-03-01",
+            "3900",
+            null,
+            null
+          ],
+          [
+            "Lisbon",
+            "2025-04-01",
+            "5100",
+            "4200",
+            "900"
+          ],
+          [
+            "Lisbon",
+            "2025-05-01",
+            "4800",
+            "4500",
+            "300"
+          ],
+          [
+            "Lisbon",
+            "2025-06-01",
+            "5600",
+            "3900",
+            "1700"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T404",
+      "slug": "subscriber-change-from-zero",
+      "title": "Subscriber change from zero",
+      "section": "Value functions",
+      "difficulty": "Medium",
+      "topics": [
+        "Value functions",
+        "NULL handling"
+      ],
+      "statement_md": "A YouTube-style creator dashboard stores each channel's total subscribers at the start of every month. Return `channel`, `month_start`, `subscribers` and `net_change`, the change from the channel's previous month. A channel's first recorded month counts as a change from 0 subscribers, so no row may have a NULL `net_change`. Order by `channel`, then `month_start`.",
+      "tables": [
+        {
+          "name": "channel_subscribers",
+          "description_md": "One row per channel per month.",
+          "columns": [
+            {
+              "name": "channel",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "month_start",
+              "type": "DATE"
+            },
+            {
+              "name": "subscribers",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "TinyKitchen",
+              "2025-01-01",
+              40
+            ],
+            [
+              "TinyKitchen",
+              "2025-02-01",
+              52
+            ],
+            [
+              "TinyKitchen",
+              "2025-03-01",
+              48
+            ],
+            [
+              "TinyKitchen",
+              "2025-04-01",
+              60
+            ],
+            [
+              "RetroRepairs",
+              "2025-01-01",
+              15
+            ],
+            [
+              "RetroRepairs",
+              "2025-02-01",
+              15
+            ],
+            [
+              "RetroRepairs",
+              "2025-03-01",
+              22
+            ],
+            [
+              "RetroRepairs",
+              "2025-04-01",
+              30
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The first month of each channel has no earlier row, but the question tells you what to pretend it was.",
+        "There are two ways to supply a stand-in value: one argument of the function itself, or a wrapper around its result."
+      ],
+      "notes_md": "**Pattern:** Period change where the first period needs a baseline. Common in growth and cumulative-to-delta questions.\n\n**Shape:** Fetch the previous month's total per channel, substitute zero when there is none, then subtract.\n\n**Syntax:** `LAG(expr, offset, default)` returns `default` instead of NULL when the offset row does not exist. The third argument needs the second one to be written out.\n\n**Trap:** Leaving the first month NULL, or substituting the current value instead of 0 so the first change shows as 0 rather than the full starting audience.\n\n**Interview follow-up:** Which is better here: the default argument or COALESCE around LAG? (Differences appear when the earlier row exists but holds NULL.)",
+      "solutions": [
+        {
+          "label": "LAG with a default",
+          "explain_md": "The third argument of LAG is returned when there is no previous row, so the first month subtracts 0.",
+          "sql": "SELECT channel, month_start, subscribers,\n       subscribers - LAG(subscribers, 1, 0) OVER (PARTITION BY channel ORDER BY month_start) AS net_change\nFROM channel_subscribers\nORDER BY channel, month_start;"
+        },
+        {
+          "label": "COALESCE around LAG",
+          "explain_md": "LAG returns NULL for the first month and COALESCE turns it into 0 before the subtraction.",
+          "sql": "SELECT channel, month_start, subscribers,\n       subscribers - COALESCE(LAG(subscribers) OVER (PARTITION BY channel ORDER BY month_start), 0) AS net_change\nFROM channel_subscribers\nORDER BY channel, month_start;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without a default the first month of each channel is NULL instead of the starting audience.",
+          "sql": "SELECT channel, month_start, subscribers,\n       subscribers - LAG(subscribers) OVER (PARTITION BY channel ORDER BY month_start) AS net_change\nFROM channel_subscribers\nORDER BY channel, month_start;"
+        },
+        {
+          "explain_md": "Falling back to the current value means the first month reports a change of 0 instead of the full count.",
+          "sql": "SELECT channel, month_start, subscribers,\n       subscribers - COALESCE(LAG(subscribers) OVER (PARTITION BY channel ORDER BY month_start), subscribers) AS net_change\nFROM channel_subscribers\nORDER BY channel, month_start;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "channel",
+          "month_start",
+          "subscribers",
+          "net_change"
+        ],
+        "rows": [
+          [
+            "RetroRepairs",
+            "2025-01-01",
+            "15",
+            "15"
+          ],
+          [
+            "RetroRepairs",
+            "2025-02-01",
+            "15",
+            "0"
+          ],
+          [
+            "RetroRepairs",
+            "2025-03-01",
+            "22",
+            "7"
+          ],
+          [
+            "RetroRepairs",
+            "2025-04-01",
+            "30",
+            "8"
+          ],
+          [
+            "TinyKitchen",
+            "2025-01-01",
+            "40",
+            "40"
+          ],
+          [
+            "TinyKitchen",
+            "2025-02-01",
+            "52",
+            "12"
+          ],
+          [
+            "TinyKitchen",
+            "2025-03-01",
+            "48",
+            "-4"
+          ],
+          [
+            "TinyKitchen",
+            "2025-04-01",
+            "60",
+            "12"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T405",
+      "slug": "store-price-change-log",
+      "title": "Store price change log",
+      "section": "Value functions",
+      "difficulty": "Medium",
+      "topics": [
+        "Value functions",
+        "Slowly changing dimensions"
+      ],
+      "statement_md": "The Xbox-store pricing team snapshots each game's price on selected days. Return one row for every snapshot whose price differs from that same game's previous snapshot: `game`, `snap_date`, `old_price` and `new_price`. A game's first snapshot is not a change and is excluded. Order by `game`, then `snap_date`.",
+      "tables": [
+        {
+          "name": "store_price_snapshots",
+          "description_md": "One row per game per snapshot day; not every game has a snapshot every day.",
+          "columns": [
+            {
+              "name": "game",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "snap_date",
+              "type": "DATE"
+            },
+            {
+              "name": "price",
+              "type": "DECIMAL(6,2)"
+            }
+          ],
+          "rows": [
+            [
+              "Forza Horizon 5",
+              "2025-05-01",
+              59.99
+            ],
+            [
+              "Forza Horizon 5",
+              "2025-05-02",
+              59.99
+            ],
+            [
+              "Forza Horizon 5",
+              "2025-05-03",
+              29.99
+            ],
+            [
+              "Forza Horizon 5",
+              "2025-05-04",
+              29.99
+            ],
+            [
+              "Forza Horizon 5",
+              "2025-05-05",
+              59.99
+            ],
+            [
+              "Halo Infinite",
+              "2025-05-01",
+              39.99
+            ],
+            [
+              "Halo Infinite",
+              "2025-05-02",
+              39.99
+            ],
+            [
+              "Halo Infinite",
+              "2025-05-04",
+              34.99
+            ],
+            [
+              "Minecraft",
+              "2025-05-01",
+              29.99
+            ],
+            [
+              "Minecraft",
+              "2025-05-03",
+              29.99
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "A price can change and later change back; both movements are events.",
+        "'Previous' means the previous snapshot of that game, not the previous calendar day and not the first price ever seen."
+      ],
+      "notes_md": "**Pattern:** Change detection from snapshots (a poor man's change data capture). Interviewers use it to see whether you compare to the previous row rather than to a fixed baseline.\n\n**Shape:** Per game, order the snapshots by date, attach the previous snapshot's price to each row, and keep the rows where the two prices differ.\n\n**Syntax:** A window function is computed after WHERE, so a filter on a LAG result must happen in an outer query or CTE. A comparison with NULL (the first row has no previous price) is never true.\n\n**Trap:** Comparing with the first price of the game, or with a de-duplicated list of prices, which loses a change back to an earlier price.\n\n**Interview follow-up:** How would you also report how many days each price lasted?",
+      "solutions": [
+        {
+          "label": "LAG in a CTE",
+          "explain_md": "LAG gives each snapshot the previous snapshot's price for the same game; the outer WHERE keeps only rows where it differs. The first snapshot compares to NULL and drops out.",
+          "sql": "WITH s AS (\n  SELECT game, snap_date, price AS new_price,\n         LAG(price) OVER (PARTITION BY game ORDER BY snap_date) AS old_price\n  FROM store_price_snapshots\n)\nSELECT game, snap_date, old_price, new_price\nFROM s\nWHERE old_price <> new_price\nORDER BY game, snap_date;"
+        },
+        {
+          "label": "Join to the previous snapshot",
+          "explain_md": "A correlated MAX finds the latest earlier snapshot date of the same game; joining on it gives the previous price without a window function.",
+          "sql": "SELECT cur.game, cur.snap_date, prev.price AS old_price, cur.price AS new_price\nFROM store_price_snapshots cur\nJOIN store_price_snapshots prev\n  ON prev.game = cur.game\n AND prev.snap_date = (SELECT MAX(x.snap_date) FROM store_price_snapshots x\n                       WHERE x.game = cur.game AND x.snap_date < cur.snap_date)\nWHERE prev.price <> cur.price\nORDER BY cur.game, cur.snap_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Comparing with the game's first price reports every later snapshot that differs from the launch price, including days where nothing changed.",
+          "sql": "WITH s AS (\n  SELECT game, snap_date, price AS new_price,\n         FIRST_VALUE(price) OVER (PARTITION BY game ORDER BY snap_date) AS old_price\n  FROM store_price_snapshots\n)\nSELECT game, snap_date, old_price, new_price\nFROM s\nWHERE old_price <> new_price\nORDER BY game, snap_date;"
+        },
+        {
+          "explain_md": "Without PARTITION BY the first snapshot of each game is compared with the last snapshot of the previous game.",
+          "sql": "WITH s AS (\n  SELECT game, snap_date, price AS new_price,\n         LAG(price) OVER (ORDER BY game, snap_date) AS old_price\n  FROM store_price_snapshots\n)\nSELECT game, snap_date, old_price, new_price\nFROM s\nWHERE old_price <> new_price\nORDER BY game, snap_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "game",
+          "snap_date",
+          "old_price",
+          "new_price"
+        ],
+        "rows": [
+          [
+            "Forza Horizon 5",
+            "2025-05-03",
+            "59.99",
+            "29.99"
+          ],
+          [
+            "Forza Horizon 5",
+            "2025-05-05",
+            "29.99",
+            "59.99"
+          ],
+          [
+            "Halo Infinite",
+            "2025-05-04",
+            "39.99",
+            "34.99"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T406",
+      "slug": "turn-plan-changes-into-validity-ranges",
+      "title": "Turn plan changes into validity ranges",
+      "section": "Value functions",
+      "difficulty": "Medium",
+      "topics": [
+        "Value functions",
+        "Slowly changing dimensions"
+      ],
+      "statement_md": "A Spotify-style billing table records only the day each user switched to a plan. Return one row per record with `user_id`, `plan`, `valid_from` (the start date) and `valid_to`, the last day that plan applied: the day before the user's next change, or NULL for the plan they are on now. Order by `user_id`, then `valid_from`.",
+      "tables": [
+        {
+          "name": "subscription_changes",
+          "description_md": "One row per plan change; the user is on `plan` from `start_date` until their next row.",
+          "columns": [
+            {
+              "name": "change_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "plan",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "start_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              3,
+              1,
+              "Family",
+              "2025-09-01"
+            ],
+            [
+              1,
+              1,
+              "Free",
+              "2025-01-01"
+            ],
+            [
+              5,
+              3,
+              "Duo",
+              "2025-06-01"
+            ],
+            [
+              2,
+              1,
+              "Premium",
+              "2025-03-15"
+            ],
+            [
+              4,
+              2,
+              "Free",
+              "2025-02-10"
+            ],
+            [
+              6,
+              3,
+              "Premium",
+              "2025-01-20"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The end of one row is defined by the start of the next row of the same user.",
+        "The new plan starts on the day the old one stops being valid, so the old one ended the day before."
+      ],
+      "notes_md": "**Pattern:** Event table to interval table, the first step of any slowly-changing-dimension query.\n\n**Shape:** For each user, order the changes by date, fetch the next change's start, step back one day, and leave NULL where no next change exists.\n\n**Syntax:** `LEAD(expr) OVER (PARTITION BY p ORDER BY o)` reads the following row's value, NULL for the last row. `DATE_SUB(d, INTERVAL 1 DAY)` subtracts a day and keeps NULL as NULL.\n\n**Trap:** Using the next start date as the end date (the ranges then overlap by a day) or forgetting the partition so a user's current plan ends when another user's plan starts.\n\n**Interview follow-up:** How would you join a fact table to these ranges to get the plan in force on each play date?",
+      "solutions": [
+        {
+          "label": "LEAD",
+          "explain_md": "LEAD(start_date) is the next change for the same user; one day earlier is the last valid day, and the last row has no next change so its valid_to stays NULL.",
+          "sql": "SELECT user_id, plan, start_date AS valid_from,\n       DATE_SUB(LEAD(start_date) OVER (PARTITION BY user_id ORDER BY start_date), INTERVAL 1 DAY) AS valid_to\nFROM subscription_changes\nORDER BY user_id, start_date;"
+        },
+        {
+          "label": "Correlated subquery",
+          "explain_md": "The smallest later start date of the same user is the next change; MIN over no rows gives NULL.",
+          "sql": "SELECT c.user_id, c.plan, c.start_date AS valid_from,\n       DATE_SUB((SELECT MIN(n.start_date) FROM subscription_changes n\n                 WHERE n.user_id = c.user_id AND n.start_date > c.start_date), INTERVAL 1 DAY) AS valid_to\nFROM subscription_changes c\nORDER BY c.user_id, c.start_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Using the next change date as valid_to makes consecutive ranges share a day.",
+          "sql": "SELECT user_id, plan, start_date AS valid_from,\n       LEAD(start_date) OVER (PARTITION BY user_id ORDER BY start_date) AS valid_to\nFROM subscription_changes\nORDER BY user_id, start_date;"
+        },
+        {
+          "explain_md": "Without PARTITION BY a user's current plan ends the day before another user's next change.",
+          "sql": "SELECT user_id, plan, start_date AS valid_from,\n       DATE_SUB(LEAD(start_date) OVER (ORDER BY start_date), INTERVAL 1 DAY) AS valid_to\nFROM subscription_changes\nORDER BY user_id, start_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "user_id",
+          "plan",
+          "valid_from",
+          "valid_to"
+        ],
+        "rows": [
+          [
+            "1",
+            "Free",
+            "2025-01-01",
+            "2025-03-14"
+          ],
+          [
+            "1",
+            "Premium",
+            "2025-03-15",
+            "2025-08-31"
+          ],
+          [
+            "1",
+            "Family",
+            "2025-09-01",
+            null
+          ],
+          [
+            "2",
+            "Free",
+            "2025-02-10",
+            null
+          ],
+          [
+            "3",
+            "Premium",
+            "2025-01-20",
+            "2025-05-31"
+          ],
+          [
+            "3",
+            "Duo",
+            "2025-06-01",
+            null
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T407",
+      "slug": "month-over-month-growth-in-reels",
+      "title": "Month-over-month growth in reels",
+      "section": "Value functions",
+      "difficulty": "Medium",
+      "topics": [
+        "Value functions",
+        "Period comparisons",
+        "NULL handling"
+      ],
+      "statement_md": "An Instagram-style creator team counts reels posted per month. Return `month_start`, `reels_posted` and `growth_pct`, the percentage change versus the previous month, rounded to 1 decimal place. `growth_pct` must be NULL for the first month and for any month whose previous month had zero reels. Order by `month_start`.",
+      "dialect_note_md": "MySQL returns NULL when you divide by zero in a SELECT; SQL Server raises an error instead.",
+      "tables": [
+        {
+          "name": "monthly_reels",
+          "description_md": "One row per month; some months had no reels at all.",
+          "columns": [
+            {
+              "name": "month_start",
+              "type": "DATE"
+            },
+            {
+              "name": "reels_posted",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "2025-01-01",
+              120
+            ],
+            [
+              "2025-02-01",
+              150
+            ],
+            [
+              "2025-03-01",
+              0
+            ],
+            [
+              "2025-04-01",
+              90
+            ],
+            [
+              "2025-05-01",
+              90
+            ],
+            [
+              "2025-06-01",
+              135
+            ],
+            [
+              "2025-07-01",
+              0
+            ],
+            [
+              "2025-08-01",
+              60
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "A percentage change needs the previous month's value as the denominator.",
+        "A zero denominator is not an answer; the statement tells you what to show instead."
+      ],
+      "notes_md": "**Pattern:** Growth rate with a safe division. Almost every 'percent change' question hides a zero-denominator case.\n\n**Shape:** Fetch the previous month's count, compute change divided by the previous count, make a zero previous count produce NULL rather than an error, then round.\n\n**Syntax:** `NULLIF(a, b)` returns NULL when `a = b`, otherwise `a`; dividing by it turns a division by zero into NULL. `ROUND(x, 1)` keeps one decimal.\n\n**Trap:** Dividing by the current month instead of the previous one, or replacing NULL growth with 0, which claims a flat month where there is no meaningful baseline.\n\n**Interview follow-up:** Why is a month with zero reels a valid row but its successor's growth undefined?",
+      "solutions": [
+        {
+          "label": "LAG with a safe divisor",
+          "explain_md": "LAG supplies the previous month; NULLIF(prev, 0) makes the division NULL when that month was zero, and the first month already has no previous value.",
+          "sql": "WITH m AS (\n  SELECT month_start, reels_posted,\n         LAG(reels_posted) OVER (ORDER BY month_start) AS prev_reels\n  FROM monthly_reels\n)\nSELECT month_start, reels_posted,\n       ROUND(100 * (reels_posted - prev_reels) / NULLIF(prev_reels, 0), 1) AS growth_pct\nFROM m\nORDER BY month_start;"
+        },
+        {
+          "label": "Self-join on the previous month",
+          "explain_md": "Joining each month to the month before it gives the same denominator without a window function; this works because no month is missing.",
+          "sql": "SELECT cur.month_start, cur.reels_posted,\n       ROUND(100 * (cur.reels_posted - prev.reels_posted) / NULLIF(prev.reels_posted, 0), 1) AS growth_pct\nFROM monthly_reels cur\nLEFT JOIN monthly_reels prev\n  ON prev.month_start = DATE_SUB(cur.month_start, INTERVAL 1 MONTH)\nORDER BY cur.month_start;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Dividing by the current month measures the change relative to the wrong base, and returns NULL for the months with zero reels.",
+          "sql": "WITH m AS (\n  SELECT month_start, reels_posted,\n         LAG(reels_posted) OVER (ORDER BY month_start) AS prev_reels\n  FROM monthly_reels\n)\nSELECT month_start, reels_posted,\n       ROUND(100 * (reels_posted - prev_reels) / NULLIF(reels_posted, 0), 1) AS growth_pct\nFROM m\nORDER BY month_start;"
+        },
+        {
+          "explain_md": "COALESCE to 0 reports 0% growth where the baseline was zero, instead of NULL.",
+          "sql": "WITH m AS (\n  SELECT month_start, reels_posted,\n         LAG(reels_posted) OVER (ORDER BY month_start) AS prev_reels\n  FROM monthly_reels\n)\nSELECT month_start, reels_posted,\n       COALESCE(ROUND(100 * (reels_posted - prev_reels) / NULLIF(prev_reels, 0), 1), 0) AS growth_pct\nFROM m\nORDER BY month_start;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "month_start",
+          "reels_posted",
+          "growth_pct"
+        ],
+        "rows": [
+          [
+            "2025-01-01",
+            "120",
+            null
+          ],
+          [
+            "2025-02-01",
+            "150",
+            "25.0"
+          ],
+          [
+            "2025-03-01",
+            "0",
+            "-100.0"
+          ],
+          [
+            "2025-04-01",
+            "90",
+            null
+          ],
+          [
+            "2025-05-01",
+            "90",
+            "0.0"
+          ],
+          [
+            "2025-06-01",
+            "135",
+            "50.0"
+          ],
+          [
+            "2025-07-01",
+            "0",
+            "-100.0"
+          ],
+          [
+            "2025-08-01",
+            "60",
+            null
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T408",
+      "slug": "gap-to-the-top-salary",
+      "title": "Gap to the top salary",
+      "section": "Value functions",
+      "difficulty": "Easy",
+      "topics": [
+        "Value functions",
+        "Window functions"
+      ],
+      "statement_md": "A LinkedIn-style job board stores the maximum salary advertised on each posting. For every posting return `posting_id`, `title`, `industry`, `max_salary` and `gap_to_top`, how far its salary is below the highest advertised salary in the same industry (0 for the top posting and any posting tied with it). Order by `industry`, then `posting_id`.",
+      "tables": [
+        {
+          "name": "job_postings",
+          "description_md": "One row per posting. Two Tech postings tie for the highest salary; Legal has a single posting.",
+          "columns": [
+            {
+              "name": "posting_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "industry",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "max_salary",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Data Engineer",
+              "Tech",
+              150000
+            ],
+            [
+              2,
+              "Backend Engineer",
+              "Tech",
+              135000
+            ],
+            [
+              3,
+              "ML Engineer",
+              "Tech",
+              150000
+            ],
+            [
+              4,
+              "QA Analyst",
+              "Tech",
+              98000
+            ],
+            [
+              5,
+              "Store Manager",
+              "Retail",
+              70000
+            ],
+            [
+              6,
+              "Buyer",
+              "Retail",
+              82000
+            ],
+            [
+              7,
+              "Merchandiser",
+              "Retail",
+              64000
+            ],
+            [
+              8,
+              "Paralegal",
+              "Legal",
+              120000
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Every row needs a value that belongs to one particular row of its own group.",
+        "Which row of the group do you want, and in what order would it come first?"
+      ],
+      "notes_md": "**Pattern:** Compare every row with a reference row of its group (best, first, latest) while keeping all detail rows.\n\n**Shape:** Within each industry, order the postings so the highest salary comes first, take that first salary onto every row, then subtract the row's own salary.\n\n**Syntax:** `FIRST_VALUE(expr) OVER (PARTITION BY p ORDER BY o)` returns `expr` from the first row of the partition in the window order. Which row counts as first depends entirely on ORDER BY and its direction.\n\n**Trap:** Sorting ascending (the first row is then the lowest salary) or skipping the partition so the whole table shares one top salary.\n\n**Interview follow-up:** How would you get the same column with MAX, and when is FIRST_VALUE the only option? (When the 'first' row is defined by a column other than the value itself.)",
+      "solutions": [
+        {
+          "label": "FIRST_VALUE",
+          "explain_md": "Ordering each industry by salary descending puts the top salary first; FIRST_VALUE copies it onto every row of the industry, and the default frame always includes the first row.",
+          "sql": "SELECT posting_id, title, industry, max_salary,\n       FIRST_VALUE(max_salary) OVER (PARTITION BY industry ORDER BY max_salary DESC) - max_salary AS gap_to_top\nFROM job_postings\nORDER BY industry, posting_id;"
+        },
+        {
+          "label": "Join to the group maximum",
+          "explain_md": "Compute each industry's top salary once with GROUP BY and join it back to the detail rows.",
+          "sql": "SELECT j.posting_id, j.title, j.industry, j.max_salary, t.top_salary - j.max_salary AS gap_to_top\nFROM job_postings j\nJOIN (SELECT industry, MAX(max_salary) AS top_salary FROM job_postings GROUP BY industry) t\n  ON t.industry = j.industry\nORDER BY j.industry, j.posting_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Ordering ascending makes the first row the lowest salary, so the 'gap' is measured to the bottom and comes out negative.",
+          "sql": "SELECT posting_id, title, industry, max_salary,\n       FIRST_VALUE(max_salary) OVER (PARTITION BY industry ORDER BY max_salary ASC) - max_salary AS gap_to_top\nFROM job_postings\nORDER BY industry, posting_id;"
+        },
+        {
+          "explain_md": "Without PARTITION BY every posting is measured against the single highest salary in the table.",
+          "sql": "SELECT posting_id, title, industry, max_salary,\n       FIRST_VALUE(max_salary) OVER (ORDER BY max_salary DESC) - max_salary AS gap_to_top\nFROM job_postings\nORDER BY industry, posting_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "posting_id",
+          "title",
+          "industry",
+          "max_salary",
+          "gap_to_top"
+        ],
+        "rows": [
+          [
+            "8",
+            "Paralegal",
+            "Legal",
+            "120000",
+            "0"
+          ],
+          [
+            "5",
+            "Store Manager",
+            "Retail",
+            "70000",
+            "12000"
+          ],
+          [
+            "6",
+            "Buyer",
+            "Retail",
+            "82000",
+            "0"
+          ],
+          [
+            "7",
+            "Merchandiser",
+            "Retail",
+            "64000",
+            "18000"
+          ],
+          [
+            "1",
+            "Data Engineer",
+            "Tech",
+            "150000",
+            "0"
+          ],
+          [
+            "2",
+            "Backend Engineer",
+            "Tech",
+            "135000",
+            "15000"
+          ],
+          [
+            "3",
+            "ML Engineer",
+            "Tech",
+            "150000",
+            "0"
+          ],
+          [
+            "4",
+            "QA Analyst",
+            "Tech",
+            "98000",
+            "52000"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T409",
+      "slug": "final-response-on-every-invite-row",
+      "title": "Final response on every invite row",
+      "section": "Value functions",
+      "difficulty": "Medium",
+      "topics": [
+        "Value functions",
+        "Window functions"
+      ],
+      "statement_md": "An Outlook-style calendar logs every response change to a meeting invite. Return every log row with `log_id`, `invite_id`, `response`, `responded_at` and `final_response`, the latest response (by `responded_at`) recorded for that invite. Log ids are assigned by several servers and are not in time order. Order by `log_id`.",
+      "tables": [
+        {
+          "name": "invite_responses",
+          "description_md": "One row per response event for an invite. `log_id` is unique but not chronological.",
+          "columns": [
+            {
+              "name": "log_id",
+              "type": "INT"
+            },
+            {
+              "name": "invite_id",
+              "type": "INT"
+            },
+            {
+              "name": "response",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "responded_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              5,
+              1,
+              "sent",
+              "2025-06-01 09:00:00"
+            ],
+            [
+              2,
+              1,
+              "tentative",
+              "2025-06-01 14:00:00"
+            ],
+            [
+              9,
+              1,
+              "accepted",
+              "2025-06-02 08:00:00"
+            ],
+            [
+              3,
+              1,
+              "declined",
+              "2025-06-04 16:00:00"
+            ],
+            [
+              1,
+              2,
+              "sent",
+              "2025-06-01 10:00:00"
+            ],
+            [
+              7,
+              2,
+              "accepted",
+              "2025-06-01 11:30:00"
+            ],
+            [
+              4,
+              3,
+              "sent",
+              "2025-06-02 12:00:00"
+            ],
+            [
+              8,
+              3,
+              "tentative",
+              "2025-06-02 15:00:00"
+            ],
+            [
+              6,
+              3,
+              "accepted",
+              "2025-06-03 09:00:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The last row of a group is only the last row once you have said what the order is.",
+        "A window with an ORDER BY does not automatically reach forward to the end of the group; check what rows it can see."
+      ],
+      "notes_md": "**Pattern:** Attach the group's final state to every detail row. Seen in 'current status next to history' reports.\n\n**Shape:** Per invite, order the responses by time and bring the value of the last one onto every row. Make sure the window can actually see the last row from the first.\n\n**Syntax:** `LAST_VALUE(expr) OVER (PARTITION BY p ORDER BY o frame)`. With an ORDER BY and no frame the default is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`, so the 'last' row it sees is the current row (plus ties). `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` widens it to the whole partition.\n\n**Trap:** Trusting the default frame (every row just returns itself), or ordering by the id column instead of the timestamp.\n\n**Interview follow-up:** Can you avoid LAST_VALUE entirely? (Flip the order and use FIRST_VALUE, which needs no frame.)",
+      "solutions": [
+        {
+          "label": "LAST_VALUE with a full frame",
+          "explain_md": "The explicit frame spans the whole invite, so LAST_VALUE sees the latest response from every row.",
+          "sql": "SELECT log_id, invite_id, response, responded_at,\n       LAST_VALUE(response) OVER (PARTITION BY invite_id ORDER BY responded_at\n                                  ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS final_response\nFROM invite_responses\nORDER BY log_id;"
+        },
+        {
+          "label": "FIRST_VALUE in reverse order",
+          "explain_md": "Sorting newest first makes the latest response the first row, and FIRST_VALUE works with the default frame.",
+          "sql": "SELECT log_id, invite_id, response, responded_at,\n       FIRST_VALUE(response) OVER (PARTITION BY invite_id ORDER BY responded_at DESC) AS final_response\nFROM invite_responses\nORDER BY log_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "With the default frame each row only sees itself and earlier rows, so final_response simply repeats response.",
+          "sql": "SELECT log_id, invite_id, response, responded_at,\n       LAST_VALUE(response) OVER (PARTITION BY invite_id ORDER BY responded_at) AS final_response\nFROM invite_responses\nORDER BY log_id;"
+        },
+        {
+          "explain_md": "Ordering by log_id picks the highest id, which is not the latest response because ids are not chronological.",
+          "sql": "SELECT log_id, invite_id, response, responded_at,\n       LAST_VALUE(response) OVER (PARTITION BY invite_id ORDER BY log_id\n                                  ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS final_response\nFROM invite_responses\nORDER BY log_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "log_id",
+          "invite_id",
+          "response",
+          "responded_at",
+          "final_response"
+        ],
+        "rows": [
+          [
+            "1",
+            "2",
+            "sent",
+            "2025-06-01 10:00:00",
+            "accepted"
+          ],
+          [
+            "2",
+            "1",
+            "tentative",
+            "2025-06-01 14:00:00",
+            "declined"
+          ],
+          [
+            "3",
+            "1",
+            "declined",
+            "2025-06-04 16:00:00",
+            "declined"
+          ],
+          [
+            "4",
+            "3",
+            "sent",
+            "2025-06-02 12:00:00",
+            "accepted"
+          ],
+          [
+            "5",
+            "1",
+            "sent",
+            "2025-06-01 09:00:00",
+            "declined"
+          ],
+          [
+            "6",
+            "3",
+            "accepted",
+            "2025-06-03 09:00:00",
+            "accepted"
+          ],
+          [
+            "7",
+            "2",
+            "accepted",
+            "2025-06-01 11:30:00",
+            "accepted"
+          ],
+          [
+            "8",
+            "3",
+            "tentative",
+            "2025-06-02 15:00:00",
+            "accepted"
+          ],
+          [
+            "9",
+            "1",
+            "accepted",
+            "2025-06-02 08:00:00",
+            "declined"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T410",
+      "slug": "entry-and-exit-page-per-session",
+      "title": "Entry and exit page per session",
+      "section": "Value functions",
+      "difficulty": "Medium",
+      "topics": [
+        "Value functions",
+        "Window functions"
+      ],
+      "statement_md": "An Amazon-style web analytics table logs each page a visitor sees in a session. Return one row per session with `session_id`, `entry_page` (the first page viewed) and `exit_page` (the last page viewed), ordered by `session_id`. A visitor may leave on the same page they entered on, and a session can have a single view. Page views within a session have distinct timestamps.",
+      "tables": [
+        {
+          "name": "site_page_views",
+          "description_md": "One row per page view.",
+          "columns": [
+            {
+              "name": "view_id",
+              "type": "INT"
+            },
+            {
+              "name": "session_id",
+              "type": "INT"
+            },
+            {
+              "name": "page",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "viewed_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "home",
+              "2025-07-01 10:00:00"
+            ],
+            [
+              2,
+              2,
+              "product",
+              "2025-07-01 10:05:00"
+            ],
+            [
+              3,
+              1,
+              "search",
+              "2025-07-01 10:01:00"
+            ],
+            [
+              4,
+              3,
+              "home",
+              "2025-07-01 10:20:00"
+            ],
+            [
+              5,
+              2,
+              "search",
+              "2025-07-01 10:06:00"
+            ],
+            [
+              6,
+              4,
+              "search",
+              "2025-07-01 11:00:00"
+            ],
+            [
+              7,
+              1,
+              "product",
+              "2025-07-01 10:03:00"
+            ],
+            [
+              8,
+              2,
+              "product",
+              "2025-07-01 10:09:00"
+            ],
+            [
+              9,
+              4,
+              "product",
+              "2025-07-01 11:02:00"
+            ],
+            [
+              10,
+              1,
+              "checkout",
+              "2025-07-01 10:07:00"
+            ],
+            [
+              11,
+              4,
+              "cart",
+              "2025-07-01 11:04:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The first and last pages are defined by time, not by the alphabet and not by the id.",
+        "You need a value from the first row and a value from the last row of the same group, side by side."
+      ],
+      "notes_md": "**Pattern:** First and last value per group together (entry/exit, open/close, first/last touch).\n\n**Shape:** Order each session by time, read the first page and the last page into two columns, and reduce to one row per session.\n\n**Syntax:** `FIRST_VALUE(expr)` and `LAST_VALUE(expr)` read the first and last row of the window frame. FIRST_VALUE works with the default frame; LAST_VALUE needs a frame that extends to the end. Window functions return a value on every row, so a one-row-per-group result needs DISTINCT or a join.\n\n**Trap:** Using MIN and MAX of the page name (alphabetical, not chronological) or leaving LAST_VALUE on its default frame so it returns the current row.\n\n**Interview follow-up:** How would you also return the number of pages per session, and how would a bounce (single view) be detected?",
+      "solutions": [
+        {
+          "label": "FIRST_VALUE and LAST_VALUE",
+          "explain_md": "Both functions share the session partition and time order; the full frame lets LAST_VALUE see the final page. DISTINCT collapses the identical rows of a session into one.",
+          "sql": "SELECT DISTINCT session_id,\n       FIRST_VALUE(page) OVER (PARTITION BY session_id ORDER BY viewed_at) AS entry_page,\n       LAST_VALUE(page) OVER (PARTITION BY session_id ORDER BY viewed_at\n                              ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS exit_page\nFROM site_page_views\nORDER BY session_id;"
+        },
+        {
+          "label": "Join back to first and last timestamps",
+          "explain_md": "Find each session's earliest and latest timestamp with GROUP BY, then join back to the rows at those times.",
+          "sql": "SELECT b.session_id, f.page AS entry_page, l.page AS exit_page\nFROM (SELECT session_id, MIN(viewed_at) AS first_at, MAX(viewed_at) AS last_at\n      FROM site_page_views GROUP BY session_id) b\nJOIN site_page_views f ON f.session_id = b.session_id AND f.viewed_at = b.first_at\nJOIN site_page_views l ON l.session_id = b.session_id AND l.viewed_at = b.last_at\nORDER BY b.session_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "MIN and MAX of the page name pick the alphabetically first and last page, not the first and last page viewed.",
+          "sql": "SELECT session_id, MIN(page) AS entry_page, MAX(page) AS exit_page\nFROM site_page_views\nGROUP BY session_id\nORDER BY session_id;"
+        },
+        {
+          "explain_md": "With the default frame LAST_VALUE returns each row's own page, so DISTINCT no longer collapses a session to one row.",
+          "sql": "SELECT DISTINCT session_id,\n       FIRST_VALUE(page) OVER (PARTITION BY session_id ORDER BY viewed_at) AS entry_page,\n       LAST_VALUE(page) OVER (PARTITION BY session_id ORDER BY viewed_at) AS exit_page\nFROM site_page_views\nORDER BY session_id, entry_page, exit_page;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "session_id",
+          "entry_page",
+          "exit_page"
+        ],
+        "rows": [
+          [
+            "1",
+            "home",
+            "checkout"
+          ],
+          [
+            "2",
+            "product",
+            "product"
+          ],
+          [
+            "3",
+            "home",
+            "home"
+          ],
+          [
+            "4",
+            "search",
+            "cart"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T411",
+      "slug": "second-title-each-profile-watched",
+      "title": "Second title each profile watched",
+      "section": "Value functions",
+      "difficulty": "Medium",
+      "topics": [
+        "Value functions",
+        "NULL handling"
+      ],
+      "statement_md": "A Netflix-style streaming team wants the second title each profile ever watched, as a retention signal. Return one row per profile with `profile_id` and `second_title`, NULL for profiles that have watched only one title. Order titles by `watched_on`, breaking same-day ties by `watch_id`. Order the result by `profile_id`.",
+      "dialect_note_md": "NTH_VALUE exists in MySQL 8.0 but not in SQL Server.",
+      "tables": [
+        {
+          "name": "watch_history",
+          "description_md": "One row per title started. Profile 3 started two titles on the same day.",
+          "columns": [
+            {
+              "name": "watch_id",
+              "type": "INT"
+            },
+            {
+              "name": "profile_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "watched_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "Stranger Things",
+              "2025-01-05"
+            ],
+            [
+              2,
+              1,
+              "The Crown",
+              "2025-01-09"
+            ],
+            [
+              3,
+              1,
+              "Wednesday",
+              "2025-02-01"
+            ],
+            [
+              4,
+              2,
+              "Narcos",
+              "2025-01-11"
+            ],
+            [
+              7,
+              3,
+              "Dark",
+              "2025-02-02"
+            ],
+            [
+              8,
+              3,
+              "Ozark",
+              "2025-02-02"
+            ],
+            [
+              5,
+              4,
+              "Bridgerton",
+              "2025-01-03"
+            ],
+            [
+              9,
+              4,
+              "Mindhunter",
+              "2025-01-20"
+            ],
+            [
+              6,
+              5,
+              "Lupin",
+              "2025-03-01"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You want the value of one particular position in each group's ordered list.",
+        "A window frame that stops at the current row cannot see rows further down the list."
+      ],
+      "notes_md": "**Pattern:** Nth item of an ordered list per group ('second purchase', 'third login').\n\n**Shape:** Per profile, order the titles by date then id, read the value in position two of that ordered list, and make sure every profile still appears once, with NULL when position two does not exist.\n\n**Syntax:** `NTH_VALUE(expr, n) OVER (PARTITION BY p ORDER BY o frame)` returns `expr` from the n-th row of the frame, NULL if the frame has fewer rows. Like LAST_VALUE it only sees up to the current row under the default frame.\n\n**Trap:** The default frame (the first row of each profile then has no second row yet), or filtering a ROW_NUMBER to 2 and silently losing the single-title profiles.\n\n**Interview follow-up:** How would you return the third title instead, or the latest title? What changes if the ordering has ties?",
+      "solutions": [
+        {
+          "label": "NTH_VALUE with a full frame",
+          "explain_md": "The frame spans the whole partition, so every row of a profile sees the same second title (NULL for one-title profiles); DISTINCT reduces it to one row per profile.",
+          "sql": "SELECT DISTINCT profile_id,\n       NTH_VALUE(title, 2) OVER (PARTITION BY profile_id ORDER BY watched_on, watch_id\n                                 ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS second_title\nFROM watch_history\nORDER BY profile_id;"
+        },
+        {
+          "label": "ROW_NUMBER then LEFT JOIN",
+          "explain_md": "Number each profile's titles, take row 2, and LEFT JOIN from the list of profiles so single-title profiles stay with NULL.",
+          "sql": "WITH r AS (\n  SELECT profile_id, title,\n         ROW_NUMBER() OVER (PARTITION BY profile_id ORDER BY watched_on, watch_id) AS rn\n  FROM watch_history\n)\nSELECT p.profile_id, r.title AS second_title\nFROM (SELECT DISTINCT profile_id FROM watch_history) p\nLEFT JOIN r ON r.profile_id = p.profile_id AND r.rn = 2\nORDER BY p.profile_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "With the default frame the first row of each profile has no second row in view, so DISTINCT returns two rows (one NULL, one real) for profiles with several titles.",
+          "sql": "SELECT DISTINCT profile_id,\n       NTH_VALUE(title, 2) OVER (PARTITION BY profile_id ORDER BY watched_on, watch_id) AS second_title\nFROM watch_history\nORDER BY profile_id, second_title;"
+        },
+        {
+          "explain_md": "Filtering ROW_NUMBER = 2 drops profiles that watched only one title instead of returning NULL for them.",
+          "sql": "WITH r AS (\n  SELECT profile_id, title,\n         ROW_NUMBER() OVER (PARTITION BY profile_id ORDER BY watched_on, watch_id) AS rn\n  FROM watch_history\n)\nSELECT profile_id, title AS second_title\nFROM r\nWHERE rn = 2\nORDER BY profile_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "profile_id",
+          "second_title"
+        ],
+        "rows": [
+          [
+            "1",
+            "The Crown"
+          ],
+          [
+            "2",
+            null
+          ],
+          [
+            "3",
+            "Ozark"
+          ],
+          [
+            "4",
+            "Mindhunter"
+          ],
+          [
+            "5",
+            null
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T412",
+      "slug": "winning-margin-per-tournament",
+      "title": "Winning margin per tournament",
+      "section": "Value functions",
+      "difficulty": "Hard",
+      "topics": [
+        "Value functions",
+        "Window functions"
+      ],
+      "statement_md": "An online game logs one score per entrant in each tournament. For every tournament return `tournament_id`, `top_score`, `runner_up_score` (the second entry when entries are listed from highest to lowest score) and `margin` (top minus runner-up). If two entrants tie for the top score the margin is 0; a tournament with a single entry has NULL runner-up and margin. Order by `tournament_id`.",
+      "dialect_note_md": "NTH_VALUE exists in MySQL 8.0 but not in SQL Server.",
+      "tables": [
+        {
+          "name": "tournament_scores",
+          "description_md": "One row per entrant per tournament. Tournament 2 has a tie at the top, tournament 4 a tie for second, tournament 3 a single entry.",
+          "columns": [
+            {
+              "name": "entry_id",
+              "type": "INT"
+            },
+            {
+              "name": "tournament_id",
+              "type": "INT"
+            },
+            {
+              "name": "gamertag",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "score",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "NovaKid",
+              90
+            ],
+            [
+              2,
+              1,
+              "PixelFox",
+              85
+            ],
+            [
+              3,
+              1,
+              "GrimLark",
+              70
+            ],
+            [
+              4,
+              2,
+              "QuietBolt",
+              88
+            ],
+            [
+              5,
+              2,
+              "MossyTank",
+              88
+            ],
+            [
+              6,
+              2,
+              "ZedZero",
+              60
+            ],
+            [
+              7,
+              3,
+              "SoloRun",
+              75
+            ],
+            [
+              8,
+              4,
+              "CometJay",
+              92
+            ],
+            [
+              9,
+              4,
+              "RustyAce",
+              80
+            ],
+            [
+              10,
+              4,
+              "Lumen",
+              80
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Think of each tournament as an ordered list; you need the entries in position one and position two of it.",
+        "Two entrants sharing the top score occupy positions one and two, they do not collapse into one."
+      ],
+      "notes_md": "**Pattern:** Top-two comparison per group. Used for margins, runner-up values and 'distance to the next best'.\n\n**Shape:** Per tournament, list the entries from highest score down, read position one and position two, then subtract. Decide how a tie at the top should behave before choosing a ranking function.\n\n**Syntax:** `NTH_VALUE(expr, 2)` takes the second row of the frame, so it needs a frame that reaches past the current row; `FIRST_VALUE(expr)` takes the first. `DENSE_RANK` numbers equal scores identically, so rank 2 can be a different, lower score than position 2.\n\n**Trap:** Using a ranking that gives tied scores the same number, which skips the tied entrant and measures the margin to the next distinct score.\n\n**Interview follow-up:** How would the margin change if you wanted the gap to the next distinct score instead, and how would you express it?",
+      "solutions": [
+        {
+          "label": "FIRST_VALUE and NTH_VALUE",
+          "explain_md": "Both functions use the same ordered, full-partition window: position one is the top score, position two is the runner-up even when it ties the winner. The subquery lets the outer query subtract the two and DISTINCT keep one row per tournament.",
+          "sql": "SELECT DISTINCT tournament_id, top_score, runner_up_score, top_score - runner_up_score AS margin\nFROM (\n  SELECT tournament_id,\n         FIRST_VALUE(score) OVER (PARTITION BY tournament_id ORDER BY score DESC, entry_id\n                                  ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS top_score,\n         NTH_VALUE(score, 2) OVER (PARTITION BY tournament_id ORDER BY score DESC, entry_id\n                                   ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS runner_up_score\n  FROM tournament_scores\n) t\nORDER BY tournament_id;"
+        },
+        {
+          "label": "ROW_NUMBER with conditional aggregation",
+          "explain_md": "Number the entries from highest score, then pick the score at number 1 and number 2 with CASE inside MAX; a missing second entry gives NULL.",
+          "sql": "WITH r AS (\n  SELECT tournament_id, score,\n         ROW_NUMBER() OVER (PARTITION BY tournament_id ORDER BY score DESC, entry_id) AS rn\n  FROM tournament_scores\n)\nSELECT tournament_id,\n       MAX(CASE WHEN rn = 1 THEN score END) AS top_score,\n       MAX(CASE WHEN rn = 2 THEN score END) AS runner_up_score,\n       MAX(CASE WHEN rn = 1 THEN score END) - MAX(CASE WHEN rn = 2 THEN score END) AS margin\nFROM r\nGROUP BY tournament_id\nORDER BY tournament_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "DENSE_RANK gives both tied winners rank 1, so 'rank 2' is the next lower score and the margin of a tournament with a tied top is not 0.",
+          "sql": "WITH r AS (\n  SELECT tournament_id, score,\n         DENSE_RANK() OVER (PARTITION BY tournament_id ORDER BY score DESC) AS rk\n  FROM tournament_scores\n)\nSELECT tournament_id,\n       MAX(CASE WHEN rk = 1 THEN score END) AS top_score,\n       MAX(CASE WHEN rk = 2 THEN score END) AS runner_up_score,\n       MAX(CASE WHEN rk = 1 THEN score END) - MAX(CASE WHEN rk = 2 THEN score END) AS margin\nFROM r\nGROUP BY tournament_id\nORDER BY tournament_id;"
+        },
+        {
+          "explain_md": "NTH_VALUE with the default frame cannot see the second row from the first row, so DISTINCT returns an extra row with NULLs per tournament.",
+          "sql": "SELECT DISTINCT tournament_id,\n       FIRST_VALUE(score) OVER (PARTITION BY tournament_id ORDER BY score DESC, entry_id) AS top_score,\n       NTH_VALUE(score, 2) OVER (PARTITION BY tournament_id ORDER BY score DESC, entry_id) AS runner_up_score\nFROM tournament_scores\nORDER BY tournament_id, runner_up_score;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "tournament_id",
+          "top_score",
+          "runner_up_score",
+          "margin"
+        ],
+        "rows": [
+          [
+            "1",
+            "90",
+            "85",
+            "5"
+          ],
+          [
+            "2",
+            "88",
+            "88",
+            "0"
+          ],
+          [
+            "3",
+            "75",
+            null,
+            null
+          ],
+          [
+            "4",
+            "92",
+            "80",
+            "12"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T413",
+      "slug": "busiest-hours-in-each-channel",
+      "title": "Busiest hours in each channel",
+      "section": "Value functions",
+      "difficulty": "Hard",
+      "topics": [
+        "Value functions",
+        "Window functions"
+      ],
+      "statement_md": "A Microsoft Teams-style analytics table counts messages per channel per hour. Return the hours where a channel's message count was strictly higher than in both the hour before and the hour after, as `channel`, `hour_start` and `messages`. The first and last hour of a channel have only one neighbour and do not qualify; a plateau of equal counts is not a peak. Order by `channel`, then `hour_start`.",
+      "tables": [
+        {
+          "name": "channel_hourly_messages",
+          "description_md": "One row per channel per consecutive hour.",
+          "columns": [
+            {
+              "name": "channel",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "hour_start",
+              "type": "DATETIME"
+            },
+            {
+              "name": "messages",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "general",
+              "2025-04-01 09:00:00",
+              3
+            ],
+            [
+              "general",
+              "2025-04-01 10:00:00",
+              8
+            ],
+            [
+              "general",
+              "2025-04-01 11:00:00",
+              4
+            ],
+            [
+              "general",
+              "2025-04-01 12:00:00",
+              6
+            ],
+            [
+              "general",
+              "2025-04-01 13:00:00",
+              6
+            ],
+            [
+              "general",
+              "2025-04-01 14:00:00",
+              2
+            ],
+            [
+              "general",
+              "2025-04-01 15:00:00",
+              7
+            ],
+            [
+              "general",
+              "2025-04-01 16:00:00",
+              5
+            ],
+            [
+              "standup",
+              "2025-04-01 09:00:00",
+              9
+            ],
+            [
+              "standup",
+              "2025-04-01 10:00:00",
+              3
+            ],
+            [
+              "standup",
+              "2025-04-01 11:00:00",
+              4
+            ],
+            [
+              "standup",
+              "2025-04-01 12:00:00",
+              10
+            ],
+            [
+              "random",
+              "2025-04-01 09:00:00",
+              1
+            ],
+            [
+              "random",
+              "2025-04-01 10:00:00",
+              5
+            ],
+            [
+              "random",
+              "2025-04-01 11:00:00",
+              2
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "A row can be a peak only if it can see a neighbour on each side.",
+        "Compare strictly; two equal neighbours in a row means neither is higher than the other."
+      ],
+      "notes_md": "**Pattern:** Neighbour comparison on both sides (local maxima, spikes, dips). Needs a look-back and a look-ahead at once.\n\n**Shape:** Within each channel and in time order, attach the previous hour's count and the next hour's count to every row, then keep rows larger than both.\n\n**Syntax:** Several value functions can share one query: `LAG(x) OVER (PARTITION BY p ORDER BY o)` and `LEAD(x) OVER (PARTITION BY p ORDER BY o)`. At the edges they return NULL, and a comparison with NULL is never true.\n\n**Trap:** Replacing the edge NULLs with 0 (the ends then look like peaks) or using >= so plateaus count.\n\n**Interview follow-up:** How would you find local minima as well, and how would you report plateau peaks if the business wanted them?",
+      "solutions": [
+        {
+          "label": "LAG and LEAD",
+          "explain_md": "Each row gets the previous and next hour's count of the same channel; at a channel's ends one of them is NULL, so the comparison is not true and the row is excluded.",
+          "sql": "WITH n AS (\n  SELECT channel, hour_start, messages,\n         LAG(messages) OVER (PARTITION BY channel ORDER BY hour_start) AS prev_msgs,\n         LEAD(messages) OVER (PARTITION BY channel ORDER BY hour_start) AS next_msgs\n  FROM channel_hourly_messages\n)\nSELECT channel, hour_start, messages\nFROM n\nWHERE messages > prev_msgs AND messages > next_msgs\nORDER BY channel, hour_start;"
+        },
+        {
+          "label": "Number the rows and self-join",
+          "explain_md": "Number each channel's hours, then join every hour to the rows numbered one lower and one higher; the inner joins drop the ends automatically.",
+          "sql": "WITH numbered AS (\n  SELECT channel, hour_start, messages,\n         ROW_NUMBER() OVER (PARTITION BY channel ORDER BY hour_start) AS rn\n  FROM channel_hourly_messages\n)\nSELECT c.channel, c.hour_start, c.messages\nFROM numbered c\nJOIN numbered p ON p.channel = c.channel AND p.rn = c.rn - 1\nJOIN numbered n ON n.channel = c.channel AND n.rn = c.rn + 1\nWHERE c.messages > p.messages AND c.messages > n.messages\nORDER BY c.channel, c.hour_start;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Replacing the missing neighbours with 0 makes the first and last hours look higher than a neighbour that does not exist.",
+          "sql": "WITH n AS (\n  SELECT channel, hour_start, messages,\n         COALESCE(LAG(messages) OVER (PARTITION BY channel ORDER BY hour_start), 0) AS prev_msgs,\n         COALESCE(LEAD(messages) OVER (PARTITION BY channel ORDER BY hour_start), 0) AS next_msgs\n  FROM channel_hourly_messages\n)\nSELECT channel, hour_start, messages\nFROM n\nWHERE messages > prev_msgs AND messages > next_msgs\nORDER BY channel, hour_start;"
+        },
+        {
+          "explain_md": "Using >= lets plateaus of equal counts qualify as peaks.",
+          "sql": "WITH n AS (\n  SELECT channel, hour_start, messages,\n         LAG(messages) OVER (PARTITION BY channel ORDER BY hour_start) AS prev_msgs,\n         LEAD(messages) OVER (PARTITION BY channel ORDER BY hour_start) AS next_msgs\n  FROM channel_hourly_messages\n)\nSELECT channel, hour_start, messages\nFROM n\nWHERE messages >= prev_msgs AND messages >= next_msgs\nORDER BY channel, hour_start;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "channel",
+          "hour_start",
+          "messages"
+        ],
+        "rows": [
+          [
+            "general",
+            "2025-04-01 10:00:00",
+            "8"
+          ],
+          [
+            "general",
+            "2025-04-01 15:00:00",
+            "7"
+          ],
+          [
+            "random",
+            "2025-04-01 10:00:00",
+            "5"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T414",
+      "slug": "three-months-of-rising-card-spend",
+      "title": "Three months of rising card spend",
+      "section": "Value functions",
+      "difficulty": "Hard",
+      "topics": [
+        "Value functions",
+        "Period comparisons"
+      ],
+      "statement_md": "A bank flags customers whose monthly card spend rose in each of three consecutive calendar months. Return `customer_id`, `month_start` and `spend` for every month that completes such a run, meaning its spend is strictly higher than the previous month's, which is strictly higher than the month before that. Both earlier months must be the actual preceding calendar months: a skipped month breaks the run. Order by `customer_id`, then `month_start`.",
+      "tables": [
+        {
+          "name": "card_spend",
+          "description_md": "One row per customer per month with card activity; some months are missing.",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "month_start",
+              "type": "DATE"
+            },
+            {
+              "name": "spend",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "2025-01-01",
+              50.0
+            ],
+            [
+              1,
+              "2025-02-01",
+              60.0
+            ],
+            [
+              1,
+              "2025-03-01",
+              75.0
+            ],
+            [
+              1,
+              "2025-04-01",
+              90.0
+            ],
+            [
+              2,
+              "2025-01-01",
+              40.0
+            ],
+            [
+              2,
+              "2025-02-01",
+              55.0
+            ],
+            [
+              2,
+              "2025-04-01",
+              70.0
+            ],
+            [
+              2,
+              "2025-05-01",
+              85.0
+            ],
+            [
+              3,
+              "2025-01-01",
+              30.0
+            ],
+            [
+              3,
+              "2025-02-01",
+              30.0
+            ],
+            [
+              3,
+              "2025-03-01",
+              45.0
+            ],
+            [
+              3,
+              "2025-04-01",
+              50.0
+            ],
+            [
+              4,
+              "2025-02-01",
+              20.0
+            ],
+            [
+              4,
+              "2025-03-01",
+              15.0
+            ],
+            [
+              4,
+              "2025-04-01",
+              25.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Each qualifying month needs the two months before it, not just two earlier rows.",
+        "A customer with no card activity in a month has no row for it, so rows can be further apart than months."
+      ],
+      "notes_md": "**Pattern:** Streak of length N over consecutive periods, where absent periods must break the streak.\n\n**Shape:** Per customer, bring the previous month's and the one-before-that month's spend onto each row, also check those rows really are the preceding calendar months, then compare.\n\n**Syntax:** `LAG(expr, 1)` and `LAG(expr, 2)` read one and two rows back in the window order. The offset counts rows, not months, so on sparse data the dates have to be checked as well.\n\n**Trap:** Trusting row offsets on data with missing months, or using >= so a flat month extends the run.\n\n**Interview follow-up:** How would you find the longest rising run per customer instead of runs of exactly three?",
+      "solutions": [
+        {
+          "label": "Two LAGs plus a date check",
+          "explain_md": "LAG(spend, 1) and LAG(spend, 2) supply the earlier amounts; LAG(month_start, 2) must equal the month two calendar months earlier, which also guarantees the middle row is the previous month.",
+          "sql": "WITH s AS (\n  SELECT customer_id, month_start, spend,\n         LAG(spend, 1) OVER (PARTITION BY customer_id ORDER BY month_start) AS spend_1,\n         LAG(spend, 2) OVER (PARTITION BY customer_id ORDER BY month_start) AS spend_2,\n         LAG(month_start, 2) OVER (PARTITION BY customer_id ORDER BY month_start) AS month_2\n  FROM card_spend\n)\nSELECT customer_id, month_start, spend\nFROM s\nWHERE spend > spend_1 AND spend_1 > spend_2\n  AND month_2 = DATE_SUB(month_start, INTERVAL 2 MONTH)\nORDER BY customer_id, month_start;"
+        },
+        {
+          "label": "Self-join the two previous months",
+          "explain_md": "Joining each month to the rows dated exactly one and two months earlier drops any month without both predecessors.",
+          "sql": "SELECT c.customer_id, c.month_start, c.spend\nFROM card_spend c\nJOIN card_spend p1 ON p1.customer_id = c.customer_id\n  AND p1.month_start = DATE_SUB(c.month_start, INTERVAL 1 MONTH)\nJOIN card_spend p2 ON p2.customer_id = c.customer_id\n  AND p2.month_start = DATE_SUB(c.month_start, INTERVAL 2 MONTH)\nWHERE c.spend > p1.spend AND p1.spend > p2.spend\nORDER BY c.customer_id, c.month_start;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Comparing only rows, not dates, treats a customer with a skipped month as having three consecutive months.",
+          "sql": "WITH s AS (\n  SELECT customer_id, month_start, spend,\n         LAG(spend, 1) OVER (PARTITION BY customer_id ORDER BY month_start) AS spend_1,\n         LAG(spend, 2) OVER (PARTITION BY customer_id ORDER BY month_start) AS spend_2\n  FROM card_spend\n)\nSELECT customer_id, month_start, spend\nFROM s\nWHERE spend > spend_1 AND spend_1 > spend_2\nORDER BY customer_id, month_start;"
+        },
+        {
+          "explain_md": "Using >= lets a flat month count as part of a rising run.",
+          "sql": "WITH s AS (\n  SELECT customer_id, month_start, spend,\n         LAG(spend, 1) OVER (PARTITION BY customer_id ORDER BY month_start) AS spend_1,\n         LAG(spend, 2) OVER (PARTITION BY customer_id ORDER BY month_start) AS spend_2,\n         LAG(month_start, 2) OVER (PARTITION BY customer_id ORDER BY month_start) AS month_2\n  FROM card_spend\n)\nSELECT customer_id, month_start, spend\nFROM s\nWHERE spend >= spend_1 AND spend_1 >= spend_2\n  AND month_2 = DATE_SUB(month_start, INTERVAL 2 MONTH)\nORDER BY customer_id, month_start;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "month_start",
+          "spend"
+        ],
+        "rows": [
+          [
+            "1",
+            "2025-03-01",
+            "75.00"
+          ],
+          [
+            "1",
+            "2025-04-01",
+            "90.00"
+          ],
+          [
+            "3",
+            "2025-04-01",
+            "50.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T415",
+      "slug": "gaps-in-prime-membership",
+      "title": "Gaps in Prime membership",
+      "section": "Value functions",
+      "difficulty": "Hard",
+      "topics": [
+        "Value functions",
+        "Gaps and islands",
+        "Dates"
+      ],
+      "statement_md": "An Amazon Prime-style table lists membership periods; a member can have several, and periods may overlap. Find every period of one or more days with no coverage between a member's consecutive periods. Return `member_id`, `gap_start` (the day after a period ends), `gap_end` (the day before the next period starts) and `gap_days`, the number of uncovered days. Memberships that start the day after the previous one ends leave no gap. Order by `member_id`, then `gap_start`.",
+      "tables": [
+        {
+          "name": "prime_memberships",
+          "description_md": "One row per membership period, end date inclusive.",
+          "columns": [
+            {
+              "name": "membership_id",
+              "type": "INT"
+            },
+            {
+              "name": "member_id",
+              "type": "INT"
+            },
+            {
+              "name": "start_date",
+              "type": "DATE"
+            },
+            {
+              "name": "end_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2024-01-01",
+              "2024-06-30"
+            ],
+            [
+              2,
+              1,
+              "2024-07-01",
+              "2024-12-31"
+            ],
+            [
+              3,
+              1,
+              "2025-02-01",
+              "2025-07-31"
+            ],
+            [
+              4,
+              2,
+              "2024-03-01",
+              "2024-08-31"
+            ],
+            [
+              5,
+              2,
+              "2024-08-15",
+              "2025-02-14"
+            ],
+            [
+              6,
+              2,
+              "2025-03-01",
+              "2025-12-31"
+            ],
+            [
+              7,
+              3,
+              "2024-05-01",
+              "2025-04-30"
+            ],
+            [
+              8,
+              4,
+              "2024-01-01",
+              "2024-03-31"
+            ],
+            [
+              9,
+              4,
+              "2024-04-02",
+              "2024-09-30"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "A gap exists between two periods only if there is at least one full day not covered by either; touching periods leave nothing between them.",
+        "Compare each period's end with the start of the member's next period."
+      ],
+      "notes_md": "**Pattern:** Gaps between consecutive intervals (coverage, subscriptions, employment history).\n\n**Shape:** Per member, order the periods by start date, bring the next period's start next to each end date, work out the uncovered days in between, and keep only positive results.\n\n**Syntax:** `LEAD(start_date) OVER (PARTITION BY m ORDER BY start_date)` gives the next start. `DATEDIFF(next_start, end_date)` is 1 when the next period starts the day after the end, so uncovered days are that minus 1.\n\n**Trap:** Counting back-to-back periods as a one-day gap (an off-by-one on the boundary), or not partitioning so the last period of one member is compared with the first of another.\n\n**Interview follow-up:** What goes wrong if one long membership fully contains a later short one? How would you handle it?",
+      "solutions": [
+        {
+          "label": "LEAD",
+          "explain_md": "LEAD supplies the next start per member; a DATEDIFF above 1 means at least one full day lies between the periods. Overlaps give a zero or negative difference and drop out.",
+          "sql": "WITH n AS (\n  SELECT member_id, end_date,\n         LEAD(start_date) OVER (PARTITION BY member_id ORDER BY start_date, membership_id) AS next_start\n  FROM prime_memberships\n)\nSELECT member_id,\n       DATE_ADD(end_date, INTERVAL 1 DAY) AS gap_start,\n       DATE_SUB(next_start, INTERVAL 1 DAY) AS gap_end,\n       DATEDIFF(next_start, end_date) - 1 AS gap_days\nFROM n\nWHERE DATEDIFF(next_start, end_date) > 1\nORDER BY member_id, gap_start;"
+        },
+        {
+          "label": "Join each period to the next one",
+          "explain_md": "A correlated MIN finds the next start date of the same member; joining on it pairs each period with its successor without a window function.",
+          "sql": "SELECT a.member_id,\n       DATE_ADD(a.end_date, INTERVAL 1 DAY) AS gap_start,\n       DATE_SUB(b.start_date, INTERVAL 1 DAY) AS gap_end,\n       DATEDIFF(b.start_date, a.end_date) - 1 AS gap_days\nFROM prime_memberships a\nJOIN prime_memberships b\n  ON b.member_id = a.member_id\n AND b.start_date = (SELECT MIN(x.start_date) FROM prime_memberships x\n                     WHERE x.member_id = a.member_id AND x.start_date > a.start_date)\nWHERE DATEDIFF(b.start_date, a.end_date) > 1\nORDER BY a.member_id, gap_start;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A threshold of 1 or more days between end and next start counts back-to-back periods as a gap, and every gap is reported one day too long.",
+          "sql": "WITH n AS (\n  SELECT member_id, end_date,\n         LEAD(start_date) OVER (PARTITION BY member_id ORDER BY start_date, membership_id) AS next_start\n  FROM prime_memberships\n)\nSELECT member_id,\n       end_date AS gap_start,\n       next_start AS gap_end,\n       DATEDIFF(next_start, end_date) AS gap_days\nFROM n\nWHERE DATEDIFF(next_start, end_date) >= 1\nORDER BY member_id, gap_start;"
+        },
+        {
+          "explain_md": "Without PARTITION BY the periods of all members are lined up in one list, so gaps are measured across different members.",
+          "sql": "WITH n AS (\n  SELECT member_id, end_date,\n         LEAD(start_date) OVER (ORDER BY start_date, membership_id) AS next_start\n  FROM prime_memberships\n)\nSELECT member_id,\n       DATE_ADD(end_date, INTERVAL 1 DAY) AS gap_start,\n       DATE_SUB(next_start, INTERVAL 1 DAY) AS gap_end,\n       DATEDIFF(next_start, end_date) - 1 AS gap_days\nFROM n\nWHERE DATEDIFF(next_start, end_date) > 1\nORDER BY member_id, gap_start;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "member_id",
+          "gap_start",
+          "gap_end",
+          "gap_days"
+        ],
+        "rows": [
+          [
+            "1",
+            "2025-01-01",
+            "2025-01-31",
+            "31"
+          ],
+          [
+            "2",
+            "2025-02-15",
+            "2025-02-28",
+            "14"
+          ],
+          [
+            "4",
+            "2024-04-01",
+            "2024-04-01",
+            "1"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

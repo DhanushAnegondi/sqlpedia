@@ -1,0 +1,2009 @@
+{
+  "problems": [
+    {
+      "id": "T601",
+      "slug": "count-from-one-to-ten",
+      "title": "Count from one to ten",
+      "section": "Recursive CTEs",
+      "difficulty": "Easy",
+      "topics": [
+        "Recursive CTEs"
+      ],
+      "statement_md": "The player at a Netflix-style streaming service shows a numbered episode list for each season. For season 2 of `Harbor Lights`, return one row per episode, `episode_no`, from 1 through that season's `episode_count`, ordered by `episode_no`. The numbers do not exist in any table, so you have to produce them.",
+      "tables": [
+        {
+          "name": "seasons",
+          "description_md": "One row per season of a show.",
+          "columns": [
+            {
+              "name": "season_id",
+              "type": "INT"
+            },
+            {
+              "name": "show_title",
+              "type": "VARCHAR(25)"
+            },
+            {
+              "name": "season_no",
+              "type": "INT"
+            },
+            {
+              "name": "episode_count",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Harbor Lights",
+              1,
+              8
+            ],
+            [
+              2,
+              "Harbor Lights",
+              2,
+              10
+            ],
+            [
+              3,
+              "Glass Orchard",
+              1,
+              6
+            ],
+            [
+              4,
+              "Glass Orchard",
+              2,
+              12
+            ],
+            [
+              5,
+              "Midnight Diner Club",
+              1,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "There is no table of numbers to select from. Think about a query that can feed its own previous output back into itself.",
+        "Whatever you build needs a starting value, a step, and a point where it stops. Check both ends of the range: does your output include episode 10 and nothing beyond it?"
+      ],
+      "notes_md": "**Pattern:** Number series generator. An interviewer reaches for it when the rows you need (numbers, dates) are not stored anywhere.\n\n**Shape:** Start from one row holding 1. Repeatedly produce the next row from the previous one by adding 1, and stop when the value reaches the limit stored in the table.\n\n**Syntax:** A `WITH RECURSIVE` CTE has two members joined by `UNION ALL`: the anchor runs once, the recursive member reads from the CTE's own name and runs again on each new batch of rows. Recursion ends when the recursive member returns no rows. MySQL also aborts at `cte_max_recursion_depth` (default 1000). The column names come from the anchor: `WITH RECURSIVE name AS (...)`.\n\n**Trap:** Off by one on the stop condition. The condition is tested on the row you already have, before the next one is produced, so `<` and `<=` differ by a whole row.\n\n**Interview follow-up:** How would you generate 5000 numbers when the recursion limit is 1000? (Raise the session limit, or build bigger numbers by cross joining a small digit table.)",
+      "solutions": [
+        {
+          "label": "Limit read from the table",
+          "explain_md": "The anchor emits 1; each step adds 1 while the current value is still below the season's episode count, so the last value emitted equals the episode count.",
+          "sql": "WITH RECURSIVE eps AS (\n  SELECT 1 AS episode_no\n  UNION ALL\n  SELECT episode_no + 1\n  FROM eps\n  WHERE episode_no < (SELECT episode_count FROM seasons WHERE show_title = 'Harbor Lights' AND season_no = 2)\n)\nSELECT episode_no\nFROM eps\nORDER BY episode_no;"
+        },
+        {
+          "label": "Limit carried in the CTE",
+          "explain_md": "The anchor selects the season row, so the episode count travels with every generated row and the stop test needs no subquery.",
+          "sql": "WITH RECURSIVE eps AS (\n  SELECT 1 AS episode_no, episode_count AS last_ep\n  FROM seasons\n  WHERE show_title = 'Harbor Lights' AND season_no = 2\n  UNION ALL\n  SELECT episode_no + 1, last_ep\n  FROM eps\n  WHERE episode_no < last_ep\n)\nSELECT episode_no\nFROM eps\nORDER BY episode_no;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`<=` lets the step run once more after reaching 10, so an eleventh episode is produced.",
+          "sql": "WITH RECURSIVE eps AS (\n  SELECT 1 AS episode_no\n  UNION ALL\n  SELECT episode_no + 1\n  FROM eps\n  WHERE episode_no <= (SELECT episode_count FROM seasons WHERE show_title = 'Harbor Lights' AND season_no = 2)\n)\nSELECT episode_no\nFROM eps\nORDER BY episode_no;"
+        },
+        {
+          "explain_md": "Stopping at `episode_count - 1` ends the series one row early, so episode 10 is missing.",
+          "sql": "WITH RECURSIVE eps AS (\n  SELECT 1 AS episode_no\n  UNION ALL\n  SELECT episode_no + 1\n  FROM eps\n  WHERE episode_no < (SELECT episode_count FROM seasons WHERE show_title = 'Harbor Lights' AND season_no = 2) - 1\n)\nSELECT episode_no\nFROM eps\nORDER BY episode_no;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "episode_no"
+        ],
+        "rows": [
+          [
+            "1"
+          ],
+          [
+            "2"
+          ],
+          [
+            "3"
+          ],
+          [
+            "4"
+          ],
+          [
+            "5"
+          ],
+          [
+            "6"
+          ],
+          [
+            "7"
+          ],
+          [
+            "8"
+          ],
+          [
+            "9"
+          ],
+          [
+            "10"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T602",
+      "slug": "rides-for-every-day-of-the-week",
+      "title": "Rides for every day of the week",
+      "section": "Recursive CTEs",
+      "difficulty": "Easy",
+      "topics": [
+        "Recursive CTEs",
+        "Dates"
+      ],
+      "statement_md": "An Uber-style ride-hailing company wants one line for each day of the week of 3 to 9 March 2025, quiet days included. Return `day_date`, `ride_count` (completed rides that day) and `revenue` (total `fare` that day, `0` when there are none), ordered by `day_date`. Rides on other dates must not appear.",
+      "tables": [
+        {
+          "name": "rides",
+          "description_md": "One row per completed ride.",
+          "columns": [
+            {
+              "name": "ride_id",
+              "type": "INT"
+            },
+            {
+              "name": "rider",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "ride_date",
+              "type": "DATE"
+            },
+            {
+              "name": "fare",
+              "type": "DECIMAL(6,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Hollis",
+              "2025-02-28",
+              14.5
+            ],
+            [
+              2,
+              "Imani",
+              "2025-03-03",
+              9.2
+            ],
+            [
+              3,
+              "Joaquin",
+              "2025-03-03",
+              31.0
+            ],
+            [
+              4,
+              "Kerstin",
+              "2025-03-04",
+              12.75
+            ],
+            [
+              5,
+              "Lamar",
+              "2025-03-06",
+              8.4
+            ],
+            [
+              6,
+              "Mireille",
+              "2025-03-06",
+              22.1
+            ],
+            [
+              7,
+              "Nolan",
+              "2025-03-06",
+              17.6
+            ],
+            [
+              8,
+              "Orla",
+              "2025-03-07",
+              45.0
+            ],
+            [
+              9,
+              "Pavel",
+              "2025-03-09",
+              10.3
+            ],
+            [
+              10,
+              "Quinn",
+              "2025-03-10",
+              6.8
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Two days in the week have no rides at all, so they cannot be found by looking at the rides table alone.",
+        "First produce the seven dates themselves, then attach the rides to them. Watch what an empty day does to a count."
+      ],
+      "notes_md": "**Pattern:** Date spine with zero fill. Reports that must show every day, even the empty ones, start from a generated calendar.\n\n**Shape:** Generate the seven dates of the week as their own row source, keep every one of them, and bring the rides in from the side so that empty days survive with zeros.\n\n**Syntax:** `COUNT(*)` counts rows, `COUNT(col)` counts non-NULL values of `col`. `COALESCE(x, 0)` replaces a NULL result. A date plus `INTERVAL n DAY` moves forward by n days: `d + INTERVAL 1 DAY`.\n\n**Trap:** Starting from the rides table (empty days vanish), or starting from the spine but using `COUNT(*)`, which reports 1 for an empty day because the unmatched spine row itself is counted.\n\n**Interview follow-up:** How would you extend this to a full month, or to a range given by parameters? (Stop condition from the end date; mind the recursion depth limit.)",
+      "solutions": [
+        {
+          "label": "Recursive date spine",
+          "explain_md": "The spine adds one day per step until 9 March. A LEFT JOIN keeps every spine day, `COUNT(r.ride_id)` ignores the NULL side, and COALESCE zero-fills the revenue.",
+          "sql": "WITH RECURSIVE week AS (\n  SELECT DATE '2025-03-03' AS day_date\n  UNION ALL\n  SELECT day_date + INTERVAL 1 DAY\n  FROM week\n  WHERE day_date < DATE '2025-03-09'\n)\nSELECT w.day_date,\n       COUNT(r.ride_id) AS ride_count,\n       COALESCE(SUM(r.fare), 0) AS revenue\nFROM week w\nLEFT JOIN rides r ON r.ride_date = w.day_date\nGROUP BY w.day_date\nORDER BY w.day_date;"
+        },
+        {
+          "label": "Offset counter",
+          "explain_md": "Generate the numbers 0 to 6 and add each to the Monday date. The join and the aggregation are unchanged.",
+          "sql": "WITH RECURSIVE offsets AS (\n  SELECT 0 AS n\n  UNION ALL\n  SELECT n + 1 FROM offsets WHERE n < 6\n), week AS (\n  SELECT DATE '2025-03-03' + INTERVAL n DAY AS day_date FROM offsets\n)\nSELECT w.day_date,\n       COUNT(r.ride_id) AS ride_count,\n       COALESCE(SUM(r.fare), 0) AS revenue\nFROM week w\nLEFT JOIN rides r ON r.ride_date = w.day_date\nGROUP BY w.day_date\nORDER BY w.day_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Grouping the rides directly never sees the two empty days, so they are missing from the result.",
+          "sql": "SELECT ride_date AS day_date,\n       COUNT(*) AS ride_count,\n       SUM(fare) AS revenue\nFROM rides\nWHERE ride_date BETWEEN '2025-03-03' AND '2025-03-09'\nGROUP BY ride_date\nORDER BY ride_date;"
+        },
+        {
+          "explain_md": "With the spine in place, `COUNT(*)` counts the unmatched spine row and reports 1 ride on days that have none.",
+          "sql": "WITH RECURSIVE week AS (\n  SELECT DATE '2025-03-03' AS day_date\n  UNION ALL\n  SELECT day_date + INTERVAL 1 DAY FROM week WHERE day_date < DATE '2025-03-09'\n)\nSELECT w.day_date,\n       COUNT(*) AS ride_count,\n       COALESCE(SUM(r.fare), 0) AS revenue\nFROM week w\nLEFT JOIN rides r ON r.ride_date = w.day_date\nGROUP BY w.day_date\nORDER BY w.day_date;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "day_date",
+          "ride_count",
+          "revenue"
+        ],
+        "rows": [
+          [
+            "2025-03-03",
+            "2",
+            "40.20"
+          ],
+          [
+            "2025-03-04",
+            "1",
+            "12.75"
+          ],
+          [
+            "2025-03-05",
+            "0",
+            "0.00"
+          ],
+          [
+            "2025-03-06",
+            "3",
+            "48.10"
+          ],
+          [
+            "2025-03-07",
+            "1",
+            "45.00"
+          ],
+          [
+            "2025-03-08",
+            "0",
+            "0.00"
+          ],
+          [
+            "2025-03-09",
+            "1",
+            "10.30"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T603",
+      "slug": "missing-invoice-numbers",
+      "title": "Missing invoice numbers",
+      "section": "Recursive CTEs",
+      "difficulty": "Medium",
+      "topics": [
+        "Recursive CTEs",
+        "Anti-joins"
+      ],
+      "statement_md": "An Amazon-style marketplace issues numbered invoices to its sellers, and the finance audit needs to know which invoice numbers between the lowest and the highest ever issued were never used. Return each unused number as `missing_no`, ordered ascending. Draft invoices have no number yet (`invoice_no` is NULL) and must not break the answer.",
+      "tables": [
+        {
+          "name": "seller_invoices",
+          "description_md": "One row per invoice issued to a seller. `invoice_no` is NULL for drafts that have not been numbered.",
+          "columns": [
+            {
+              "name": "invoice_row",
+              "type": "INT"
+            },
+            {
+              "name": "invoice_no",
+              "type": "INT"
+            },
+            {
+              "name": "seller",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              201,
+              "Brightway Home",
+              120.0
+            ],
+            [
+              2,
+              202,
+              "Cobalt Gadgets",
+              75.5
+            ],
+            [
+              3,
+              203,
+              "Delmar Books",
+              310.0
+            ],
+            [
+              4,
+              206,
+              "Brightway Home",
+              42.0
+            ],
+            [
+              5,
+              207,
+              "Evergreen Toys",
+              99.0
+            ],
+            [
+              6,
+              210,
+              "Cobalt Gadgets",
+              180.0
+            ],
+            [
+              7,
+              211,
+              "Fenwick Pets",
+              64.25
+            ],
+            [
+              8,
+              212,
+              "Delmar Books",
+              20.0
+            ],
+            [
+              9,
+              214,
+              "Evergreen Toys",
+              150.0
+            ],
+            [
+              10,
+              215,
+              "Brightway Home",
+              88.0
+            ],
+            [
+              11,
+              null,
+              "Fenwick Pets",
+              35.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The numbers that were used are in the table; the ones you want are not. First build the full list of numbers that should exist.",
+        "Compare that full list with what was used and keep what has no match. Be careful about how NULLs behave in the comparison you pick."
+      ],
+      "notes_md": "**Pattern:** Gap finding by generating the complete range and anti-joining. Interviewers use it for missing ids, order numbers and dates.\n\n**Shape:** Find the lowest and highest used number, generate every integer in between, and keep the generated numbers that have no matching invoice.\n\n**Syntax:** `LEFT JOIN ... WHERE right.key IS NULL` and `NOT EXISTS (SELECT 1 ...)` are the two NULL-safe anti-join forms. `x NOT IN (subquery)` evaluates to unknown for every row when the subquery contains a NULL.\n\n**Trap:** Generating from 1 instead of from the minimum (extra rows for numbers that were never in range), or using `NOT IN` against a column that contains a NULL, which returns nothing at all.\n\n**Interview follow-up:** Without a recursive CTE, how could you spot the gaps? (Compare each number with the next one using `LEAD`, and report the stretches where the difference exceeds 1.)",
+      "solutions": [
+        {
+          "label": "Series plus LEFT JOIN",
+          "explain_md": "The CTE emits every integer from the minimum to the maximum used number; the join finds the used ones and the IS NULL filter keeps the rest.",
+          "sql": "WITH RECURSIVE span AS (\n  SELECT MIN(invoice_no) AS n, MAX(invoice_no) AS last_no FROM seller_invoices\n  UNION ALL\n  SELECT n + 1, last_no FROM span WHERE n < last_no\n)\nSELECT s.n AS missing_no\nFROM span s\nLEFT JOIN seller_invoices i ON i.invoice_no = s.n\nWHERE i.invoice_no IS NULL\nORDER BY s.n;"
+        },
+        {
+          "label": "Series plus NOT EXISTS",
+          "explain_md": "Same series; NOT EXISTS asks per number whether any invoice carries it, and a NULL invoice number can never match.",
+          "sql": "WITH RECURSIVE span AS (\n  SELECT MIN(invoice_no) AS n, MAX(invoice_no) AS last_no FROM seller_invoices\n  UNION ALL\n  SELECT n + 1, last_no FROM span WHERE n < last_no\n)\nSELECT s.n AS missing_no\nFROM span s\nWHERE NOT EXISTS (SELECT 1 FROM seller_invoices i WHERE i.invoice_no = s.n)\nORDER BY s.n;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`NOT IN` against a column that holds a NULL is never true, so the result is empty.",
+          "sql": "WITH RECURSIVE span AS (\n  SELECT MIN(invoice_no) AS n, MAX(invoice_no) AS last_no FROM seller_invoices\n  UNION ALL\n  SELECT n + 1, last_no FROM span WHERE n < last_no\n)\nSELECT n AS missing_no\nFROM span\nWHERE n NOT IN (SELECT invoice_no FROM seller_invoices)\nORDER BY n;"
+        },
+        {
+          "explain_md": "Starting the series at 1 reports every number below the first invoice as missing.",
+          "sql": "WITH RECURSIVE span AS (\n  SELECT 1 AS n, (SELECT MAX(invoice_no) FROM seller_invoices) AS last_no\n  UNION ALL\n  SELECT n + 1, last_no FROM span WHERE n < last_no\n)\nSELECT s.n AS missing_no\nFROM span s\nLEFT JOIN seller_invoices i ON i.invoice_no = s.n\nWHERE i.invoice_no IS NULL\nORDER BY s.n;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "missing_no"
+        ],
+        "rows": [
+          [
+            "204"
+          ],
+          [
+            "205"
+          ],
+          [
+            "208"
+          ],
+          [
+            "209"
+          ],
+          [
+            "213"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T604",
+      "slug": "everyone-under-a-manager",
+      "title": "Everyone under a manager",
+      "section": "Recursive CTEs",
+      "difficulty": "Medium",
+      "topics": [
+        "Recursive CTEs",
+        "Hierarchies"
+      ],
+      "statement_md": "An Outlook-style address book has an org-chart panel. For contact 2 (Priya Nair), list everyone who reports to her, directly or through other managers, but not Priya herself. Return `contact_id`, `display_name` and `level` (1 for her direct reports, 2 for their reports, and so on), ordered by `level`, then `contact_id`.",
+      "tables": [
+        {
+          "name": "org_directory",
+          "description_md": "One row per contact in the company directory. `manager_id` is NULL for the chief executive.",
+          "columns": [
+            {
+              "name": "contact_id",
+              "type": "INT"
+            },
+            {
+              "name": "display_name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "job_title",
+              "type": "VARCHAR(25)"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Maya Brandt",
+              "Chief Executive",
+              null
+            ],
+            [
+              2,
+              "Priya Nair",
+              "VP Engineering",
+              1
+            ],
+            [
+              3,
+              "Omar Said",
+              "VP Sales",
+              1
+            ],
+            [
+              4,
+              "Lena Fox",
+              "Engineering Manager",
+              2
+            ],
+            [
+              5,
+              "Ravi Kumar",
+              "Engineering Manager",
+              2
+            ],
+            [
+              6,
+              "Ben Cho",
+              "Engineer",
+              4
+            ],
+            [
+              7,
+              "Ida Lund",
+              "Engineer",
+              4
+            ],
+            [
+              8,
+              "Sam Ortiz",
+              "Tech Lead",
+              5
+            ],
+            [
+              9,
+              "Zoe Park",
+              "Intern",
+              8
+            ],
+            [
+              10,
+              "Tariq Aziz",
+              "Sales Lead",
+              3
+            ],
+            [
+              11,
+              "Nina Rossi",
+              "Sales Rep",
+              10
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The depth of the reporting chain is not fixed, so a fixed number of self-joins cannot be right in general.",
+        "Begin with the people who report to contact 2, then repeatedly add the people who report to anyone already found. Track how many steps each person took to be found."
+      ],
+      "notes_md": "**Pattern:** Hierarchy traversal downward (descendants). The classic reason interviewers ask for a recursive CTE.\n\n**Shape:** The starting set is Priya's direct reports at level 1. Each round finds the people whose manager is in the previous round and gives them level + 1. The tree ends when a round finds nobody.\n\n**Syntax:** The recursive member joins the base table to the CTE: the CTE's id must match the table's manager column. Carry a counter column in both members, e.g. `1 AS level` in the anchor and `level + 1` in the step.\n\n**Trap:** Stopping at one or two levels with a fixed number of joins, or starting from Priya's own row without removing it afterwards, which adds her at level 0.\n\n**Interview follow-up:** How would you make this safe if the data might contain a loop (someone managing their own boss)? (Track the visited path, or cap the level.)",
+      "solutions": [
+        {
+          "label": "Anchor on direct reports",
+          "explain_md": "The anchor takes contact 2's direct reports at level 1; each step finds the reports of the people found so far and adds 1 to the level.",
+          "sql": "WITH RECURSIVE team AS (\n  SELECT contact_id, display_name, 1 AS level\n  FROM org_directory\n  WHERE manager_id = 2\n  UNION ALL\n  SELECT d.contact_id, d.display_name, t.level + 1\n  FROM org_directory d\n  JOIN team t ON d.manager_id = t.contact_id\n)\nSELECT contact_id, display_name, level\nFROM team\nORDER BY level, contact_id;"
+        },
+        {
+          "label": "Anchor on the manager, filter later",
+          "explain_md": "Start with Priya at level 0 and walk down; the final filter drops her row so only reports remain.",
+          "sql": "WITH RECURSIVE team AS (\n  SELECT contact_id, display_name, 0 AS level\n  FROM org_directory\n  WHERE contact_id = 2\n  UNION ALL\n  SELECT d.contact_id, d.display_name, t.level + 1\n  FROM org_directory d\n  JOIN team t ON d.manager_id = t.contact_id\n)\nSELECT contact_id, display_name, level\nFROM team\nWHERE level > 0\nORDER BY level, contact_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A plain filter only sees her direct reports; anyone further down the tree is missed.",
+          "sql": "SELECT contact_id, display_name, 1 AS level\nFROM org_directory\nWHERE manager_id = 2\nORDER BY level, contact_id;"
+        },
+        {
+          "explain_md": "Two fixed joins reach two levels only; Zoe Park, at level 3, is lost.",
+          "sql": "SELECT d.contact_id, d.display_name, 1 AS level FROM org_directory d WHERE d.manager_id = 2\nUNION ALL\nSELECT d2.contact_id, d2.display_name, 2 FROM org_directory d1 JOIN org_directory d2 ON d2.manager_id = d1.contact_id WHERE d1.manager_id = 2\nORDER BY level, contact_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "contact_id",
+          "display_name",
+          "level"
+        ],
+        "rows": [
+          [
+            "4",
+            "Lena Fox",
+            "1"
+          ],
+          [
+            "5",
+            "Ravi Kumar",
+            "1"
+          ],
+          [
+            "6",
+            "Ben Cho",
+            "2"
+          ],
+          [
+            "7",
+            "Ida Lund",
+            "2"
+          ],
+          [
+            "8",
+            "Sam Ortiz",
+            "2"
+          ],
+          [
+            "9",
+            "Zoe Park",
+            "3"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T605",
+      "slug": "genre-breadcrumbs",
+      "title": "Genre breadcrumbs",
+      "section": "Recursive CTEs",
+      "difficulty": "Medium",
+      "topics": [
+        "Recursive CTEs",
+        "Hierarchies",
+        "String functions"
+      ],
+      "statement_md": "A Spotify-style music app shows a breadcrumb trail above every genre page, for example `Music > Rock > Indie rock`. Return `genre_id` and `breadcrumb` for every genre, including the top one, with the names from the top of the tree down to the genre itself separated by a space, a `>` and a space. Order by `genre_id`.",
+      "tables": [
+        {
+          "name": "genres",
+          "description_md": "One row per genre. `parent_id` is NULL for the single top-level genre.",
+          "columns": [
+            {
+              "name": "genre_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "parent_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Music",
+              null
+            ],
+            [
+              2,
+              "Rock",
+              1
+            ],
+            [
+              3,
+              "Indie rock",
+              2
+            ],
+            [
+              4,
+              "Shoegaze",
+              3
+            ],
+            [
+              5,
+              "Dream pop",
+              3
+            ],
+            [
+              6,
+              "Electronic",
+              1
+            ],
+            [
+              7,
+              "House",
+              6
+            ],
+            [
+              8,
+              "Deep house",
+              7
+            ],
+            [
+              9,
+              "Techno",
+              6
+            ],
+            [
+              10,
+              "Detroit techno",
+              9
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Build each trail from its parent's trail by adding one more name; start from the genre that has no parent.",
+        "A trail is just a string that grows at every level. Think about which side the new name goes on, and about the declared width of the column that holds the string."
+      ],
+      "notes_md": "**Pattern:** Path building in a hierarchy. Interviewers ask for it when they want the full lineage of every node.\n\n**Shape:** Start from the root with its own name as the trail. Each step finds the children of genres already handled and extends the parent's trail with the child's name.\n\n**Syntax:** `CONCAT(a, ' > ', b)` joins strings. In MySQL a recursive CTE column takes its type from the anchor member, so a short anchor column limits how long the later rows may be. `CAST(x AS CHAR(n))` fixes a character width.\n\n**Trap:** Two things: appending on the wrong side (the trail comes out reversed), and letting the anchor decide a column width that the longer paths cannot fit in, which MySQL rejects with a data-too-long error.\n\n**Interview follow-up:** How would you return only the leaf genres, or the depth of each genre? (Anti-join for genres nobody points to as a parent; a counter column in the CTE.)",
+      "solutions": [
+        {
+          "label": "Top-down trail",
+          "explain_md": "The root starts the trail; each level appends the child's name to the parent's trail. The anchor casts the name to a wider character type so the longer trails fit.",
+          "sql": "WITH RECURSIVE trail AS (\n  SELECT genre_id, CAST(name AS CHAR(200)) AS breadcrumb\n  FROM genres\n  WHERE parent_id IS NULL\n  UNION ALL\n  SELECT g.genre_id, CONCAT(t.breadcrumb, ' > ', g.name)\n  FROM genres g\n  JOIN trail t ON g.parent_id = t.genre_id\n)\nSELECT genre_id, breadcrumb\nFROM trail\nORDER BY genre_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The trail column is sized from the anchor's `name` (30 characters), so the longer trails do not fit and MySQL stops with a data-too-long error.",
+          "sql": "WITH RECURSIVE trail AS (\n  SELECT genre_id, name AS breadcrumb\n  FROM genres\n  WHERE parent_id IS NULL\n  UNION ALL\n  SELECT g.genre_id, CONCAT(t.breadcrumb, ' > ', g.name)\n  FROM genres g\n  JOIN trail t ON g.parent_id = t.genre_id\n)\nSELECT genre_id, breadcrumb\nFROM trail\nORDER BY genre_id;",
+          "errors": true
+        },
+        {
+          "explain_md": "Putting the child first builds each trail backwards: `Indie rock > Rock > Music`.",
+          "sql": "WITH RECURSIVE trail AS (\n  SELECT genre_id, CAST(name AS CHAR(200)) AS breadcrumb\n  FROM genres\n  WHERE parent_id IS NULL\n  UNION ALL\n  SELECT g.genre_id, CONCAT(g.name, ' > ', t.breadcrumb)\n  FROM genres g\n  JOIN trail t ON g.parent_id = t.genre_id\n)\nSELECT genre_id, breadcrumb\nFROM trail\nORDER BY genre_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "genre_id",
+          "breadcrumb"
+        ],
+        "rows": [
+          [
+            "1",
+            "Music"
+          ],
+          [
+            "2",
+            "Music > Rock"
+          ],
+          [
+            "3",
+            "Music > Rock > Indie rock"
+          ],
+          [
+            "4",
+            "Music > Rock > Indie rock > Shoegaze"
+          ],
+          [
+            "5",
+            "Music > Rock > Indie rock > Dream pop"
+          ],
+          [
+            "6",
+            "Music > Electronic"
+          ],
+          [
+            "7",
+            "Music > Electronic > House"
+          ],
+          [
+            "8",
+            "Music > Electronic > House > Deep house"
+          ],
+          [
+            "9",
+            "Music > Electronic > Techno"
+          ],
+          [
+            "10",
+            "Music > Electronic > Techno > Detroit techno"
+          ]
+        ]
+      },
+      "dialect_note_md": "MySQL sizes a recursive CTE's text column from the anchor member, so a string that grows can run out of room.",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T606",
+      "slug": "chain-of-command",
+      "title": "Chain of command",
+      "section": "Recursive CTEs",
+      "difficulty": "Medium",
+      "topics": [
+        "Recursive CTEs",
+        "Hierarchies"
+      ],
+      "statement_md": "At a retail bank, a loan above an officer's limit must be escalated up the line of supervisors. For staff member 6 (Tom Reyes), list every person above him, from his own supervisor all the way to the top, without Tom himself. Return `staff_id`, `name` and `steps_up` (1 for his supervisor, 2 for that person's supervisor, and so on), ordered by `steps_up`.",
+      "tables": [
+        {
+          "name": "bank_staff",
+          "description_md": "One row per staff member. `supervisor_id` is NULL for the chief risk officer.",
+          "columns": [
+            {
+              "name": "staff_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "role",
+              "type": "VARCHAR(25)"
+            },
+            {
+              "name": "supervisor_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Helen Cruz",
+              "Chief Risk Officer",
+              null
+            ],
+            [
+              2,
+              "Amit Rao",
+              "Head of Lending",
+              1
+            ],
+            [
+              3,
+              "Julia Weiss",
+              "Head of Cards",
+              1
+            ],
+            [
+              4,
+              "Marcus Bell",
+              "Branch Manager",
+              2
+            ],
+            [
+              5,
+              "Fatima Noor",
+              "Loan Team Lead",
+              4
+            ],
+            [
+              6,
+              "Tom Reyes",
+              "Loan Officer",
+              5
+            ],
+            [
+              7,
+              "Alice Wong",
+              "Loan Officer",
+              5
+            ],
+            [
+              8,
+              "Leo Grant",
+              "Credit Analyst",
+              6
+            ],
+            [
+              9,
+              "Mia Stone",
+              "Credit Analyst",
+              6
+            ],
+            [
+              10,
+              "Priti Shah",
+              "Cards Manager",
+              3
+            ],
+            [
+              11,
+              "Ken Ito",
+              "Cards Agent",
+              10
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "This time the walk goes the other way: from one person towards the root. Each step looks at who the current person reports to.",
+        "The walk ends by itself when it reaches someone whose supervisor is NULL. Some people also report to Tom; make sure they are not in your result."
+      ],
+      "notes_md": "**Pattern:** Hierarchy traversal upward (ancestors). Escalation paths, lineage and 'who is above X' questions.\n\n**Shape:** Begin with Tom's supervisor at step 1. Each round looks up the supervisor of the person just found and adds 1 to the step count. The chain ends at the top, where the supervisor is NULL.\n\n**Syntax:** In the recursive member the join direction decides the walk: matching the table's id to the CTE's supervisor column goes up, matching the table's supervisor column to the CTE's id goes down.\n\n**Trap:** Joining the wrong way round, which walks down the tree and lists Tom's team instead of his chain of command.\n\n**Interview follow-up:** How would you return the whole chain as one string, or find the lowest common manager of two employees? (Climb from both and intersect the paths.)",
+      "solutions": [
+        {
+          "label": "Climb from the supervisor",
+          "explain_md": "The anchor finds Tom's supervisor at step 1; each step joins the CTE's supervisor id to the staff table's own id, which moves one level up.",
+          "sql": "WITH RECURSIVE chain AS (\n  SELECT s.staff_id, s.name, s.supervisor_id, 1 AS steps_up\n  FROM bank_staff s\n  WHERE s.staff_id = (SELECT supervisor_id FROM bank_staff WHERE staff_id = 6)\n  UNION ALL\n  SELECT s.staff_id, s.name, s.supervisor_id, c.steps_up + 1\n  FROM bank_staff s\n  JOIN chain c ON s.staff_id = c.supervisor_id\n)\nSELECT staff_id, name, steps_up\nFROM chain\nORDER BY steps_up;"
+        },
+        {
+          "label": "Start from Tom, drop him afterwards",
+          "explain_md": "Tom is step 0, the climb is identical, and the final filter removes his row.",
+          "sql": "WITH RECURSIVE chain AS (\n  SELECT staff_id, name, supervisor_id, 0 AS steps_up\n  FROM bank_staff\n  WHERE staff_id = 6\n  UNION ALL\n  SELECT s.staff_id, s.name, s.supervisor_id, c.steps_up + 1\n  FROM bank_staff s\n  JOIN chain c ON s.staff_id = c.supervisor_id\n)\nSELECT staff_id, name, steps_up\nFROM chain\nWHERE steps_up > 0\nORDER BY steps_up;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The join is turned around: it matches people whose supervisor is already in the CTE, so it walks down from Tom and lists his team.",
+          "sql": "WITH RECURSIVE chain AS (\n  SELECT staff_id, name, 1 AS steps_up\n  FROM bank_staff\n  WHERE supervisor_id = 6\n  UNION ALL\n  SELECT s.staff_id, s.name, c.steps_up + 1\n  FROM bank_staff s\n  JOIN chain c ON s.supervisor_id = c.staff_id\n)\nSELECT staff_id, name, steps_up\nFROM chain\nORDER BY steps_up, staff_id;"
+        },
+        {
+          "explain_md": "Starting from Tom's own row without removing it leaves Tom in the result at step 0.",
+          "sql": "WITH RECURSIVE chain AS (\n  SELECT staff_id, name, supervisor_id, 0 AS steps_up\n  FROM bank_staff\n  WHERE staff_id = 6\n  UNION ALL\n  SELECT s.staff_id, s.name, s.supervisor_id, c.steps_up + 1\n  FROM bank_staff s\n  JOIN chain c ON s.staff_id = c.supervisor_id\n)\nSELECT staff_id, name, steps_up\nFROM chain\nORDER BY steps_up;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "staff_id",
+          "name",
+          "steps_up"
+        ],
+        "rows": [
+          [
+            "5",
+            "Fatima Noor",
+            "1"
+          ],
+          [
+            "4",
+            "Marcus Bell",
+            "2"
+          ],
+          [
+            "2",
+            "Amit Rao",
+            "3"
+          ],
+          [
+            "1",
+            "Helen Cruz",
+            "4"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T607",
+      "slug": "nightly-booked-listings",
+      "title": "Nightly booked listings",
+      "section": "Recursive CTEs",
+      "difficulty": "Medium",
+      "topics": [
+        "Recursive CTEs",
+        "Dates"
+      ],
+      "statement_md": "An Airbnb-style host portal stores one row per booking with the check-in and check-out dates. A guest occupies the listing for each night from the check-in date up to, but not including, the check-out date, and a booking with the same check-in and check-out date occupies nothing. Return `night_date` and `listings_booked` (bookings that cover that night) for every night with at least one booking, ordered by `night_date`.",
+      "tables": [
+        {
+          "name": "bookings",
+          "description_md": "One row per booking. The guest leaves on `check_out`, so that date is not an occupied night.",
+          "columns": [
+            {
+              "name": "booking_id",
+              "type": "INT"
+            },
+            {
+              "name": "guest",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "check_in",
+              "type": "DATE"
+            },
+            {
+              "name": "check_out",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Adler",
+              "2025-06-01",
+              "2025-06-04"
+            ],
+            [
+              2,
+              "Baptiste",
+              "2025-06-02",
+              "2025-06-03"
+            ],
+            [
+              3,
+              "Costa",
+              "2025-06-03",
+              "2025-06-03"
+            ],
+            [
+              4,
+              "Dutta",
+              "2025-06-04",
+              "2025-06-06"
+            ],
+            [
+              5,
+              "Egan",
+              "2025-06-04",
+              "2025-06-05"
+            ],
+            [
+              6,
+              "Farah",
+              "2025-06-05",
+              "2025-06-08"
+            ],
+            [
+              7,
+              "Gupta",
+              "2025-06-06",
+              "2025-06-07"
+            ],
+            [
+              8,
+              "Holm",
+              "2025-06-01",
+              "2025-06-02"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The table has one row per booking, but the answer needs one row per night. First turn each booking into as many rows as it has nights.",
+        "Check the boundary: the night of the check-out date belongs to nobody, and one booking has no nights at all."
+      ],
+      "notes_md": "**Pattern:** Expanding intervals into per-day rows. Occupancy, active subscriptions and capacity-by-day questions all start here.\n\n**Shape:** Turn every booking into one row per night it covers, then count rows per night. Alternatively, build a calendar of nights and join each booking to the nights it covers.\n\n**Syntax:** A date plus `INTERVAL 1 DAY` is the next day. For a half-open range `[start, end)` test `night >= start AND night < end`. The anchor can carry a filter such as `WHERE start < end`, so that empty ranges produce no rows.\n\n**Trap:** Counting the check-out date as a night, which inflates occupancy on departure days, or counting check-ins only, which ignores guests staying several nights.\n\n**Interview follow-up:** How would you show nights with zero bookings, or the busiest night per month? (Start from a calendar spine and LEFT JOIN; rank or take MAX over the nightly counts.)",
+      "solutions": [
+        {
+          "label": "Expand each booking",
+          "explain_md": "The anchor emits the first night of every non-empty booking, each step the next night, stopping before the check-out date. Counting rows per night gives the bookings.",
+          "sql": "WITH RECURSIVE nights AS (\n  SELECT booking_id, check_in AS night_date, check_out\n  FROM bookings\n  WHERE check_in < check_out\n  UNION ALL\n  SELECT booking_id, night_date + INTERVAL 1 DAY, check_out\n  FROM nights\n  WHERE night_date + INTERVAL 1 DAY < check_out\n)\nSELECT night_date, COUNT(*) AS listings_booked\nFROM nights\nGROUP BY night_date\nORDER BY night_date;"
+        },
+        {
+          "label": "Calendar joined to bookings",
+          "explain_md": "Generate every date from the earliest check-in to the latest check-out, join each to the bookings that cover it with a half-open range, and count. Dates with no booking drop out through the inner join.",
+          "sql": "WITH RECURSIVE cal AS (\n  SELECT MIN(check_in) AS night_date, MAX(check_out) AS last_day FROM bookings\n  UNION ALL\n  SELECT night_date + INTERVAL 1 DAY, last_day FROM cal WHERE night_date < last_day\n)\nSELECT c.night_date, COUNT(*) AS listings_booked\nFROM cal c\nJOIN bookings b ON c.night_date >= b.check_in AND c.night_date < b.check_out\nGROUP BY c.night_date\nORDER BY c.night_date;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Including the check-out date as a night adds a phantom night on 8 June and inflates departure days.",
+          "sql": "WITH RECURSIVE nights AS (\n  SELECT booking_id, check_in AS night_date, check_out\n  FROM bookings\n  UNION ALL\n  SELECT booking_id, night_date + INTERVAL 1 DAY, check_out\n  FROM nights\n  WHERE night_date < check_out\n)\nSELECT night_date, COUNT(*) AS listings_booked\nFROM nights\nGROUP BY night_date\nORDER BY night_date;"
+        },
+        {
+          "explain_md": "Counting only check-in dates ignores the nights after the first, so multi-night bookings are under-counted.",
+          "sql": "SELECT check_in AS night_date, COUNT(*) AS listings_booked\nFROM bookings\nWHERE check_in < check_out\nGROUP BY check_in\nORDER BY check_in;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "night_date",
+          "listings_booked"
+        ],
+        "rows": [
+          [
+            "2025-06-01",
+            "2"
+          ],
+          [
+            "2025-06-02",
+            "2"
+          ],
+          [
+            "2025-06-03",
+            "1"
+          ],
+          [
+            "2025-06-04",
+            "2"
+          ],
+          [
+            "2025-06-05",
+            "2"
+          ],
+          [
+            "2025-06-06",
+            "2"
+          ],
+          [
+            "2025-06-07",
+            "1"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T608",
+      "slug": "total-salary-under-each-manager",
+      "title": "Total salary under each manager",
+      "section": "Recursive CTEs",
+      "difficulty": "Hard",
+      "topics": [
+        "Recursive CTEs",
+        "Hierarchies",
+        "Aggregation"
+      ],
+      "statement_md": "People analytics at a Twitter-like social network wants the payroll cost of each manager's whole organisation. For every employee who has at least one report, return `manager_id`, `name`, `team_size` (everyone below them, direct or indirect, not counting the manager) and `team_salary` (the sum of those people's salaries, ignoring unknown salaries). Order by `manager_id`.",
+      "tables": [
+        {
+          "name": "employees",
+          "description_md": "One row per employee. `manager_id` is NULL for the top person; `salary` is NULL when unknown (a contractor).",
+          "columns": [
+            {
+              "name": "emp_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "manager_id",
+              "type": "INT"
+            },
+            {
+              "name": "salary",
+              "type": "DECIMAL(9,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Grace Lim",
+              null,
+              250000.0
+            ],
+            [
+              2,
+              "Hugo Perez",
+              1,
+              180000.0
+            ],
+            [
+              3,
+              "Iris Chen",
+              1,
+              175000.0
+            ],
+            [
+              4,
+              "Jon Meyer",
+              2,
+              120000.0
+            ],
+            [
+              5,
+              "Kai Brooks",
+              2,
+              115000.0
+            ],
+            [
+              6,
+              "Lucy Hart",
+              4,
+              90000.0
+            ],
+            [
+              7,
+              "Milo Evans",
+              4,
+              85000.0
+            ],
+            [
+              8,
+              "Nora Quinn",
+              5,
+              95000.0
+            ],
+            [
+              9,
+              "Owen Price",
+              3,
+              110000.0
+            ],
+            [
+              10,
+              "Pia Santos",
+              9,
+              80000.0
+            ],
+            [
+              11,
+              "Quin Moss",
+              9,
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need, for each manager, the set of everyone beneath them at any depth. Think of it as a list of manager-and-subordinate pairs.",
+        "Once that list of pairs exists, the rest is a join to the salaries and a grouped aggregate. Check that a manager's own salary is not in their total."
+      ],
+      "notes_md": "**Pattern:** Ancestor/descendant closure, then aggregate. Interviewers use it for rolled-up headcount, budgets and org-wide metrics.\n\n**Shape:** First expand the tree into pairs (boss, person below) at every depth. Then join the pairs to the employees to get each person's salary and group by the boss.\n\n**Syntax:** The anchor holds the direct pairs; the recursive member extends each pair by one level, keeping the original boss column unchanged. `SUM` skips NULLs, `COUNT(*)` counts rows, `COUNT(col)` skips NULLs.\n\n**Trap:** Aggregating only the direct reports, or including the manager's own row in the total, or counting `COUNT(salary)` for the team size so that the NULL-salary contractor disappears from the headcount.\n\n**Interview follow-up:** How would you report the same totals including the manager's own salary, or for just one level of the tree? (Add a self pair; filter on a depth column.)",
+      "solutions": [
+        {
+          "label": "Pairs from the top down",
+          "explain_md": "The CTE lists every (manager, person below) pair at all depths. Joining it to the salaries and grouping by manager gives the team size and payroll without the manager's own row.",
+          "sql": "WITH RECURSIVE below AS (\n  SELECT manager_id AS boss_id, emp_id\n  FROM employees\n  WHERE manager_id IS NOT NULL\n  UNION ALL\n  SELECT b.boss_id, e.emp_id\n  FROM below b\n  JOIN employees e ON e.manager_id = b.emp_id\n)\nSELECT m.emp_id AS manager_id, m.name,\n       COUNT(*) AS team_size,\n       SUM(e.salary) AS team_salary\nFROM below b\nJOIN employees m ON m.emp_id = b.boss_id\nJOIN employees e ON e.emp_id = b.emp_id\nGROUP BY m.emp_id, m.name\nORDER BY m.emp_id;"
+        },
+        {
+          "label": "Pairs built bottom-up",
+          "explain_md": "Each employee climbs the tree and leaves a pair behind at every manager they pass. The final grouping is the same.",
+          "sql": "WITH RECURSIVE climb AS (\n  SELECT emp_id, manager_id AS boss_id\n  FROM employees\n  WHERE manager_id IS NOT NULL\n  UNION ALL\n  SELECT c.emp_id, m.manager_id\n  FROM climb c\n  JOIN employees m ON m.emp_id = c.boss_id\n  WHERE m.manager_id IS NOT NULL\n)\nSELECT m.emp_id AS manager_id, m.name,\n       COUNT(*) AS team_size,\n       SUM(e.salary) AS team_salary\nFROM climb c\nJOIN employees m ON m.emp_id = c.boss_id\nJOIN employees e ON e.emp_id = c.emp_id\nGROUP BY m.emp_id, m.name\nORDER BY m.emp_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Grouping on `manager_id` alone only totals direct reports; indirect reports never reach their senior managers.",
+          "sql": "SELECT m.emp_id AS manager_id, m.name,\n       COUNT(*) AS team_size,\n       SUM(e.salary) AS team_salary\nFROM employees e\nJOIN employees m ON m.emp_id = e.manager_id\nGROUP BY m.emp_id, m.name\nORDER BY m.emp_id;"
+        },
+        {
+          "explain_md": "Seeding each manager with their own row counts the manager as part of the team and adds their salary.",
+          "sql": "WITH RECURSIVE below AS (\n  SELECT emp_id AS boss_id, emp_id FROM employees\n  UNION ALL\n  SELECT b.boss_id, e.emp_id\n  FROM below b\n  JOIN employees e ON e.manager_id = b.emp_id\n)\nSELECT m.emp_id AS manager_id, m.name,\n       COUNT(*) AS team_size,\n       SUM(e.salary) AS team_salary\nFROM below b\nJOIN employees m ON m.emp_id = b.boss_id\nJOIN employees e ON e.emp_id = b.emp_id\nWHERE b.boss_id IN (SELECT manager_id FROM employees WHERE manager_id IS NOT NULL)\nGROUP BY m.emp_id, m.name\nORDER BY m.emp_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "manager_id",
+          "name",
+          "team_size",
+          "team_salary"
+        ],
+        "rows": [
+          [
+            "1",
+            "Grace Lim",
+            "10",
+            "1050000.00"
+          ],
+          [
+            "2",
+            "Hugo Perez",
+            "5",
+            "505000.00"
+          ],
+          [
+            "3",
+            "Iris Chen",
+            "3",
+            "190000.00"
+          ],
+          [
+            "4",
+            "Jon Meyer",
+            "2",
+            "175000.00"
+          ],
+          [
+            "5",
+            "Kai Brooks",
+            "1",
+            "95000.00"
+          ],
+          [
+            "9",
+            "Owen Price",
+            "2",
+            "80000.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T609",
+      "slug": "materials-needed-to-craft-one-sword",
+      "title": "Materials needed to craft one sword",
+      "section": "Recursive CTEs",
+      "difficulty": "Hard",
+      "topics": [
+        "Recursive CTEs",
+        "Hierarchies",
+        "Aggregation"
+      ],
+      "statement_md": "In an online role-playing game, items are crafted from other items according to a recipe table. To craft one Dragon Sword (item 1), how many of each basic material, meaning an item that has no recipe of its own, are needed in total? Return `item_id`, `item_name` and `total_qty`, ordered by `item_id`. Materials that only belong to other items (such as the Fire Arrow) must not be counted.",
+      "tables": [
+        {
+          "name": "items",
+          "description_md": "One row per item or material in the game.",
+          "columns": [
+            {
+              "name": "item_id",
+              "type": "INT"
+            },
+            {
+              "name": "item_name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Dragon Sword"
+            ],
+            [
+              2,
+              "Steel Blade"
+            ],
+            [
+              3,
+              "Hilt"
+            ],
+            [
+              4,
+              "Enchanted Core"
+            ],
+            [
+              5,
+              "Iron Ingot"
+            ],
+            [
+              6,
+              "Coal"
+            ],
+            [
+              7,
+              "Leather Strip"
+            ],
+            [
+              8,
+              "Wooden Grip"
+            ],
+            [
+              9,
+              "Rune Dust"
+            ],
+            [
+              10,
+              "Mana Crystal"
+            ],
+            [
+              11,
+              "Gem Socket"
+            ],
+            [
+              12,
+              "Silver Wire"
+            ],
+            [
+              13,
+              "Fire Arrow"
+            ],
+            [
+              14,
+              "Feather"
+            ]
+          ]
+        },
+        {
+          "name": "recipes",
+          "description_md": "Crafting recipes: making one `item_id` consumes `qty` units of `ingredient_id`.",
+          "columns": [
+            {
+              "name": "item_id",
+              "type": "INT"
+            },
+            {
+              "name": "ingredient_id",
+              "type": "INT"
+            },
+            {
+              "name": "qty",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              2,
+              2
+            ],
+            [
+              1,
+              3,
+              1
+            ],
+            [
+              1,
+              4,
+              1
+            ],
+            [
+              2,
+              5,
+              4
+            ],
+            [
+              2,
+              6,
+              6
+            ],
+            [
+              3,
+              8,
+              1
+            ],
+            [
+              3,
+              7,
+              2
+            ],
+            [
+              3,
+              9,
+              6
+            ],
+            [
+              4,
+              10,
+              1
+            ],
+            [
+              4,
+              11,
+              1
+            ],
+            [
+              4,
+              9,
+              5
+            ],
+            [
+              11,
+              12,
+              3
+            ],
+            [
+              11,
+              5,
+              2
+            ],
+            [
+              13,
+              14,
+              2
+            ],
+            [
+              13,
+              5,
+              1
+            ],
+            [
+              13,
+              9,
+              4
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Quantities compound as you go down: two blades that each need four ingots means eight ingots, not six.",
+        "The same basic material can arrive through more than one branch of the recipe tree. Decide when to add the branches together."
+      ],
+      "notes_md": "**Pattern:** Bill-of-materials explosion. Interviewers use it for crafting trees, product structures, recipes and any weighted hierarchy.\n\n**Shape:** Start with the sword's direct ingredients and their quantities. Each round, replace a crafted item by its own ingredients, multiplying the quantity carried by the quantity needed per craft. At the end keep only items that have no recipe and add up each item across branches.\n\n**Syntax:** Carry a running quantity column: `qty` in the anchor, then `carried_qty * r.qty` in the recursive member. `SUM(qty)` with `GROUP BY` combines the paths. An item is a basic material when it never appears as the crafted `item_id`.\n\n**Trap:** Adding the quantities instead of multiplying them, or forgetting to total a material that appears in several branches, so it is listed twice.\n\n**Interview follow-up:** How would you also report the gold cost of one sword if each basic material has a unit price? (Join the totals to the price list and sum quantity times price.)",
+      "solutions": [
+        {
+          "label": "Multiply down, keep leaves",
+          "explain_md": "Each level multiplies the carried quantity by the per-craft quantity. Basic materials are those with no row of their own in the recipe table; their path quantities are summed.",
+          "sql": "WITH RECURSIVE explode AS (\n  SELECT ingredient_id, qty AS total_qty\n  FROM recipes\n  WHERE item_id = 1\n  UNION ALL\n  SELECT r.ingredient_id, e.total_qty * r.qty\n  FROM explode e\n  JOIN recipes r ON r.item_id = e.ingredient_id\n)\nSELECT i.item_id, i.item_name, SUM(e.total_qty) AS total_qty\nFROM explode e\nJOIN items i ON i.item_id = e.ingredient_id\nWHERE NOT EXISTS (SELECT 1 FROM recipes x WHERE x.item_id = e.ingredient_id)\nGROUP BY i.item_id, i.item_name\nORDER BY i.item_id;"
+        },
+        {
+          "label": "Leaf test with an anti-join",
+          "explain_md": "Same explosion; the basic materials are found with a LEFT JOIN to the recipe table where no row exists.",
+          "sql": "WITH RECURSIVE explode AS (\n  SELECT ingredient_id, qty AS total_qty\n  FROM recipes\n  WHERE item_id = 1\n  UNION ALL\n  SELECT r.ingredient_id, e.total_qty * r.qty\n  FROM explode e\n  JOIN recipes r ON r.item_id = e.ingredient_id\n)\nSELECT i.item_id, i.item_name, SUM(e.total_qty) AS total_qty\nFROM explode e\nJOIN items i ON i.item_id = e.ingredient_id\nLEFT JOIN recipes sub ON sub.item_id = e.ingredient_id\nWHERE sub.item_id IS NULL\nGROUP BY i.item_id, i.item_name\nORDER BY i.item_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Adding the per-level quantities instead of multiplying them gives wrong totals for every material below the first level.",
+          "sql": "WITH RECURSIVE explode AS (\n  SELECT ingredient_id, qty AS total_qty\n  FROM recipes\n  WHERE item_id = 1\n  UNION ALL\n  SELECT r.ingredient_id, e.total_qty + r.qty\n  FROM explode e\n  JOIN recipes r ON r.item_id = e.ingredient_id\n)\nSELECT i.item_id, i.item_name, SUM(e.total_qty) AS total_qty\nFROM explode e\nJOIN items i ON i.item_id = e.ingredient_id\nWHERE NOT EXISTS (SELECT 1 FROM recipes x WHERE x.item_id = e.ingredient_id)\nGROUP BY i.item_id, i.item_name\nORDER BY i.item_id;"
+        },
+        {
+          "explain_md": "Without the final GROUP BY a material reached through two branches (Rune Dust, Iron Ingot) appears once per branch instead of as one total.",
+          "sql": "WITH RECURSIVE explode AS (\n  SELECT ingredient_id, qty AS total_qty\n  FROM recipes\n  WHERE item_id = 1\n  UNION ALL\n  SELECT r.ingredient_id, e.total_qty * r.qty\n  FROM explode e\n  JOIN recipes r ON r.item_id = e.ingredient_id\n)\nSELECT i.item_id, i.item_name, e.total_qty\nFROM explode e\nJOIN items i ON i.item_id = e.ingredient_id\nWHERE NOT EXISTS (SELECT 1 FROM recipes x WHERE x.item_id = e.ingredient_id)\nORDER BY i.item_id, e.total_qty;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "item_id",
+          "item_name",
+          "total_qty"
+        ],
+        "rows": [
+          [
+            "5",
+            "Iron Ingot",
+            "10"
+          ],
+          [
+            "6",
+            "Coal",
+            "12"
+          ],
+          [
+            "7",
+            "Leather Strip",
+            "2"
+          ],
+          [
+            "8",
+            "Wooden Grip",
+            "1"
+          ],
+          [
+            "9",
+            "Rune Dust",
+            "11"
+          ],
+          [
+            "10",
+            "Mana Crystal",
+            "1"
+          ],
+          [
+            "12",
+            "Silver Wire",
+            "3"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T610",
+      "slug": "cheapest-route-with-at-most-two-stops",
+      "title": "Cheapest route with at most two stops",
+      "section": "Recursive CTEs",
+      "difficulty": "Hard",
+      "topics": [
+        "Recursive CTEs",
+        "Joins"
+      ],
+      "statement_md": "An Amazon-style marketplace ships parcels between fulfilment hubs along one-way lanes with a shipping cost. Find the cheapest way to send a parcel from hub `AUS` to hub `BOS` using at most two intermediate hubs (so at most three lanes), never passing through the same hub twice. Return one row: `route` (hub codes joined by `' > '`, for example `AUS > DEN > BOS`), `stops` (number of intermediate hubs) and `total_cost`. If costs tie, prefer fewer stops, then the route text.",
+      "tables": [
+        {
+          "name": "shipping_lanes",
+          "description_md": "One row per one-way lane between two hubs.",
+          "columns": [
+            {
+              "name": "lane_id",
+              "type": "INT"
+            },
+            {
+              "name": "origin_hub",
+              "type": "VARCHAR(3)"
+            },
+            {
+              "name": "dest_hub",
+              "type": "VARCHAR(3)"
+            },
+            {
+              "name": "cost",
+              "type": "DECIMAL(7,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "AUS",
+              "BOS",
+              420.0
+            ],
+            [
+              2,
+              "AUS",
+              "DEN",
+              120.0
+            ],
+            [
+              3,
+              "DEN",
+              "BOS",
+              150.0
+            ],
+            [
+              4,
+              "AUS",
+              "DAL",
+              60.0
+            ],
+            [
+              5,
+              "DAL",
+              "DEN",
+              70.0
+            ],
+            [
+              6,
+              "DEN",
+              "DAL",
+              65.0
+            ],
+            [
+              7,
+              "DAL",
+              "BOS",
+              300.0
+            ],
+            [
+              8,
+              "DEN",
+              "AUS",
+              110.0
+            ],
+            [
+              9,
+              "DAL",
+              "CHI",
+              80.0
+            ],
+            [
+              10,
+              "CHI",
+              "BOS",
+              90.0
+            ],
+            [
+              11,
+              "BOS",
+              "AUS",
+              400.0
+            ],
+            [
+              12,
+              "AUS",
+              "ATL",
+              30.0
+            ],
+            [
+              13,
+              "ATL",
+              "DAL",
+              20.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Think of the lanes as the edges of a graph. Start from the origin and keep extending every route by one more lane, counting how many lanes it has used.",
+        "The data contains round trips (there are lanes that go back where you came from), so something must stop a route from wandering in circles. Also decide exactly how many lanes 'two intermediate hubs' allows."
+      ],
+      "notes_md": "**Pattern:** Graph walk with a depth limit and a cycle guard. Interviewers use it for routes, dependencies and reachability.\n\n**Shape:** Start with every lane leaving the origin. Each round adds the lanes that leave the current end of a route, as long as the route has used fewer than the allowed number of lanes and the new hub is not already on the route. Keep the routes that end at the destination and pick the cheapest.\n\n**Syntax:** Carry three things in the CTE: the hub you are at, a text path of hubs visited, and a counter. `LOCATE(sub, str)` returns 0 when `sub` is not found, so `= 0` is a cheap visited check. `ORDER BY ... LIMIT 1` takes the winner.\n\n**Trap:** Miscounting 'stops' against 'lanes' (two stops means three lanes), forgetting the visited check so routes loop through round trips, or ordering by the number of stops when the question asks for the cheapest cost.\n\n**Interview follow-up:** How would you return the cheapest route to every hub at once, or do it for a network with thousands of nodes? (Group by destination; a recursive CTE becomes too slow, so you use a shortest-path algorithm outside SQL.)",
+      "solutions": [
+        {
+          "label": "Walk with path and guard",
+          "explain_md": "Each route carries its path text and lane count. A route may only extend to a hub that is not already in its path and while it has fewer than three lanes. Routes ending at BOS compete on cost.",
+          "sql": "WITH RECURSIVE routes AS (\n  SELECT dest_hub AS at_hub,\n         CAST(CONCAT(origin_hub, ' > ', dest_hub) AS CHAR(100)) AS route,\n         cost AS total_cost,\n         1 AS lanes\n  FROM shipping_lanes\n  WHERE origin_hub = 'AUS'\n  UNION ALL\n  SELECT l.dest_hub,\n         CONCAT(r.route, ' > ', l.dest_hub),\n         r.total_cost + l.cost,\n         r.lanes + 1\n  FROM routes r\n  JOIN shipping_lanes l ON l.origin_hub = r.at_hub\n  WHERE r.lanes < 3\n    AND LOCATE(l.dest_hub, r.route) = 0\n)\nSELECT route, lanes - 1 AS stops, total_cost\nFROM routes\nWHERE at_hub = 'BOS'\nORDER BY total_cost, stops, route\nLIMIT 1;"
+        },
+        {
+          "label": "Explicit joins per length",
+          "explain_md": "With a hard limit of three lanes, the routes can be written out as one-, two- and three-lane joins. The conditions keep every hub unique on the route.",
+          "sql": "SELECT route, stops, total_cost FROM (\n  SELECT CONCAT(a.origin_hub, ' > ', a.dest_hub) AS route, 0 AS stops, a.cost AS total_cost\n  FROM shipping_lanes a\n  WHERE a.origin_hub = 'AUS' AND a.dest_hub = 'BOS'\n  UNION ALL\n  SELECT CONCAT(a.origin_hub, ' > ', a.dest_hub, ' > ', b.dest_hub), 1, a.cost + b.cost\n  FROM shipping_lanes a\n  JOIN shipping_lanes b ON b.origin_hub = a.dest_hub\n  WHERE a.origin_hub = 'AUS' AND b.dest_hub = 'BOS'\n  UNION ALL\n  SELECT CONCAT(a.origin_hub, ' > ', a.dest_hub, ' > ', b.dest_hub, ' > ', c.dest_hub), 2, a.cost + b.cost + c.cost\n  FROM shipping_lanes a\n  JOIN shipping_lanes b ON b.origin_hub = a.dest_hub\n  JOIN shipping_lanes c ON c.origin_hub = b.dest_hub\n  WHERE a.origin_hub = 'AUS' AND c.dest_hub = 'BOS'\n    AND a.dest_hub <> 'BOS' AND b.dest_hub <> 'AUS' AND b.dest_hub <> 'BOS' AND a.dest_hub <> b.dest_hub\n) x\nORDER BY total_cost, stops, route\nLIMIT 1;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Allowing only two lanes treats 'two stops' as one stop and misses the cheaper three-lane route.",
+          "sql": "WITH RECURSIVE routes AS (\n  SELECT dest_hub AS at_hub,\n         CAST(CONCAT(origin_hub, ' > ', dest_hub) AS CHAR(100)) AS route,\n         cost AS total_cost,\n         1 AS lanes\n  FROM shipping_lanes\n  WHERE origin_hub = 'AUS'\n  UNION ALL\n  SELECT l.dest_hub, CONCAT(r.route, ' > ', l.dest_hub), r.total_cost + l.cost, r.lanes + 1\n  FROM routes r\n  JOIN shipping_lanes l ON l.origin_hub = r.at_hub\n  WHERE r.lanes < 2 AND LOCATE(l.dest_hub, r.route) = 0\n)\nSELECT route, lanes - 1 AS stops, total_cost\nFROM routes\nWHERE at_hub = 'BOS'\nORDER BY total_cost, stops, route\nLIMIT 1;"
+        },
+        {
+          "explain_md": "With only the visited check and no limit on lanes, a four-lane route (one stop too many) is cheaper and wins.",
+          "sql": "WITH RECURSIVE routes AS (\n  SELECT dest_hub AS at_hub,\n         CAST(CONCAT(origin_hub, ' > ', dest_hub) AS CHAR(100)) AS route,\n         cost AS total_cost,\n         1 AS lanes\n  FROM shipping_lanes\n  WHERE origin_hub = 'AUS'\n  UNION ALL\n  SELECT l.dest_hub, CONCAT(r.route, ' > ', l.dest_hub), r.total_cost + l.cost, r.lanes + 1\n  FROM routes r\n  JOIN shipping_lanes l ON l.origin_hub = r.at_hub\n  WHERE LOCATE(l.dest_hub, r.route) = 0\n)\nSELECT route, lanes - 1 AS stops, total_cost\nFROM routes\nWHERE at_hub = 'BOS'\nORDER BY total_cost, stops, route\nLIMIT 1;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "route",
+          "stops",
+          "total_cost"
+        ],
+        "rows": [
+          [
+            "AUS > DAL > CHI > BOS",
+            "2",
+            "230.00"
+          ]
+        ]
+      },
+      "dialect_note_md": "MySQL sizes the route text column from the anchor member, so a path that grows can run out of room.",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T611",
+      "slug": "split-tags-into-rows",
+      "title": "Split tags into rows",
+      "section": "Recursive CTEs",
+      "difficulty": "Hard",
+      "topics": [
+        "Recursive CTEs",
+        "String functions"
+      ],
+      "statement_md": "An Instagram-style app stores each post's hashtags (without the `#`) in one comma-separated text column, sometimes with spaces around the commas. Return one row per hashtag: `post_id`, `tag_position` (1 for the first hashtag) and `hashtag` with surrounding spaces removed, ordered by `post_id`, then `tag_position`. Posts with no hashtags (NULL or empty text) produce no rows. Do not rely on JSON functions.",
+      "tables": [
+        {
+          "name": "posts",
+          "description_md": "One row per post. `hashtags` is NULL, empty, or a comma-separated list.",
+          "columns": [
+            {
+              "name": "post_id",
+              "type": "INT"
+            },
+            {
+              "name": "author",
+              "type": "VARCHAR(15)"
+            },
+            {
+              "name": "hashtags",
+              "type": "VARCHAR(100)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "lena.codes",
+              "sql,window,ranking"
+            ],
+            [
+              2,
+              "mo_joins",
+              "sql, joins"
+            ],
+            [
+              3,
+              "nullbyte",
+              "sql"
+            ],
+            [
+              4,
+              "data.dani",
+              null
+            ],
+            [
+              5,
+              "queryqueen",
+              ""
+            ],
+            [
+              6,
+              "recur_ron",
+              "sql, cte , recursion,hierarchy"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need to produce several rows from one value, so you need a way to repeat a row once per hashtag. How can you count how many hashtags a string holds without splitting it?",
+        "Think about how to cut out the n-th piece of a delimited string, and check the very last hashtag and the spaces around each piece."
+      ],
+      "notes_md": "**Pattern:** String splitting into rows. Interviewers ask for it when data arrives as delimited lists.\n\n**Shape:** Work out how many hashtags each post has, repeat the post that many times with a position counter, and cut out the piece at that position. The alternative is to peel off the first hashtag and carry the remainder to the next round.\n\n**Syntax:** `SUBSTRING_INDEX(str, delim, n)` returns everything before the n-th delimiter (or after the n-th from the end when n is negative). The number of commas is `LENGTH(s) - LENGTH(REPLACE(s, ',', ''))`. `TRIM(x)` removes spaces from both ends.\n\n**Trap:** Stopping one position early so the last hashtag is lost, forgetting to trim so ' joins' differs from 'joins', or letting NULL and empty strings turn into a phantom empty hashtag.\n\n**Interview follow-up:** How would you count how many posts carry each hashtag, and why would a separate post-hashtag table be better design? (Group by the split hashtag; normalise into a link table.)",
+      "solutions": [
+        {
+          "label": "Position counter",
+          "explain_md": "The anchor emits position 1 for each post that has hashtags; each step adds 1 while the position is below the hashtag count (commas + 1). The n-th piece is cut with two nested SUBSTRING_INDEX calls and trimmed.",
+          "sql": "WITH RECURSIVE split AS (\n  SELECT post_id, 1 AS tag_position, hashtags\n  FROM posts\n  WHERE hashtags IS NOT NULL AND hashtags <> ''\n  UNION ALL\n  SELECT post_id, tag_position + 1, hashtags\n  FROM split\n  WHERE tag_position < 1 + LENGTH(hashtags) - LENGTH(REPLACE(hashtags, ',', ''))\n)\nSELECT post_id, tag_position,\n       TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(hashtags, ',', tag_position), ',', -1)) AS hashtag\nFROM split\nORDER BY post_id, tag_position;"
+        },
+        {
+          "label": "Peel off the first hashtag",
+          "explain_md": "Each round takes the text before the first comma as the hashtag and carries the rest of the string forward; the walk ends when no comma is left.",
+          "sql": "WITH RECURSIVE split AS (\n  SELECT post_id, 1 AS tag_position,\n         SUBSTRING_INDEX(hashtags, ',', 1) AS tag,\n         CASE WHEN LOCATE(',', hashtags) = 0 THEN NULL ELSE SUBSTRING(hashtags, LOCATE(',', hashtags) + 1) END AS rest\n  FROM posts\n  WHERE hashtags IS NOT NULL AND hashtags <> ''\n  UNION ALL\n  SELECT post_id, tag_position + 1,\n         SUBSTRING_INDEX(rest, ',', 1),\n         CASE WHEN LOCATE(',', rest) = 0 THEN NULL ELSE SUBSTRING(rest, LOCATE(',', rest) + 1) END\n  FROM split\n  WHERE rest IS NOT NULL\n)\nSELECT post_id, tag_position, TRIM(tag) AS hashtag\nFROM split\nORDER BY post_id, tag_position;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Filtering only on NULL lets the empty-text post through, and it produces a phantom row with an empty hashtag.",
+          "sql": "WITH RECURSIVE split AS (\n  SELECT post_id, 1 AS tag_position, hashtags\n  FROM posts\n  WHERE hashtags IS NOT NULL\n  UNION ALL\n  SELECT post_id, tag_position + 1, hashtags\n  FROM split\n  WHERE tag_position < 1 + LENGTH(hashtags) - LENGTH(REPLACE(hashtags, ',', ''))\n)\nSELECT post_id, tag_position,\n       TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(hashtags, ',', tag_position), ',', -1)) AS hashtag\nFROM split\nORDER BY post_id, tag_position;"
+        },
+        {
+          "explain_md": "Comparing the position with the number of commas (not commas plus one) stops one hashtag early, so the last hashtag of every multi-tag post is lost.",
+          "sql": "WITH RECURSIVE split AS (\n  SELECT post_id, 1 AS tag_position, hashtags\n  FROM posts\n  WHERE hashtags IS NOT NULL AND hashtags <> ''\n  UNION ALL\n  SELECT post_id, tag_position + 1, hashtags\n  FROM split\n  WHERE tag_position < LENGTH(hashtags) - LENGTH(REPLACE(hashtags, ',', ''))\n)\nSELECT post_id, tag_position,\n       TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(hashtags, ',', tag_position), ',', -1)) AS hashtag\nFROM split\nORDER BY post_id, tag_position;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "post_id",
+          "tag_position",
+          "hashtag"
+        ],
+        "rows": [
+          [
+            "1",
+            "1",
+            "sql"
+          ],
+          [
+            "1",
+            "2",
+            "window"
+          ],
+          [
+            "1",
+            "3",
+            "ranking"
+          ],
+          [
+            "2",
+            "1",
+            "sql"
+          ],
+          [
+            "2",
+            "2",
+            "joins"
+          ],
+          [
+            "3",
+            "1",
+            "sql"
+          ],
+          [
+            "6",
+            "1",
+            "sql"
+          ],
+          [
+            "6",
+            "2",
+            "cte"
+          ],
+          [
+            "6",
+            "3",
+            "recursion"
+          ],
+          [
+            "6",
+            "4",
+            "hierarchy"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T612",
+      "slug": "referral-loops",
+      "title": "Referral loops",
+      "section": "Recursive CTEs",
+      "difficulty": "Hard",
+      "topics": [
+        "Recursive CTEs",
+        "Data quality"
+      ],
+      "statement_md": "An Uber-style ride-hailing app gives ride credits to riders who refer friends, but a data-entry bug let some referrals form circles (A referred by C, C by B, B by A), so credits are paid in a loop. Return every rider who is part of such a loop, including someone recorded as their own referrer, with `rider_id`, `name` and `loop_size` (how many riders are in the loop). Riders who merely lead into a loop without being in it must not appear. Order by `rider_id`.",
+      "tables": [
+        {
+          "name": "riders",
+          "description_md": "One row per rider. `referred_by` is NULL for riders who joined without a referral.",
+          "columns": [
+            {
+              "name": "rider_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "referred_by",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Ana",
+              3
+            ],
+            [
+              2,
+              "Ben",
+              1
+            ],
+            [
+              3,
+              "Cy",
+              2
+            ],
+            [
+              4,
+              "Dee",
+              1
+            ],
+            [
+              5,
+              "Eli",
+              4
+            ],
+            [
+              6,
+              "Flo",
+              10
+            ],
+            [
+              7,
+              "Gus",
+              8
+            ],
+            [
+              8,
+              "Hal",
+              7
+            ],
+            [
+              9,
+              "Ivy",
+              9
+            ],
+            [
+              10,
+              "Jo",
+              null
+            ],
+            [
+              11,
+              "Kit",
+              null
+            ],
+            [
+              12,
+              "Lou",
+              11
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Follow the referred_by link from each rider, one step at a time, and see where you end up. A rider is in a loop only if the chain comes back to that same rider.",
+        "Following links forever would never stop on bad data, so the walk needs a way to know when it is going round again. Riders whose chain feeds into a loop but never returns to them are not in it."
+      ],
+      "notes_md": "**Pattern:** Cycle detection in a graph with one outgoing edge per node. Interviewers use it for bad hierarchies, circular dependencies and referral fraud.\n\n**Shape:** From every rider, follow the link repeatedly while remembering where you have been. A rider is in a loop if one of the steps lands on that rider again; the number of steps it takes is the loop size.\n\n**Syntax:** The recursive walk needs a stopping rule. Two common choices: keep the visited ids in a text path and test `LOCATE(sub, path) = 0` before stepping, or cap the number of steps at the number of riders, which any chain can use at most once before repeating.\n\n**Trap:** Treating 'my chain eventually repeats' as 'I am in a loop': riders who only lead into a loop also repeat. The test is whether the walk returns to the start. A second trap is looking only for two-rider pairs, which misses longer circles.\n\n**Interview follow-up:** How would you break the loops once they are found? (Choose one link per loop to set to NULL, for example the one pointing to the rider who joined earliest.)",
+      "solutions": [
+        {
+          "label": "Walk with a visited path",
+          "explain_md": "Each walk starts at a rider and records the ids it has stepped through. It stops when the next rider is already on its path, and a rider is in a loop when a step returns to the start; the step count is the loop size.",
+          "sql": "WITH RECURSIVE walk AS (\n  SELECT rider_id AS start_id, referred_by AS cur_id,\n         CAST(CONCAT(',', rider_id, ',') AS CHAR(200)) AS path,\n         1 AS steps\n  FROM riders\n  WHERE referred_by IS NOT NULL\n  UNION ALL\n  SELECT w.start_id, r.referred_by, CONCAT(w.path, r.rider_id, ','), w.steps + 1\n  FROM walk w\n  JOIN riders r ON r.rider_id = w.cur_id\n  WHERE r.referred_by IS NOT NULL\n    AND LOCATE(CONCAT(',', w.cur_id, ','), w.path) = 0\n)\nSELECT r.rider_id, r.name, w.steps AS loop_size\nFROM walk w\nJOIN riders r ON r.rider_id = w.start_id\nWHERE w.cur_id = w.start_id\nORDER BY r.rider_id;"
+        },
+        {
+          "label": "Walk with a step cap",
+          "explain_md": "Without a path, each walk is stopped after as many steps as there are riders. A loop member returns to its start within that many steps; the smallest such step count is the loop size.",
+          "sql": "WITH RECURSIVE walk AS (\n  SELECT rider_id AS start_id, referred_by AS cur_id, 1 AS steps\n  FROM riders\n  WHERE referred_by IS NOT NULL\n  UNION ALL\n  SELECT w.start_id, r.referred_by, w.steps + 1\n  FROM walk w\n  JOIN riders r ON r.rider_id = w.cur_id\n  WHERE r.referred_by IS NOT NULL\n    AND w.steps < (SELECT COUNT(*) FROM riders)\n)\nSELECT r.rider_id, r.name, MIN(w.steps) AS loop_size\nFROM walk w\nJOIN riders r ON r.rider_id = w.start_id\nWHERE w.cur_id = w.start_id\nGROUP BY r.rider_id, r.name\nORDER BY r.rider_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Checking only for pairs that name each other finds the two-rider loop and the self-referral but misses the three-rider circle.",
+          "sql": "SELECT a.rider_id, a.name, 2 AS loop_size\nFROM riders a\nJOIN riders b ON b.rider_id = a.referred_by AND b.referred_by = a.rider_id\nORDER BY a.rider_id;"
+        },
+        {
+          "explain_md": "Flagging every walk that never ends also flags riders who merely lead into a loop (4 and 5), because their chain repeats too.",
+          "sql": "WITH RECURSIVE walk AS (\n  SELECT rider_id AS start_id, referred_by AS cur_id, 1 AS steps\n  FROM riders\n  WHERE referred_by IS NOT NULL\n  UNION ALL\n  SELECT w.start_id, r.referred_by, w.steps + 1\n  FROM walk w\n  JOIN riders r ON r.rider_id = w.cur_id\n  WHERE r.referred_by IS NOT NULL\n    AND w.steps < (SELECT COUNT(*) FROM riders)\n)\nSELECT r.rider_id, r.name, MAX(w.steps) AS loop_size\nFROM walk w\nJOIN riders r ON r.rider_id = w.start_id\nGROUP BY r.rider_id, r.name\nHAVING MAX(w.steps) = (SELECT COUNT(*) FROM riders)\nORDER BY r.rider_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "rider_id",
+          "name",
+          "loop_size"
+        ],
+        "rows": [
+          [
+            "1",
+            "Ana",
+            "3"
+          ],
+          [
+            "2",
+            "Ben",
+            "3"
+          ],
+          [
+            "3",
+            "Cy",
+            "3"
+          ],
+          [
+            "7",
+            "Gus",
+            "2"
+          ],
+          [
+            "8",
+            "Hal",
+            "2"
+          ],
+          [
+            "9",
+            "Ivy",
+            "1"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

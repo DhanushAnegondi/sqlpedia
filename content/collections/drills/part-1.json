@@ -1,0 +1,2312 @@
+{
+  "problems": [
+    {
+      "id": "T101",
+      "slug": "tweets-with-author-handles",
+      "title": "Tweets with author handles",
+      "section": "Joins: inner and outer",
+      "difficulty": "Easy",
+      "topics": [
+        "Joins"
+      ],
+      "statement_md": "A Twitter-style app is building a feed export. Return `tweet_id`, the author's `handle` as `author`, and `like_count` for every tweet whose author still has an account; tweets whose author cannot be found are left out of the export. Order by `tweet_id`.",
+      "tables": [
+        {
+          "name": "users",
+          "description_md": "One row per registered account.",
+          "columns": [
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "handle",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "country",
+              "type": "VARCHAR(2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "pixelpilot",
+              "US"
+            ],
+            [
+              2,
+              "nightowl_dev",
+              "UK"
+            ],
+            [
+              3,
+              "mangomuse",
+              "IN"
+            ],
+            [
+              4,
+              "quietcoder",
+              "CA"
+            ],
+            [
+              5,
+              "sunnyside",
+              "AU"
+            ]
+          ]
+        },
+        {
+          "name": "tweets",
+          "description_md": "One row per tweet. `user_id` is NULL for anonymised tweets and may point at an account that was deleted.",
+          "columns": [
+            {
+              "name": "tweet_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "posted_on",
+              "type": "DATE"
+            },
+            {
+              "name": "like_count",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              9001,
+              1,
+              "2025-03-02",
+              40
+            ],
+            [
+              9002,
+              2,
+              "2025-03-03",
+              15
+            ],
+            [
+              9003,
+              1,
+              "2025-03-05",
+              72
+            ],
+            [
+              9004,
+              99,
+              "2025-03-06",
+              19
+            ],
+            [
+              9005,
+              3,
+              "2025-03-08",
+              33
+            ],
+            [
+              9006,
+              null,
+              "2025-03-09",
+              8
+            ],
+            [
+              9007,
+              4,
+              "2025-03-10",
+              120
+            ],
+            [
+              9008,
+              2,
+              "2025-03-12",
+              64
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Compare the user ids in `tweets` with the ids in `users`. Do all of them have a partner?",
+        "Only rows that find a partner on both sides should survive; the unmatched ones disappear on their own."
+      ],
+      "notes_md": "**Pattern:** Inner join, the default join. An interviewer opens with it to check you know that unmatched rows vanish.\n\n**Shape:** Start from the table that holds the facts (tweets), attach the descriptive table (users) on the shared key, and keep only matching pairs. Then pick the three output columns and sort.\n\n**Syntax:** `JOIN` on its own means `INNER JOIN`. The `ON` clause holds the match condition, e.g. `ON t1.k = t2.k`; two NULLs never match each other because `NULL = NULL` is not true. `USING (k)` is shorthand when both tables name the key identically.\n\n**Trap:** Reaching for an outer join out of habit keeps the deleted-account and anonymised tweets with a NULL handle. Also check what the statement wants: here unmatched rows are excluded on purpose.\n\n**Interview follow-up:** How would you list the tweets that did NOT match any account, and why might that report matter to a data engineer?",
+      "solutions": [
+        {
+          "label": "Explicit INNER JOIN",
+          "explain_md": "Only rows whose `user_id` appears in both tables survive, so the deleted-account tweet (99) and the NULL-author tweet drop out.",
+          "sql": "SELECT t.tweet_id, u.handle AS author, t.like_count\nFROM tweets t\nJOIN users u ON u.user_id = t.user_id\nORDER BY t.tweet_id;"
+        },
+        {
+          "label": "Comma join with WHERE",
+          "explain_md": "The older syntax lists both tables and puts the match condition in WHERE; it is the same inner join.",
+          "sql": "SELECT t.tweet_id, u.handle AS author, t.like_count\nFROM tweets t, users u\nWHERE u.user_id = t.user_id\nORDER BY t.tweet_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Starting from tweets and keeping every row means tweets 9004 and 9006 reappear with a NULL author.",
+          "sql": "SELECT t.tweet_id, u.handle AS author, t.like_count\nFROM tweets t\nLEFT JOIN users u ON u.user_id = t.user_id\nORDER BY t.tweet_id;"
+        },
+        {
+          "explain_md": "Driving from users instead lists sunnyside (no tweets) with NULL tweet columns, so the row set is wrong.",
+          "sql": "SELECT t.tweet_id, u.handle AS author, t.like_count\nFROM users u\nLEFT JOIN tweets t ON u.user_id = t.user_id\nORDER BY t.tweet_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "tweet_id",
+          "author",
+          "like_count"
+        ],
+        "rows": [
+          [
+            "9001",
+            "pixelpilot",
+            "40"
+          ],
+          [
+            "9002",
+            "nightowl_dev",
+            "15"
+          ],
+          [
+            "9003",
+            "pixelpilot",
+            "72"
+          ],
+          [
+            "9005",
+            "mangomuse",
+            "33"
+          ],
+          [
+            "9007",
+            "quietcoder",
+            "120"
+          ],
+          [
+            "9008",
+            "nightowl_dev",
+            "64"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T102",
+      "slug": "watch-time-by-genre",
+      "title": "Watch time by genre",
+      "section": "Joins: inner and outer",
+      "difficulty": "Easy",
+      "topics": [
+        "Joins",
+        "Aggregation"
+      ],
+      "statement_md": "The analytics team at a Netflix-like streaming service logs each viewing session against a title, and each title against a genre. For every genre that was watched at least once, return `genre_name` and `total_minutes`, the sum of `minutes_watched` over all sessions of its titles. Order by `total_minutes` descending, then `genre_name`.",
+      "tables": [
+        {
+          "name": "genres",
+          "description_md": "Genre catalogue.",
+          "columns": [
+            {
+              "name": "genre_id",
+              "type": "INT"
+            },
+            {
+              "name": "genre_name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Drama"
+            ],
+            [
+              2,
+              "Comedy"
+            ],
+            [
+              3,
+              "Documentary"
+            ],
+            [
+              4,
+              "Kids"
+            ]
+          ]
+        },
+        {
+          "name": "titles",
+          "description_md": "One row per title in the catalogue.",
+          "columns": [
+            {
+              "name": "title_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "genre_id",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "The Crown",
+              1
+            ],
+            [
+              2,
+              "Ozark",
+              1
+            ],
+            [
+              3,
+              "The Good Place",
+              2
+            ],
+            [
+              4,
+              "Russian Doll",
+              2
+            ],
+            [
+              5,
+              "Our Planet",
+              3
+            ],
+            [
+              6,
+              "Making a Murderer",
+              3
+            ],
+            [
+              7,
+              "Octonauts",
+              4
+            ]
+          ]
+        },
+        {
+          "name": "watch_history",
+          "description_md": "One row per viewing session.",
+          "columns": [
+            {
+              "name": "view_id",
+              "type": "INT"
+            },
+            {
+              "name": "title_id",
+              "type": "INT"
+            },
+            {
+              "name": "minutes_watched",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              45
+            ],
+            [
+              2,
+              1,
+              60
+            ],
+            [
+              3,
+              2,
+              50
+            ],
+            [
+              4,
+              3,
+              22
+            ],
+            [
+              5,
+              3,
+              22
+            ],
+            [
+              6,
+              4,
+              30
+            ],
+            [
+              7,
+              5,
+              90
+            ],
+            [
+              8,
+              6,
+              55
+            ],
+            [
+              9,
+              5,
+              40
+            ],
+            [
+              10,
+              2,
+              35
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The genre name is two tables away from the viewing sessions. Which table links them?",
+        "Join first, group afterwards: the grouping column comes from the last table in the chain."
+      ],
+      "notes_md": "**Pattern:** Multi-table inner join feeding a GROUP BY: the 'fact table up to a dimension' shape every reporting query uses.\n\n**Shape:** Walk the foreign keys from the sessions to the titles to the genres, then collapse to one row per genre with a SUM of the minutes.\n\n**Syntax:** Chain joins by repeating `JOIN t ON ...`; each ON may use any table already in the chain. `GROUP BY` must list every non-aggregated selected column. `COUNT(*)` counts rows, `SUM(col)` adds values.\n\n**Trap:** Counting sessions instead of summing minutes answers a different question. Also keep an eye on which genres should appear: one has no views at all.\n\n**Interview follow-up:** How would you also show genres with no views, with total 0?",
+      "solutions": [
+        {
+          "label": "Two joins and a GROUP BY",
+          "explain_md": "Sessions join to titles and titles to genres; minutes are summed per genre. Kids has no sessions, so it never appears.",
+          "sql": "SELECT g.genre_name, SUM(w.minutes_watched) AS total_minutes\nFROM watch_history w\nJOIN titles t ON t.title_id = w.title_id\nJOIN genres g ON g.genre_id = t.genre_id\nGROUP BY g.genre_id, g.genre_name\nORDER BY total_minutes DESC, g.genre_name;"
+        },
+        {
+          "label": "Aggregate first, then name the genre",
+          "explain_md": "Minutes per title are computed first and rolled up through the genre join.",
+          "sql": "SELECT g.genre_name, SUM(x.minutes) AS total_minutes\nFROM (SELECT title_id, SUM(minutes_watched) AS minutes\n      FROM watch_history GROUP BY title_id) x\nJOIN titles t ON t.title_id = x.title_id\nJOIN genres g ON g.genre_id = t.genre_id\nGROUP BY g.genre_id, g.genre_name\nORDER BY total_minutes DESC, g.genre_name;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "`COUNT(*)` counts sessions, not minutes, so the totals are 4, 3 and 3.",
+          "sql": "SELECT g.genre_name, COUNT(*) AS total_minutes\nFROM watch_history w\nJOIN titles t ON t.title_id = w.title_id\nJOIN genres g ON g.genre_id = t.genre_id\nGROUP BY g.genre_id, g.genre_name\nORDER BY total_minutes DESC, g.genre_name;"
+        },
+        {
+          "explain_md": "Starting from genres with outer joins adds the Kids genre with a NULL total, which the statement excludes.",
+          "sql": "SELECT g.genre_name, SUM(w.minutes_watched) AS total_minutes\nFROM genres g\nLEFT JOIN titles t ON t.genre_id = g.genre_id\nLEFT JOIN watch_history w ON w.title_id = t.title_id\nGROUP BY g.genre_id, g.genre_name\nORDER BY total_minutes DESC, g.genre_name;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "genre_name",
+          "total_minutes"
+        ],
+        "rows": [
+          [
+            "Drama",
+            "190"
+          ],
+          [
+            "Documentary",
+            "185"
+          ],
+          [
+            "Comedy",
+            "74"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T103",
+      "slug": "royalty-owed-by-country-and-track",
+      "title": "Royalty owed by country and track",
+      "section": "Joins: inner and outer",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins"
+      ],
+      "statement_md": "A Spotify-style music service logs plays per country and track, and keeps a separate table of the per-play royalty rate, which differs by country. Return `country`, `track` and `royalty_owed` (plays times that country's rate) for every play row that has a rate on record for the same country and track; play rows with no rate there are skipped. Order by `country`, then `track`.",
+      "tables": [
+        {
+          "name": "track_plays",
+          "description_md": "Plays in a period; one row per country and track.",
+          "columns": [
+            {
+              "name": "country",
+              "type": "VARCHAR(2)"
+            },
+            {
+              "name": "track",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "play_count",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "US",
+              "Blinding Lights",
+              1000
+            ],
+            [
+              "US",
+              "Levitating",
+              400
+            ],
+            [
+              "US",
+              "As It Was",
+              700
+            ],
+            [
+              "UK",
+              "Blinding Lights",
+              600
+            ],
+            [
+              "UK",
+              "Levitating",
+              0
+            ],
+            [
+              "IN",
+              "Blinding Lights",
+              1200
+            ],
+            [
+              "IN",
+              "As It Was",
+              500
+            ]
+          ]
+        },
+        {
+          "name": "royalty_rates",
+          "description_md": "Royalty per play in a country; one row per country and track.",
+          "columns": [
+            {
+              "name": "country",
+              "type": "VARCHAR(2)"
+            },
+            {
+              "name": "track",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "rate_per_play",
+              "type": "DECIMAL(6,4)"
+            }
+          ],
+          "rows": [
+            [
+              "US",
+              "Blinding Lights",
+              0.004
+            ],
+            [
+              "US",
+              "Levitating",
+              0.0035
+            ],
+            [
+              "US",
+              "As It Was",
+              0.005
+            ],
+            [
+              "UK",
+              "Blinding Lights",
+              0.0045
+            ],
+            [
+              "UK",
+              "Levitating",
+              0.0038
+            ],
+            [
+              "IN",
+              "Blinding Lights",
+              0.001
+            ],
+            [
+              "IN",
+              "Flowers",
+              0.002
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Neither `country` nor `track` identifies a row on its own in either table. What does?",
+        "If two tables can match in several ways, rows get multiplied. Count the rows you expect (6 play rows have a rate) and compare."
+      ],
+      "notes_md": "**Pattern:** Join on a composite key. Interviewers use it to see whether you know what uniquely identifies a row.\n\n**Shape:** Find the combination of columns that is unique in the lookup table, and match on all of those columns together. Then multiply and sort.\n\n**Syntax:** Several conditions in one `ON` are combined with `AND`. `USING (col1, col2)` is shorthand when the columns share names. A join key must be unique on at least one side, otherwise rows multiply.\n\n**Trap:** Joining on only part of the key matches each row to every row sharing that part, so the output fans out and the numbers are wrong.\n\n**Interview follow-up:** How would you enforce this at the schema level so a duplicate rate row cannot sneak in?",
+      "solutions": [
+        {
+          "label": "Both key columns in ON",
+          "explain_md": "A play row matches only the rate row of the same country and track. India's As It Was row has no rate and falls away.",
+          "sql": "SELECT p.country, p.track, p.play_count * r.rate_per_play AS royalty_owed\nFROM track_plays p\nJOIN royalty_rates r ON r.country = p.country AND r.track = p.track\nORDER BY p.country, p.track;"
+        },
+        {
+          "label": "USING with both columns",
+          "explain_md": "USING says both named columns must be equal and returns each once.",
+          "sql": "SELECT country, track, p.play_count * r.rate_per_play AS royalty_owed\nFROM track_plays p\nJOIN royalty_rates r USING (country, track)\nORDER BY country, track;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Matching on `track` alone pairs every play row with every country's rate for that track, producing extra rows and wrong values.",
+          "sql": "SELECT p.country, p.track, p.play_count * r.rate_per_play AS royalty_owed\nFROM track_plays p\nJOIN royalty_rates r ON r.track = p.track\nORDER BY p.country, p.track, royalty_owed;"
+        },
+        {
+          "explain_md": "Matching on `country` alone pairs each play row with all rates of that country.",
+          "sql": "SELECT p.country, p.track, p.play_count * r.rate_per_play AS royalty_owed\nFROM track_plays p\nJOIN royalty_rates r ON r.country = p.country\nORDER BY p.country, p.track, royalty_owed;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "country",
+          "track",
+          "royalty_owed"
+        ],
+        "rows": [
+          [
+            "IN",
+            "Blinding Lights",
+            "1.2000"
+          ],
+          [
+            "UK",
+            "Blinding Lights",
+            "2.7000"
+          ],
+          [
+            "UK",
+            "Levitating",
+            "0.0000"
+          ],
+          [
+            "US",
+            "As It Was",
+            "3.5000"
+          ],
+          [
+            "US",
+            "Blinding Lights",
+            "4.0000"
+          ],
+          [
+            "US",
+            "Levitating",
+            "1.4000"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T104",
+      "slug": "messages-in-every-teams-channel",
+      "title": "Messages in every Teams channel",
+      "section": "Joins: inner and outer",
+      "difficulty": "Easy",
+      "topics": [
+        "Joins",
+        "Aggregation"
+      ],
+      "statement_md": "The admin of a Microsoft Teams-style workspace wants an activity report that lists every channel, including channels where nobody has posted yet. Return `channel_name` and `message_count` (the number of messages posted in it). Order by `message_count` descending, then `channel_name`.",
+      "tables": [
+        {
+          "name": "channels",
+          "description_md": "One row per channel.",
+          "columns": [
+            {
+              "name": "channel_id",
+              "type": "INT"
+            },
+            {
+              "name": "channel_name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "general"
+            ],
+            [
+              2,
+              "design-reviews"
+            ],
+            [
+              3,
+              "random"
+            ],
+            [
+              4,
+              "launch-war-room"
+            ],
+            [
+              5,
+              "on-call"
+            ]
+          ]
+        },
+        {
+          "name": "messages",
+          "description_md": "One row per message. `channel_id` is NULL for a direct chat.",
+          "columns": [
+            {
+              "name": "message_id",
+              "type": "INT"
+            },
+            {
+              "name": "channel_id",
+              "type": "INT"
+            },
+            {
+              "name": "sender",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "sent_on",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "ana",
+              "2025-05-01"
+            ],
+            [
+              2,
+              1,
+              "bo",
+              "2025-05-01"
+            ],
+            [
+              3,
+              1,
+              "cy",
+              "2025-05-02"
+            ],
+            [
+              4,
+              2,
+              "dee",
+              "2025-05-02"
+            ],
+            [
+              5,
+              2,
+              "eli",
+              "2025-05-03"
+            ],
+            [
+              6,
+              5,
+              "fay",
+              "2025-05-03"
+            ],
+            [
+              7,
+              null,
+              "gus",
+              "2025-05-04"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Two channels have no messages. Your answer must still contain them.",
+        "Think about what a counting function does with a NULL, and what it does with a whole row."
+      ],
+      "notes_md": "**Pattern:** Outer join that keeps every row of the 'master' table, then a count per group. A classic first outer-join question.\n\n**Shape:** Take the channel list as the base, attach messages where they exist, group by channel, and count something that is NULL when nothing attached.\n\n**Syntax:** `COUNT(*)` counts rows; `COUNT(col)` counts rows where `col` is not NULL. In an outer join the unmatched side's columns are all NULL. Choose the base table by the table you must keep every row of.\n\n**Trap:** Counting rows instead of a column from the optional side turns an empty channel into a 1.\n\n**Interview follow-up:** How would you do it with no join at all, and which version is easier to extend with more columns?",
+      "solutions": [
+        {
+          "label": "LEFT JOIN and COUNT(column)",
+          "explain_md": "Channels are preserved; an empty one has NULL message columns, which COUNT(m.message_id) ignores, giving 0.",
+          "sql": "SELECT c.channel_name, COUNT(m.message_id) AS message_count\nFROM channels c\nLEFT JOIN messages m ON m.channel_id = c.channel_id\nGROUP BY c.channel_id, c.channel_name\nORDER BY message_count DESC, c.channel_name;"
+        },
+        {
+          "label": "Correlated subquery",
+          "explain_md": "Each channel runs its own count; an empty one naturally returns 0.",
+          "sql": "SELECT c.channel_name,\n       (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.channel_id) AS message_count\nFROM channels c\nORDER BY message_count DESC, c.channel_name;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "COUNT(*) counts the single NULL-extended row of an empty channel, so random and launch-war-room show 1.",
+          "sql": "SELECT c.channel_name, COUNT(*) AS message_count\nFROM channels c\nLEFT JOIN messages m ON m.channel_id = c.channel_id\nGROUP BY c.channel_id, c.channel_name\nORDER BY message_count DESC, c.channel_name;"
+        },
+        {
+          "explain_md": "An inner join silently drops the two empty channels.",
+          "sql": "SELECT c.channel_name, COUNT(m.message_id) AS message_count\nFROM channels c\nJOIN messages m ON m.channel_id = c.channel_id\nGROUP BY c.channel_id, c.channel_name\nORDER BY message_count DESC, c.channel_name;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "channel_name",
+          "message_count"
+        ],
+        "rows": [
+          [
+            "general",
+            "3"
+          ],
+          [
+            "design-reviews",
+            "2"
+          ],
+          [
+            "on-call",
+            "1"
+          ],
+          [
+            "launch-war-room",
+            "0"
+          ],
+          [
+            "random",
+            "0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T105",
+      "slug": "accounts-and-their-2025-posts",
+      "title": "Accounts and their 2025 posts",
+      "section": "Joins: inner and outer",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Aggregation"
+      ],
+      "statement_md": "An Instagram-style creator programme wants every account listed with how it did during calendar year 2025 (1 January to 31 December inclusive). Return `account_id`, `handle`, `posts_2025` (number of posts in 2025) and `likes_2025` (their total likes), using 0 for both when an account posted nothing in 2025. Order by `account_id`.",
+      "tables": [
+        {
+          "name": "accounts",
+          "description_md": "One row per account.",
+          "columns": [
+            {
+              "name": "account_id",
+              "type": "INT"
+            },
+            {
+              "name": "handle",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "wanderwithwen"
+            ],
+            [
+              2,
+              "lensbylila"
+            ],
+            [
+              3,
+              "chefcaz"
+            ],
+            [
+              4,
+              "pixelpaws"
+            ],
+            [
+              5,
+              "gymrat_jo"
+            ],
+            [
+              6,
+              "dailydoodles"
+            ]
+          ]
+        },
+        {
+          "name": "posts",
+          "description_md": "One row per post.",
+          "columns": [
+            {
+              "name": "post_id",
+              "type": "INT"
+            },
+            {
+              "name": "account_id",
+              "type": "INT"
+            },
+            {
+              "name": "posted_on",
+              "type": "DATE"
+            },
+            {
+              "name": "likes",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2024-12-31",
+              500
+            ],
+            [
+              2,
+              1,
+              "2025-01-01",
+              300
+            ],
+            [
+              3,
+              1,
+              "2025-06-15",
+              450
+            ],
+            [
+              4,
+              2,
+              "2025-12-31",
+              200
+            ],
+            [
+              5,
+              2,
+              "2026-01-01",
+              990
+            ],
+            [
+              6,
+              3,
+              "2024-05-05",
+              600
+            ],
+            [
+              7,
+              3,
+              "2024-11-20",
+              100
+            ],
+            [
+              8,
+              4,
+              "2025-02-14",
+              255
+            ],
+            [
+              9,
+              4,
+              "2025-02-14",
+              145
+            ],
+            [
+              10,
+              6,
+              "2025-09-09",
+              800
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "chefcaz and gymrat_jo have no 2025 posts (one has none at all, one only older ones). They must still be in the output.",
+        "Where a condition is written decides whether the preserved rows survive it. Watch the boundary dates too."
+      ],
+      "notes_md": "**Pattern:** Outer join with a filter on the optional side: the 'where does the condition go' question, asked at nearly every interview.\n\n**Shape:** Keep every account, but only let 2025 posts attach. Then group and count/sum, replacing NULL totals with zero.\n\n**Syntax:** A condition in `ON` decides which rows match; a condition in `WHERE` runs afterwards and removes result rows. For the unmatched side, columns are NULL, so `WHERE col >= ...` is not true and drops the row. `COALESCE(x, 0)` replaces NULL.\n\n**Trap:** Putting the date test in WHERE quietly turns the outer join into an inner join and loses accounts with no 2025 posts. Forgetting COALESCE leaves NULL instead of 0.\n\n**Interview follow-up:** What changes if you want accounts with no 2025 posts only?",
+      "solutions": [
+        {
+          "label": "Date filter in ON",
+          "explain_md": "The year test is part of the match condition, so accounts without a 2025 post still produce one row with NULL post columns.",
+          "sql": "SELECT a.account_id, a.handle,\n       COUNT(p.post_id) AS posts_2025,\n       COALESCE(SUM(p.likes), 0) AS likes_2025\nFROM accounts a\nLEFT JOIN posts p\n  ON p.account_id = a.account_id\n AND p.posted_on >= '2025-01-01' AND p.posted_on < '2026-01-01'\nGROUP BY a.account_id, a.handle\nORDER BY a.account_id;"
+        },
+        {
+          "label": "Filter inside a derived table",
+          "explain_md": "The 2025 posts are summarised first, one row per account, then attached to the full list.",
+          "sql": "SELECT a.account_id, a.handle,\n       COALESCE(t.n, 0) AS posts_2025,\n       COALESCE(t.total, 0) AS likes_2025\nFROM accounts a\nLEFT JOIN (SELECT account_id, COUNT(*) AS n, SUM(likes) AS total\n           FROM posts\n           WHERE posted_on >= '2025-01-01' AND posted_on < '2026-01-01'\n           GROUP BY account_id) t ON t.account_id = a.account_id\nORDER BY a.account_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The date test in WHERE removes the NULL-extended rows, so accounts 3 and 5 vanish.",
+          "sql": "SELECT a.account_id, a.handle,\n       COUNT(p.post_id) AS posts_2025,\n       COALESCE(SUM(p.likes), 0) AS likes_2025\nFROM accounts a\nLEFT JOIN posts p ON p.account_id = a.account_id\nWHERE p.posted_on >= '2025-01-01' AND p.posted_on < '2026-01-01'\nGROUP BY a.account_id, a.handle\nORDER BY a.account_id;"
+        },
+        {
+          "explain_md": "Correct join but no COALESCE: likes are NULL instead of 0 for accounts 3 and 5.",
+          "sql": "SELECT a.account_id, a.handle,\n       COUNT(p.post_id) AS posts_2025,\n       SUM(p.likes) AS likes_2025\nFROM accounts a\nLEFT JOIN posts p\n  ON p.account_id = a.account_id\n AND p.posted_on >= '2025-01-01' AND p.posted_on < '2026-01-01'\nGROUP BY a.account_id, a.handle\nORDER BY a.account_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "account_id",
+          "handle",
+          "posts_2025",
+          "likes_2025"
+        ],
+        "rows": [
+          [
+            "1",
+            "wanderwithwen",
+            "2",
+            "750"
+          ],
+          [
+            "2",
+            "lensbylila",
+            "1",
+            "200"
+          ],
+          [
+            "3",
+            "chefcaz",
+            "0",
+            "0"
+          ],
+          [
+            "4",
+            "pixelpaws",
+            "2",
+            "400"
+          ],
+          [
+            "5",
+            "gymrat_jo",
+            "0",
+            "0"
+          ],
+          [
+            "6",
+            "dailydoodles",
+            "1",
+            "800"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T106",
+      "slug": "hosts-listings-and-bookings",
+      "title": "Hosts, listings and bookings",
+      "section": "Joins: inner and outer",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins"
+      ],
+      "statement_md": "An Airbnb-style stays platform wants one row per host, listing and booking, but must not lose anyone: hosts who have not listed anything yet, and listings that were never booked, should still appear (with NULL in the empty columns). Return `name`, `city` and `check_in`. Order by host, then listing, then booking (by `host_id`, `listing_id`, `booking_id`).",
+      "tables": [
+        {
+          "name": "hosts",
+          "description_md": "One row per host.",
+          "columns": [
+            {
+              "name": "host_id",
+              "type": "INT"
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Priya"
+            ],
+            [
+              2,
+              "Marcus"
+            ],
+            [
+              3,
+              "Hana"
+            ],
+            [
+              4,
+              "Tomas"
+            ]
+          ]
+        },
+        {
+          "name": "listings",
+          "description_md": "One row per listing.",
+          "columns": [
+            {
+              "name": "listing_id",
+              "type": "INT"
+            },
+            {
+              "name": "host_id",
+              "type": "INT"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "Lisbon"
+            ],
+            [
+              2,
+              1,
+              "Porto"
+            ],
+            [
+              3,
+              2,
+              "Austin"
+            ],
+            [
+              4,
+              3,
+              "Kyoto"
+            ],
+            [
+              5,
+              3,
+              "Osaka"
+            ]
+          ]
+        },
+        {
+          "name": "bookings",
+          "description_md": "One row per confirmed booking.",
+          "columns": [
+            {
+              "name": "booking_id",
+              "type": "INT"
+            },
+            {
+              "name": "listing_id",
+              "type": "INT"
+            },
+            {
+              "name": "check_in",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2025-06-01"
+            ],
+            [
+              2,
+              1,
+              "2025-07-10"
+            ],
+            [
+              3,
+              3,
+              "2025-06-15"
+            ],
+            [
+              4,
+              5,
+              "2025-08-02"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Tomas has no listing, and listings 2 and 4 have no bookings. All three situations must show up.",
+        "Each join in the chain must keep unmatched rows of everything to its left. A single stricter join anywhere undoes the earlier work."
+      ],
+      "notes_md": "**Pattern:** Chain of outer joins, preserving the leftmost table through several hops.\n\n**Shape:** Start from the table you must not lose rows from, then attach each next table in turn so a missing partner at any hop leaves NULLs rather than removing the row.\n\n**Syntax:** Joins are evaluated left to right. An inner join after an outer join compares against NULL-extended columns, which fails, so those rows go. Parentheses or derived tables can change the grouping of joins.\n\n**Trap:** A plain join in the middle of the chain filters out hosts without listings and listings without bookings, even though the first hop was an outer join.\n\n**Interview follow-up:** If a listing had two bookings and a host had three listings, how many rows would come back per host, and is that what the report needs?",
+      "solutions": [
+        {
+          "label": "Outer join at every hop",
+          "explain_md": "Every hop keeps unmatched left-side rows, so Tomas appears with NULL city and check-in and listings 2 and 4 appear with a NULL check-in.",
+          "sql": "SELECT h.name, l.city, b.check_in\nFROM hosts h\nLEFT JOIN listings l ON l.host_id = h.host_id\nLEFT JOIN bookings b ON b.listing_id = l.listing_id\nORDER BY h.host_id, l.listing_id, b.booking_id;"
+        },
+        {
+          "label": "Nested derived table",
+          "explain_md": "Listings are joined to their bookings first (keeping unbooked listings), then the whole block is attached to the hosts.",
+          "sql": "SELECT h.name, lb.city, lb.check_in\nFROM hosts h\nLEFT JOIN (SELECT l.listing_id, l.host_id, l.city, b.booking_id, b.check_in\n           FROM listings l\n           LEFT JOIN bookings b ON b.listing_id = l.listing_id) lb\n  ON lb.host_id = h.host_id\nORDER BY h.host_id, lb.listing_id, lb.booking_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "The final inner join drops every unbooked listing and every host without a listing.",
+          "sql": "SELECT h.name, l.city, b.check_in\nFROM hosts h\nLEFT JOIN listings l ON l.host_id = h.host_id\nJOIN bookings b ON b.listing_id = l.listing_id\nORDER BY h.host_id, l.listing_id, b.booking_id;"
+        },
+        {
+          "explain_md": "Joining listings to bookings with an inner join first loses listings 2 and 4 before the hosts are even attached.",
+          "sql": "SELECT h.name, lb.city, lb.check_in\nFROM hosts h\nLEFT JOIN (SELECT l.listing_id, l.host_id, l.city, b.booking_id, b.check_in\n           FROM listings l\n           JOIN bookings b ON b.listing_id = l.listing_id) lb\n  ON lb.host_id = h.host_id\nORDER BY h.host_id, lb.listing_id, lb.booking_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "name",
+          "city",
+          "check_in"
+        ],
+        "rows": [
+          [
+            "Priya",
+            "Lisbon",
+            "2025-06-01"
+          ],
+          [
+            "Priya",
+            "Lisbon",
+            "2025-07-10"
+          ],
+          [
+            "Priya",
+            "Porto",
+            null
+          ],
+          [
+            "Marcus",
+            "Austin",
+            "2025-06-15"
+          ],
+          [
+            "Hana",
+            "Kyoto",
+            null
+          ],
+          [
+            "Hana",
+            "Osaka",
+            "2025-08-02"
+          ],
+          [
+            "Tomas",
+            null,
+            null
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T107",
+      "slug": "every-folder-with-its-emails",
+      "title": "Every folder with its emails",
+      "section": "Joins: inner and outer",
+      "difficulty": "Easy",
+      "topics": [
+        "Joins"
+      ],
+      "statement_md": "An Outlook-style mailbox keeps folders in one table and messages in another. Produce a listing that shows every folder together with the subject of each email in it; a folder with no emails still appears once, with a NULL subject. Return `folder_name` and `subject`, ordered by `folder_id`, then `email_id`.",
+      "tables": [
+        {
+          "name": "folders",
+          "description_md": "One row per mailbox folder.",
+          "columns": [
+            {
+              "name": "folder_id",
+              "type": "INT"
+            },
+            {
+              "name": "folder_name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Inbox"
+            ],
+            [
+              2,
+              "Archive"
+            ],
+            [
+              3,
+              "Receipts"
+            ],
+            [
+              4,
+              "Projects"
+            ]
+          ]
+        },
+        {
+          "name": "emails",
+          "description_md": "One row per email. Folder 9 was deleted and removed from `folders`.",
+          "columns": [
+            {
+              "name": "email_id",
+              "type": "INT"
+            },
+            {
+              "name": "folder_id",
+              "type": "INT"
+            },
+            {
+              "name": "subject",
+              "type": "VARCHAR(30)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "Q3 roadmap review"
+            ],
+            [
+              2,
+              1,
+              "Lunch on Friday?"
+            ],
+            [
+              3,
+              2,
+              "Offsite agenda"
+            ],
+            [
+              4,
+              4,
+              "Invoice 4471"
+            ],
+            [
+              5,
+              4,
+              "Welcome aboard"
+            ],
+            [
+              6,
+              9,
+              "Old newsletter"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Receipts holds no emails. 'Old newsletter' sits in a folder that no longer exists. Which of the two belongs in the listing?",
+        "The order of the two tables in the FROM clause matters for outer joins. Decide which side must be kept in full."
+      ],
+      "notes_md": "**Pattern:** Outer join direction. The interviewer wants to see you pick the preserved side deliberately.\n\n**Shape:** The folder list is the one that must be complete, so every folder is kept and emails attach where they exist. Emails in a missing folder are not wanted.\n\n**Syntax:** `A RIGHT JOIN B` keeps all rows of B, and is the mirror image of `B LEFT JOIN A`. Most teams standardise on LEFT JOIN by swapping the table order.\n\n**Trap:** Writing the tables the wrong way round keeps the orphaned email (with a NULL folder name) and loses the empty folder.\n\n**Interview follow-up:** Is there any query that a RIGHT JOIN can do and a LEFT JOIN cannot?",
+      "solutions": [
+        {
+          "label": "RIGHT JOIN",
+          "explain_md": "RIGHT JOIN keeps every row from the right-hand table (`folders`), and drops emails that match no folder.",
+          "sql": "SELECT f.folder_name, e.subject\nFROM emails e\nRIGHT JOIN folders f ON f.folder_id = e.folder_id\nORDER BY f.folder_id, e.email_id;"
+        },
+        {
+          "label": "LEFT JOIN with the tables swapped",
+          "explain_md": "Putting `folders` first and using LEFT JOIN is the same logic, written the way most people read it.",
+          "sql": "SELECT f.folder_name, e.subject\nFROM folders f\nLEFT JOIN emails e ON e.folder_id = f.folder_id\nORDER BY f.folder_id, e.email_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Preserving the emails side keeps the orphaned newsletter (NULL folder) and loses Receipts.",
+          "sql": "SELECT f.folder_name, e.subject\nFROM emails e\nLEFT JOIN folders f ON f.folder_id = e.folder_id\nORDER BY e.folder_id, e.email_id;"
+        },
+        {
+          "explain_md": "An inner join loses Receipts as well as the orphaned newsletter.",
+          "sql": "SELECT f.folder_name, e.subject\nFROM folders f\nJOIN emails e ON e.folder_id = f.folder_id\nORDER BY f.folder_id, e.email_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "folder_name",
+          "subject"
+        ],
+        "rows": [
+          [
+            "Inbox",
+            "Q3 roadmap review"
+          ],
+          [
+            "Inbox",
+            "Lunch on Friday?"
+          ],
+          [
+            "Archive",
+            "Offsite agenda"
+          ],
+          [
+            "Receipts",
+            null
+          ],
+          [
+            "Projects",
+            "Invoice 4471"
+          ],
+          [
+            "Projects",
+            "Welcome aboard"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T108",
+      "slug": "expected-versus-paid-driver-payouts",
+      "title": "Expected versus paid driver payouts",
+      "section": "Joins: inner and outer",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Reconciliation"
+      ],
+      "statement_md": "An Uber-style ride-share company keeps a table of the weekly payout each driver is due and a separate table of what the payments system actually paid. A driver can be due money but unpaid, or paid without a matching payout record. Return every driver found in either table with `driver_id`, `amount_due`, `amount_paid` and `difference` (paid minus due), treating a missing side as 0. Order by `driver_id`. MySQL has no FULL OUTER JOIN.",
+      "tables": [
+        {
+          "name": "payouts_due",
+          "description_md": "Payout owed this week; one row per driver.",
+          "columns": [
+            {
+              "name": "driver_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount_due",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              5000.0
+            ],
+            [
+              102,
+              3000.0
+            ],
+            [
+              103,
+              1200.0
+            ],
+            [
+              104,
+              800.0
+            ]
+          ]
+        },
+        {
+          "name": "payouts_paid",
+          "description_md": "Money actually sent this week; one row per driver.",
+          "columns": [
+            {
+              "name": "driver_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount_paid",
+              "type": "DECIMAL(10,2)"
+            }
+          ],
+          "rows": [
+            [
+              102,
+              3400.5
+            ],
+            [
+              103,
+              1200.0
+            ],
+            [
+              104,
+              700.0
+            ],
+            [
+              105,
+              650.0
+            ],
+            [
+              106,
+              90.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Driver 101 exists only in one table; 105 and 106 only in the other. A single outer join keeps just one of those groups.",
+        "Think of the answer as the union of two directions, or as a list of all the keys that each table is then matched back to."
+      ],
+      "notes_md": "**Pattern:** Full outer join emulation. Asked in MySQL interviews precisely because the keyword does not exist.\n\n**Shape:** Build the union of both outer directions without duplicating matched rows, or first list every key and then match each table to that list. Replace missing numbers with zero at the end.\n\n**Syntax:** `UNION` removes duplicate rows, `UNION ALL` keeps them; both need the same column count and compatible types. The anti-join form needs `WHERE b.key IS NULL` on the second half to avoid repeating matches.\n\n**Trap:** Using only one outer join misses the other side's orphans; combining both directions with UNION ALL doubles the matched rows.\n\n**Interview follow-up:** How would you do this on a database that does have FULL OUTER JOIN, and what changes in how you handle the NULLs?",
+      "solutions": [
+        {
+          "label": "LEFT JOIN UNION RIGHT JOIN",
+          "explain_md": "Each half keeps one table's orphans; UNION removes the duplicated matched rows that both halves return.",
+          "sql": "SELECT d.driver_id, COALESCE(d.amount_due, 0) AS amount_due, COALESCE(p.amount_paid, 0) AS amount_paid,\n       COALESCE(p.amount_paid, 0) - COALESCE(d.amount_due, 0) AS difference\nFROM payouts_due d LEFT JOIN payouts_paid p ON p.driver_id = d.driver_id\nUNION\nSELECT p.driver_id, COALESCE(d.amount_due, 0), COALESCE(p.amount_paid, 0),\n       COALESCE(p.amount_paid, 0) - COALESCE(d.amount_due, 0)\nFROM payouts_due d RIGHT JOIN payouts_paid p ON p.driver_id = d.driver_id\nORDER BY driver_id;"
+        },
+        {
+          "label": "LEFT JOIN plus anti-join with UNION ALL",
+          "explain_md": "The second half returns only payments with no payout record, so nothing repeats and UNION ALL is safe.",
+          "sql": "SELECT d.driver_id, d.amount_due, COALESCE(p.amount_paid, 0) AS amount_paid,\n       COALESCE(p.amount_paid, 0) - d.amount_due AS difference\nFROM payouts_due d LEFT JOIN payouts_paid p ON p.driver_id = d.driver_id\nUNION ALL\nSELECT p.driver_id, 0, p.amount_paid, p.amount_paid\nFROM payouts_paid p LEFT JOIN payouts_due d ON d.driver_id = p.driver_id\nWHERE d.driver_id IS NULL\nORDER BY driver_id;"
+        },
+        {
+          "label": "List of all keys, then two outer joins",
+          "explain_md": "A key list from both tables guarantees every driver appears once, and each table is matched back to it.",
+          "sql": "WITH drivers AS (\n  SELECT driver_id FROM payouts_due\n  UNION\n  SELECT driver_id FROM payouts_paid\n)\nSELECT k.driver_id, COALESCE(d.amount_due, 0) AS amount_due, COALESCE(p.amount_paid, 0) AS amount_paid,\n       COALESCE(p.amount_paid, 0) - COALESCE(d.amount_due, 0) AS difference\nFROM drivers k\nLEFT JOIN payouts_due d ON d.driver_id = k.driver_id\nLEFT JOIN payouts_paid p ON p.driver_id = k.driver_id\nORDER BY k.driver_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A single LEFT JOIN misses drivers 105 and 106, who were paid without a payout record.",
+          "sql": "SELECT d.driver_id, COALESCE(d.amount_due, 0) AS amount_due, COALESCE(p.amount_paid, 0) AS amount_paid,\n       COALESCE(p.amount_paid, 0) - COALESCE(d.amount_due, 0) AS difference\nFROM payouts_due d LEFT JOIN payouts_paid p ON p.driver_id = d.driver_id\nORDER BY d.driver_id;"
+        },
+        {
+          "explain_md": "UNION ALL of both outer joins repeats drivers 102, 103 and 104 because they match in both directions.",
+          "sql": "SELECT d.driver_id, COALESCE(d.amount_due, 0) AS amount_due, COALESCE(p.amount_paid, 0) AS amount_paid,\n       COALESCE(p.amount_paid, 0) - COALESCE(d.amount_due, 0) AS difference\nFROM payouts_due d LEFT JOIN payouts_paid p ON p.driver_id = d.driver_id\nUNION ALL\nSELECT p.driver_id, COALESCE(d.amount_due, 0), COALESCE(p.amount_paid, 0),\n       COALESCE(p.amount_paid, 0) - COALESCE(d.amount_due, 0)\nFROM payouts_due d RIGHT JOIN payouts_paid p ON p.driver_id = d.driver_id\nORDER BY driver_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "driver_id",
+          "amount_due",
+          "amount_paid",
+          "difference"
+        ],
+        "rows": [
+          [
+            "101",
+            "5000.00",
+            "0.00",
+            "-5000.00"
+          ],
+          [
+            "102",
+            "3000.00",
+            "3400.50",
+            "400.50"
+          ],
+          [
+            "103",
+            "1200.00",
+            "1200.00",
+            "0.00"
+          ],
+          [
+            "104",
+            "800.00",
+            "700.00",
+            "-100.00"
+          ],
+          [
+            "105",
+            "0.00",
+            "650.00",
+            "650.00"
+          ],
+          [
+            "106",
+            "0.00",
+            "90.00",
+            "90.00"
+          ]
+        ]
+      },
+      "dialect_note_md": "MySQL has no FULL OUTER JOIN keyword, and the driver id column can come from either table.",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T109",
+      "slug": "reconcile-two-warehouse-counts",
+      "title": "Reconcile two warehouse counts",
+      "section": "Joins: inner and outer",
+      "difficulty": "Hard",
+      "topics": [
+        "Joins",
+        "Reconciliation"
+      ],
+      "statement_md": "After a cycle count at an Amazon-style fulfilment centre, compare the inventory system's stock list with the physical count sheet. For every SKU that does not agree, return `sku`, `system_qty`, `counted_qty` (NULL where the SKU is absent from that list) and a `status`: `'only_system'` if the SKU is missing from the count sheet, `'only_count'` if it is missing from the system, or `'mismatch'` if it is in both with different quantities. Matching SKUs are not returned. A SKU with system quantity 0 and no count row is still `'only_system'`. Order by `sku`.",
+      "tables": [
+        {
+          "name": "system_stock",
+          "description_md": "What the inventory system believes; one row per SKU.",
+          "columns": [
+            {
+              "name": "sku",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "qty",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "B01",
+              10
+            ],
+            [
+              "B02",
+              5
+            ],
+            [
+              "B03",
+              0
+            ],
+            [
+              "B04",
+              8
+            ],
+            [
+              "B05",
+              12
+            ],
+            [
+              "B08",
+              6
+            ]
+          ]
+        },
+        {
+          "name": "physical_count",
+          "description_md": "What the counters found; one row per SKU counted.",
+          "columns": [
+            {
+              "name": "sku",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "qty",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "B01",
+              10
+            ],
+            [
+              "B02",
+              4
+            ],
+            [
+              "B04",
+              8
+            ],
+            [
+              "B05",
+              15
+            ],
+            [
+              "B06",
+              3
+            ],
+            [
+              "B07",
+              1
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Some SKUs appear in only one list, one of them with a quantity of zero. A zero is not the same as absent.",
+        "Work out for each SKU whether each side exists first, and only then compare quantities. A comparison with NULL never says 'different'."
+      ],
+      "notes_md": "**Pattern:** Two-sided reconciliation (full outer comparison). Data-quality and finance interviews love it.\n\n**Shape:** Get one row per SKU from the union of both lists, with each side's quantity (NULL if absent), classify by which side is missing before comparing, then drop the matches.\n\n**Syntax:** `x <> y` is NULL, not true, when either side is NULL, so absent rows are never found by an inequality test alone. `CASE` checks branches in order, so test absence before comparing values. `COALESCE(x, 0)` hides the difference between missing and zero.\n\n**Trap:** Filtering with `WHERE s.qty <> c.qty` silently ignores one-sided SKUs. Coalescing a missing quantity to 0 makes the zero-stock SKU look like a match.\n\n**Interview follow-up:** Which SKUs would you worry about most, and how would you check for duplicate SKU rows in either list before trusting this?",
+      "solutions": [
+        {
+          "label": "Both outer directions, then classify",
+          "explain_md": "A derived table of every SKU and both quantities feeds a CASE that tests absence before comparison; matches are filtered in the outer query.",
+          "sql": "SELECT sku, system_qty, counted_qty, status\nFROM (\n  SELECT COALESCE(s.sku, c.sku) AS sku, s.qty AS system_qty, c.qty AS counted_qty,\n         CASE WHEN c.sku IS NULL THEN 'only_system'\n              WHEN s.sku IS NULL THEN 'only_count'\n              WHEN s.qty <> c.qty THEN 'mismatch'\n              ELSE 'match' END AS status\n  FROM system_stock s LEFT JOIN physical_count c ON c.sku = s.sku\n  UNION\n  SELECT COALESCE(s.sku, c.sku), s.qty, c.qty,\n         CASE WHEN c.sku IS NULL THEN 'only_system'\n              WHEN s.sku IS NULL THEN 'only_count'\n              WHEN s.qty <> c.qty THEN 'mismatch'\n              ELSE 'match' END\n  FROM system_stock s RIGHT JOIN physical_count c ON c.sku = s.sku\n) r\nWHERE status <> 'match'\nORDER BY sku;"
+        },
+        {
+          "label": "List of all SKUs, then two outer joins",
+          "explain_md": "Every SKU appears once in the key list; each side's quantity is looked up, and presence is tested with the joined key column rather than the quantity.",
+          "sql": "WITH all_skus AS (\n  SELECT sku FROM system_stock\n  UNION\n  SELECT sku FROM physical_count\n), joined AS (\n  SELECT k.sku, s.qty AS system_qty, c.qty AS counted_qty,\n         CASE WHEN c.sku IS NULL THEN 'only_system'\n              WHEN s.sku IS NULL THEN 'only_count'\n              WHEN s.qty <> c.qty THEN 'mismatch'\n              ELSE 'match' END AS status\n  FROM all_skus k\n  LEFT JOIN system_stock s ON s.sku = k.sku\n  LEFT JOIN physical_count c ON c.sku = k.sku\n)\nSELECT sku, system_qty, counted_qty, status\nFROM joined\nWHERE status <> 'match'\nORDER BY sku;"
+        },
+        {
+          "label": "Stack both lists and pivot by source",
+          "explain_md": "Both lists are stacked with a source tag and collapsed to one row per SKU with conditional MAX; a SKU is missing from a side when its pivoted value stays NULL.",
+          "sql": "WITH stacked AS (\n  SELECT sku, qty, 'S' AS src FROM system_stock\n  UNION ALL\n  SELECT sku, qty, 'C' AS src FROM physical_count\n), side_by_side AS (\n  SELECT sku,\n         MAX(CASE WHEN src = 'S' THEN qty END) AS system_qty,\n         MAX(CASE WHEN src = 'C' THEN qty END) AS counted_qty\n  FROM stacked\n  GROUP BY sku\n), classified AS (\n  SELECT sku, system_qty, counted_qty,\n         CASE WHEN counted_qty IS NULL THEN 'only_system'\n              WHEN system_qty IS NULL THEN 'only_count'\n              WHEN system_qty <> counted_qty THEN 'mismatch'\n              ELSE 'match' END AS status\n  FROM side_by_side\n)\nSELECT sku, system_qty, counted_qty, status\nFROM classified\nWHERE status <> 'match'\nORDER BY sku;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A single outer join in one direction never sees B06 and B07, which are only on the count sheet.",
+          "sql": "SELECT s.sku, s.qty AS system_qty, c.qty AS counted_qty,\n       CASE WHEN c.sku IS NULL THEN 'only_system' ELSE 'mismatch' END AS status\nFROM system_stock s LEFT JOIN physical_count c ON c.sku = s.sku\nWHERE c.sku IS NULL OR s.qty <> c.qty\nORDER BY s.sku;"
+        },
+        {
+          "explain_md": "Coalescing a missing quantity to 0 treats B03 (system 0, never counted) as a match and loses it.",
+          "sql": "WITH all_skus AS (\n  SELECT sku FROM system_stock UNION SELECT sku FROM physical_count\n)\nSELECT k.sku, s.qty AS system_qty, c.qty AS counted_qty,\n       CASE WHEN c.sku IS NULL THEN 'only_system'\n            WHEN s.sku IS NULL THEN 'only_count'\n            ELSE 'mismatch' END AS status\nFROM all_skus k\nLEFT JOIN system_stock s ON s.sku = k.sku\nLEFT JOIN physical_count c ON c.sku = k.sku\nWHERE COALESCE(s.qty, 0) <> COALESCE(c.qty, 0)\nORDER BY k.sku;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "sku",
+          "system_qty",
+          "counted_qty",
+          "status"
+        ],
+        "rows": [
+          [
+            "B02",
+            "5",
+            "4",
+            "mismatch"
+          ],
+          [
+            "B03",
+            "0",
+            null,
+            "only_system"
+          ],
+          [
+            "B05",
+            "12",
+            "15",
+            "mismatch"
+          ],
+          [
+            "B06",
+            null,
+            "3",
+            "only_count"
+          ],
+          [
+            "B07",
+            null,
+            "1",
+            "only_count"
+          ],
+          [
+            "B08",
+            "6",
+            null,
+            "only_system"
+          ]
+        ]
+      },
+      "dialect_note_md": "MySQL has no FULL OUTER JOIN, so the SKU column may need to come from either side.",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T110",
+      "slug": "every-hero-and-skin-combination",
+      "title": "Every hero and skin combination",
+      "section": "Joins: inner and outer",
+      "difficulty": "Easy",
+      "topics": [
+        "Joins"
+      ],
+      "statement_md": "The store team of an online multiplayer game is setting up cosmetic bundles: every hero must be offered with every skin that is currently on sale. Return `hero_name`, `skin_name` and a bundle code `bundle_code` made of the first three letters of the hero in upper case, a hyphen and the first three letters of the skin in upper case (for example `WAR-FRO`). Order by the hero's `sort_order`, then `skin_name`.",
+      "tables": [
+        {
+          "name": "heroes",
+          "description_md": "Playable heroes; `sort_order` gives the display order.",
+          "columns": [
+            {
+              "name": "hero_name",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "sort_order",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "Warden",
+              1
+            ],
+            [
+              "Ranger",
+              2
+            ],
+            [
+              "Sorcerer",
+              3
+            ],
+            [
+              "Brawler",
+              4
+            ]
+          ]
+        },
+        {
+          "name": "skins",
+          "description_md": "Cosmetic skins; `on_sale` is 1 when the skin is currently sold.",
+          "columns": [
+            {
+              "name": "skin_name",
+              "type": "VARCHAR(10)"
+            },
+            {
+              "name": "on_sale",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "Frostbite",
+              1
+            ],
+            [
+              "Neon",
+              1
+            ],
+            [
+              "Ember",
+              0
+            ],
+            [
+              "Shadow",
+              1
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "There is no column linking heroes and skins. The result is simply every hero paired with every eligible skin.",
+        "Count the rows you expect: heroes times skins on sale."
+      ],
+      "notes_md": "**Pattern:** Cartesian product, used to generate every combination.\n\n**Shape:** Nothing relates the two lists, so every row of one is paired with every row of the other. Filter the skin list to what is on sale, then build the code and sort.\n\n**Syntax:** `A CROSS JOIN B` has no ON clause and returns |A| x |B| rows. Listing tables with a comma and no WHERE does the same. `CONCAT(a, '-', b)` joins strings; `UPPER(x)` and `SUBSTRING(x, 1, 3)` take the first three letters.\n\n**Trap:** Forgetting to filter the optional list first produces combinations that should not exist. A missing join condition by accident also produces a cross join, which is how rows explode in real queries.\n\n**Interview follow-up:** How many rows would the product of three small lists produce, and why can an accidental cross join take a warehouse down?",
+      "solutions": [
+        {
+          "label": "CROSS JOIN",
+          "explain_md": "Every hero is paired with every skin, and the sale filter keeps only eligible skins.",
+          "sql": "SELECT h.hero_name, s.skin_name,\n       CONCAT(UPPER(SUBSTRING(h.hero_name, 1, 3)), '-', UPPER(SUBSTRING(s.skin_name, 1, 3))) AS bundle_code\nFROM heroes h\nCROSS JOIN skins s\nWHERE s.on_sale = 1\nORDER BY h.sort_order, s.skin_name;"
+        },
+        {
+          "label": "Comma join",
+          "explain_md": "Listing both tables with no join condition is a Cartesian product too; the WHERE keeps the eligible skins.",
+          "sql": "SELECT h.hero_name, s.skin_name,\n       CONCAT(UPPER(SUBSTRING(h.hero_name, 1, 3)), '-', UPPER(SUBSTRING(s.skin_name, 1, 3))) AS bundle_code\nFROM heroes h, skins s\nWHERE s.on_sale = 1\nORDER BY h.sort_order, s.skin_name;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without the sale test, the withdrawn Ember skin is paired with every hero, adding four unwanted rows.",
+          "sql": "SELECT h.hero_name, s.skin_name,\n       CONCAT(UPPER(SUBSTRING(h.hero_name, 1, 3)), '-', UPPER(SUBSTRING(s.skin_name, 1, 3))) AS bundle_code\nFROM heroes h\nCROSS JOIN skins s\nORDER BY h.sort_order, s.skin_name;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "hero_name",
+          "skin_name",
+          "bundle_code"
+        ],
+        "rows": [
+          [
+            "Warden",
+            "Frostbite",
+            "WAR-FRO"
+          ],
+          [
+            "Warden",
+            "Neon",
+            "WAR-NEO"
+          ],
+          [
+            "Warden",
+            "Shadow",
+            "WAR-SHA"
+          ],
+          [
+            "Ranger",
+            "Frostbite",
+            "RAN-FRO"
+          ],
+          [
+            "Ranger",
+            "Neon",
+            "RAN-NEO"
+          ],
+          [
+            "Ranger",
+            "Shadow",
+            "RAN-SHA"
+          ],
+          [
+            "Sorcerer",
+            "Frostbite",
+            "SOR-FRO"
+          ],
+          [
+            "Sorcerer",
+            "Neon",
+            "SOR-NEO"
+          ],
+          [
+            "Sorcerer",
+            "Shadow",
+            "SOR-SHA"
+          ],
+          [
+            "Brawler",
+            "Frostbite",
+            "BRA-FRO"
+          ],
+          [
+            "Brawler",
+            "Neon",
+            "BRA-NEO"
+          ],
+          [
+            "Brawler",
+            "Shadow",
+            "BRA-SHA"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T111",
+      "slug": "zero-filled-earnings-by-channel-and-month",
+      "title": "Zero-filled earnings by channel and month",
+      "section": "Joins: inner and outer",
+      "difficulty": "Medium",
+      "topics": [
+        "Joins",
+        "Aggregation"
+      ],
+      "statement_md": "A YouTube-style creator dashboard needs a monthly earnings grid with one row for every channel and every reporting month, even when a channel earned nothing that month. Return `month_start`, `channel_name` and `total_earnings` (0 when there were none). Only the months listed in the months table are wanted. Order by `month_start`, then `channel_id`.",
+      "tables": [
+        {
+          "name": "channels",
+          "description_md": "One row per channel.",
+          "columns": [
+            {
+              "name": "channel_id",
+              "type": "INT"
+            },
+            {
+              "name": "channel_name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "CodeCraft"
+            ],
+            [
+              2,
+              "Trail Tales"
+            ],
+            [
+              3,
+              "Daily Bakes"
+            ]
+          ]
+        },
+        {
+          "name": "report_months",
+          "description_md": "The months to report on, as the first day of each month.",
+          "columns": [
+            {
+              "name": "month_start",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              "2025-01-01"
+            ],
+            [
+              "2025-02-01"
+            ],
+            [
+              "2025-03-01"
+            ]
+          ]
+        },
+        {
+          "name": "ad_earnings",
+          "description_md": "One row per ad payout; some fall outside the reporting months.",
+          "columns": [
+            {
+              "name": "earning_id",
+              "type": "INT"
+            },
+            {
+              "name": "channel_id",
+              "type": "INT"
+            },
+            {
+              "name": "earned_on",
+              "type": "DATE"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2025-01-05",
+              120.0
+            ],
+            [
+              2,
+              1,
+              "2025-01-31",
+              80.0
+            ],
+            [
+              3,
+              1,
+              "2025-03-01",
+              60.0
+            ],
+            [
+              4,
+              2,
+              "2025-01-20",
+              200.0
+            ],
+            [
+              5,
+              2,
+              "2025-02-14",
+              150.0
+            ],
+            [
+              6,
+              2,
+              "2025-02-28",
+              50.0
+            ],
+            [
+              7,
+              2,
+              "2025-03-31",
+              90.0
+            ],
+            [
+              8,
+              3,
+              "2025-01-02",
+              30.0
+            ],
+            [
+              9,
+              3,
+              "2025-03-15",
+              45.0
+            ],
+            [
+              10,
+              1,
+              "2025-04-01",
+              500.0
+            ],
+            [
+              11,
+              3,
+              "2024-12-31",
+              10.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Nine rows are expected (3 channels x 3 months). Two of them have no earnings behind them.",
+        "First build every channel and month pairing, independent of the earnings; then attach the earnings that fall inside each month."
+      ],
+      "notes_md": "**Pattern:** Dense grid (zero-filled report): cross join of dimensions, then outer join the facts.\n\n**Shape:** Generate every channel and month pair, then let earnings attach to the pair when the channel matches and the date falls inside the month. Sum per pair and replace NULL with 0.\n\n**Syntax:** A month window is `date >= month_start AND date < month_start + INTERVAL 1 MONTH`; half-open ranges avoid missing the last day. A date test belongs in `ON` for an outer join. `SUM` of no rows is NULL, so `COALESCE(SUM(x), 0)`.\n\n**Trap:** Grouping straight from the earnings table can only report pairs that have earnings. Filtering the outer-joined date in WHERE removes the empty pairs again.\n\n**Interview follow-up:** How would you produce the months list itself when there is no calendar table?",
+      "solutions": [
+        {
+          "label": "CROSS JOIN then LEFT JOIN",
+          "explain_md": "The grid of channels x months is built first; earnings attach by channel and date range, and COALESCE turns empty sums into 0.",
+          "sql": "SELECT m.month_start, c.channel_name, COALESCE(SUM(e.amount), 0) AS total_earnings\nFROM channels c\nCROSS JOIN report_months m\nLEFT JOIN ad_earnings e\n  ON e.channel_id = c.channel_id\n AND e.earned_on >= m.month_start\n AND e.earned_on < m.month_start + INTERVAL 1 MONTH\nGROUP BY m.month_start, c.channel_id, c.channel_name\nORDER BY m.month_start, c.channel_id;"
+        },
+        {
+          "label": "Grid with a scalar subquery",
+          "explain_md": "Each grid cell asks for its own total; a cell with no rows gets NULL, then 0.",
+          "sql": "SELECT m.month_start, c.channel_name,\n       COALESCE((SELECT SUM(e.amount) FROM ad_earnings e\n                 WHERE e.channel_id = c.channel_id\n                   AND e.earned_on >= m.month_start\n                   AND e.earned_on < m.month_start + INTERVAL 1 MONTH), 0) AS total_earnings\nFROM channels c\nCROSS JOIN report_months m\nORDER BY m.month_start, c.channel_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Grouping the earnings themselves can only produce channel-months that have earnings, so the zero cells are missing.",
+          "sql": "SELECT m.month_start, c.channel_name, SUM(e.amount) AS total_earnings\nFROM ad_earnings e\nJOIN channels c ON c.channel_id = e.channel_id\nJOIN report_months m\n  ON e.earned_on >= m.month_start AND e.earned_on < m.month_start + INTERVAL 1 MONTH\nGROUP BY m.month_start, c.channel_id, c.channel_name\nORDER BY m.month_start, c.channel_id;"
+        },
+        {
+          "explain_md": "The grid is right but the empty cells are NULL rather than 0.",
+          "sql": "SELECT m.month_start, c.channel_name, SUM(e.amount) AS total_earnings\nFROM channels c\nCROSS JOIN report_months m\nLEFT JOIN ad_earnings e\n  ON e.channel_id = c.channel_id\n AND e.earned_on >= m.month_start\n AND e.earned_on < m.month_start + INTERVAL 1 MONTH\nGROUP BY m.month_start, c.channel_id, c.channel_name\nORDER BY m.month_start, c.channel_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "month_start",
+          "channel_name",
+          "total_earnings"
+        ],
+        "rows": [
+          [
+            "2025-01-01",
+            "CodeCraft",
+            "200.00"
+          ],
+          [
+            "2025-01-01",
+            "Trail Tales",
+            "200.00"
+          ],
+          [
+            "2025-01-01",
+            "Daily Bakes",
+            "30.00"
+          ],
+          [
+            "2025-02-01",
+            "CodeCraft",
+            "0.00"
+          ],
+          [
+            "2025-02-01",
+            "Trail Tales",
+            "200.00"
+          ],
+          [
+            "2025-02-01",
+            "Daily Bakes",
+            "0.00"
+          ],
+          [
+            "2025-03-01",
+            "CodeCraft",
+            "60.00"
+          ],
+          [
+            "2025-03-01",
+            "Trail Tales",
+            "90.00"
+          ],
+          [
+            "2025-03-01",
+            "Daily Bakes",
+            "45.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T112",
+      "slug": "deposits-and-withdrawals-per-account",
+      "title": "Deposits and withdrawals per account",
+      "section": "Joins: inner and outer",
+      "difficulty": "Hard",
+      "topics": [
+        "Joins",
+        "Aggregation",
+        "Reconciliation"
+      ],
+      "statement_md": "A retail bank's statement team wants each account's position. For every account, return `account_id`, `holder_name`, `total_deposited` (sum of its deposits), `total_withdrawn` (sum of its withdrawals) and `net_position` (deposited minus withdrawn), using 0 where an account has no deposits or no withdrawals. Order by `account_id`.",
+      "tables": [
+        {
+          "name": "accounts",
+          "description_md": "One row per bank account.",
+          "columns": [
+            {
+              "name": "account_id",
+              "type": "INT"
+            },
+            {
+              "name": "holder_name",
+              "type": "VARCHAR(20)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Nia"
+            ],
+            [
+              2,
+              "Oscar"
+            ],
+            [
+              3,
+              "Pia"
+            ],
+            [
+              4,
+              "Quinn"
+            ],
+            [
+              5,
+              "Raj"
+            ]
+          ]
+        },
+        {
+          "name": "deposits",
+          "description_md": "One row per deposit.",
+          "columns": [
+            {
+              "name": "deposit_id",
+              "type": "INT"
+            },
+            {
+              "name": "account_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              100.0
+            ],
+            [
+              2,
+              1,
+              50.0
+            ],
+            [
+              3,
+              2,
+              80.0
+            ],
+            [
+              4,
+              2,
+              80.0
+            ],
+            [
+              5,
+              2,
+              40.0
+            ],
+            [
+              6,
+              3,
+              60.0
+            ]
+          ]
+        },
+        {
+          "name": "withdrawals",
+          "description_md": "One row per withdrawal.",
+          "columns": [
+            {
+              "name": "withdrawal_id",
+              "type": "INT"
+            },
+            {
+              "name": "account_id",
+              "type": "INT"
+            },
+            {
+              "name": "amount",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              100.0
+            ],
+            [
+              2,
+              1,
+              30.0
+            ],
+            [
+              3,
+              2,
+              80.0
+            ],
+            [
+              4,
+              2,
+              80.0
+            ],
+            [
+              5,
+              4,
+              15.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Check Nia's figures by hand: 150 deposited, 130 withdrawn. A one-shot query that joins both tables to the account will disagree.",
+        "Deposits and withdrawals are independent of each other. What happens to the deposit rows when each is paired with every withdrawal of the same account?"
+      ],
+      "notes_md": "**Pattern:** Fan-out (multiplication) of rows when joining two one-to-many tables to the same parent. A favourite 'spot the wrong number' question.\n\n**Shape:** Reduce each child table to one row per account before joining, so the joins are one-to-one against the account list. Then replace missing totals with zero.\n\n**Syntax:** `SUM(DISTINCT x)` only removes repeated values, not repeated rows, so it is not a fix when different rows share an amount. A derived table or CTE can aggregate a child table before it is joined. Correlated scalar subqueries aggregate per row of the outer table.\n\n**Trap:** Joining both children to the account in one go pairs every deposit with every withdrawal, so each sum is multiplied by the other side's row count; `DISTINCT` patches some totals and breaks others.\n\n**Interview follow-up:** How would you detect fan-out in an existing report, for instance by comparing counts before and after a join?",
+      "solutions": [
+        {
+          "label": "Pre-aggregate each side",
+          "explain_md": "Each child table is reduced to one row per account, so the two joins cannot multiply rows; COALESCE supplies zero for absent accounts.",
+          "sql": "WITH d AS (\n  SELECT account_id, SUM(amount) AS total_deposited FROM deposits GROUP BY account_id\n), w AS (\n  SELECT account_id, SUM(amount) AS total_withdrawn FROM withdrawals GROUP BY account_id\n)\nSELECT a.account_id, a.holder_name,\n       COALESCE(d.total_deposited, 0) AS total_deposited,\n       COALESCE(w.total_withdrawn, 0) AS total_withdrawn,\n       COALESCE(d.total_deposited, 0) - COALESCE(w.total_withdrawn, 0) AS net_position\nFROM accounts a\nLEFT JOIN d ON d.account_id = a.account_id\nLEFT JOIN w ON w.account_id = a.account_id\nORDER BY a.account_id;"
+        },
+        {
+          "label": "Scalar subqueries",
+          "explain_md": "Each total is computed independently per account, so one child table cannot influence the other.",
+          "sql": "SELECT account_id, holder_name, total_deposited, total_withdrawn, total_deposited - total_withdrawn AS net_position\nFROM (\n  SELECT a.account_id, a.holder_name,\n         COALESCE((SELECT SUM(amount) FROM deposits d WHERE d.account_id = a.account_id), 0) AS total_deposited,\n         COALESCE((SELECT SUM(amount) FROM withdrawals w WHERE w.account_id = a.account_id), 0) AS total_withdrawn\n  FROM accounts a\n) t\nORDER BY account_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Joining both child tables at once pairs each deposit with each withdrawal, so Nia's 150 shows as 300 and Oscar's 200 as 400.",
+          "sql": "SELECT a.account_id, a.holder_name,\n       COALESCE(SUM(d.amount), 0) AS total_deposited,\n       COALESCE(SUM(w.amount), 0) AS total_withdrawn,\n       COALESCE(SUM(d.amount), 0) - COALESCE(SUM(w.amount), 0) AS net_position\nFROM accounts a\nLEFT JOIN deposits d ON d.account_id = a.account_id\nLEFT JOIN withdrawals w ON w.account_id = a.account_id\nGROUP BY a.account_id, a.holder_name\nORDER BY a.account_id;"
+        },
+        {
+          "explain_md": "SUM(DISTINCT) hides repeated values, not repeated rows, so Oscar's two 80.00 deposits count once.",
+          "sql": "SELECT a.account_id, a.holder_name,\n       COALESCE(SUM(DISTINCT d.amount), 0) AS total_deposited,\n       COALESCE(SUM(DISTINCT w.amount), 0) AS total_withdrawn,\n       COALESCE(SUM(DISTINCT d.amount), 0) - COALESCE(SUM(DISTINCT w.amount), 0) AS net_position\nFROM accounts a\nLEFT JOIN deposits d ON d.account_id = a.account_id\nLEFT JOIN withdrawals w ON w.account_id = a.account_id\nGROUP BY a.account_id, a.holder_name\nORDER BY a.account_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "account_id",
+          "holder_name",
+          "total_deposited",
+          "total_withdrawn",
+          "net_position"
+        ],
+        "rows": [
+          [
+            "1",
+            "Nia",
+            "150.00",
+            "130.00",
+            "20.00"
+          ],
+          [
+            "2",
+            "Oscar",
+            "200.00",
+            "160.00",
+            "40.00"
+          ],
+          [
+            "3",
+            "Pia",
+            "60.00",
+            "0.00",
+            "60.00"
+          ],
+          [
+            "4",
+            "Quinn",
+            "0.00",
+            "15.00",
+            "-15.00"
+          ],
+          [
+            "5",
+            "Raj",
+            "0.00",
+            "0.00",
+            "0.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

@@ -1,5 +1,11 @@
 # Changes — 2026-10-09 (session 2)
 
+## Session 3 plan — drills collection
+- content/collections/drills/_meta.json (new) + scripts/build_content.mjs ORDER: add `drills` after basics.
+- 7 Sonnet workers, one part each (T101-T112 joins inner/outer, T113-T124 joins self/anti/semi/range, T201-T215 ranking, T301-T315 aggregates/frames, T401-T415 value functions, T501-T512 CTEs, T601-T612 recursive CTEs).
+- Lead: re-run fill_expected + content_check on all parts, fix translator gaps, build, browser check. Reviewer (Sonnet) on spoilers/traps.
+- Done: content/collections/drills/part-1..7.json (93 problems, product-style settings per user), part 7 reordered by difficulty.
+
 ## Plan
 1. [Sonnet x4] Write content/collections/basics/part-1..4.json (12 problems each, B001-B048), verify on real MySQL + engine.
 2. [lead] Build: optional `section` per problem; display order basics first; home/library pick it up.

@@ -1,0 +1,2621 @@
+{
+  "problems": [
+    {
+      "id": "T201",
+      "slug": "number-each-user-s-tweets",
+      "title": "Number each user's tweets",
+      "section": "Window functions: ranking",
+      "difficulty": "Easy",
+      "topics": [
+        "Window functions",
+        "Ranking"
+      ],
+      "statement_md": "A Twitter-style app wants to label every tweet with its position in that account's own timeline of posts: 1 for the account's first tweet, 2 for its second, and so on. Order by `posted_on`; when an account tweeted several times on the same day, the lower `tweet_id` comes first. Return `user_id`, `tweet_id`, `posted_on`, `tweet_seq`, ordered by `user_id`, then `tweet_seq`.",
+      "tables": [
+        {
+          "name": "tweets",
+          "description_md": "One row per tweet. An account can tweet several times on the same day.",
+          "columns": [
+            {
+              "name": "tweet_id",
+              "type": "INT"
+            },
+            {
+              "name": "user_id",
+              "type": "INT"
+            },
+            {
+              "name": "posted_on",
+              "type": "DATE"
+            },
+            {
+              "name": "likes",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              101,
+              1,
+              "2025-01-05",
+              40
+            ],
+            [
+              102,
+              1,
+              "2025-02-11",
+              25
+            ],
+            [
+              103,
+              2,
+              "2025-01-20",
+              99
+            ],
+            [
+              104,
+              2,
+              "2025-01-20",
+              15
+            ],
+            [
+              105,
+              2,
+              "2025-03-02",
+              60
+            ],
+            [
+              106,
+              3,
+              "2025-02-01",
+              12
+            ],
+            [
+              107,
+              1,
+              "2025-03-15",
+              80
+            ],
+            [
+              108,
+              3,
+              "2025-02-01",
+              33
+            ],
+            [
+              109,
+              3,
+              "2025-04-09",
+              20
+            ],
+            [
+              110,
+              4,
+              "2025-03-03",
+              55
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The numbering has to restart for every account.",
+        "Two tweets on the same day must still get different numbers, so the sort inside the window needs a second key."
+      ],
+      "notes_md": "**Pattern:** Numbering rows inside a group. Interviewers open with it to check that you know PARTITION BY and why a tie-breaker matters.\n\n**Shape:** Split the rows into one group per account, sort each group by date then id, and hand out 1, 2, 3 in that order. Nothing is collapsed: every tweet stays a row.\n\n**Syntax:** `ROW_NUMBER()` takes no argument and gives every row in its partition a distinct number following the window's ORDER BY. Without PARTITION BY the whole result is one partition.\n\n**Trap:** Sorting only by date leaves same-day tweets in an arbitrary order, so the numbering can change between runs. A ranking function that lets equal dates share a number is also not a sequence.\n\n**Interview follow-up:** How would you number the tweets without a window function? (Count the rows of the same account that sort before this one.)",
+      "solutions": [
+        {
+          "label": "ROW_NUMBER",
+          "explain_md": "ROW_NUMBER restarts per account and, with tweet_id as the second sort key, never repeats a number.",
+          "sql": "SELECT user_id, tweet_id, posted_on,\n       ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY posted_on, tweet_id) AS tweet_seq\nFROM tweets\nORDER BY user_id, tweet_seq;"
+        },
+        {
+          "label": "Correlated count",
+          "explain_md": "The position of a tweet is the number of the same account's tweets that sort at or before it.",
+          "sql": "SELECT t.user_id, t.tweet_id, t.posted_on,\n       (SELECT COUNT(*) FROM tweets x\n        WHERE x.user_id = t.user_id\n          AND (x.posted_on < t.posted_on OR (x.posted_on = t.posted_on AND x.tweet_id <= t.tweet_id))) AS tweet_seq\nFROM tweets t\nORDER BY t.user_id, tweet_seq;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "RANK gives both same-day tweets the same number, so the sequence has a repeat.",
+          "sql": "SELECT user_id, tweet_id, posted_on,\n       RANK() OVER (PARTITION BY user_id ORDER BY posted_on) AS tweet_seq\nFROM tweets\nORDER BY user_id, tweet_seq, tweet_id;"
+        },
+        {
+          "explain_md": "Without PARTITION BY the numbering runs across all accounts instead of restarting.",
+          "sql": "SELECT user_id, tweet_id, posted_on,\n       ROW_NUMBER() OVER (ORDER BY user_id, posted_on, tweet_id) AS tweet_seq\nFROM tweets\nORDER BY user_id, tweet_seq;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "user_id",
+          "tweet_id",
+          "posted_on",
+          "tweet_seq"
+        ],
+        "rows": [
+          [
+            "1",
+            "101",
+            "2025-01-05",
+            "1"
+          ],
+          [
+            "1",
+            "102",
+            "2025-02-11",
+            "2"
+          ],
+          [
+            "1",
+            "107",
+            "2025-03-15",
+            "3"
+          ],
+          [
+            "2",
+            "103",
+            "2025-01-20",
+            "1"
+          ],
+          [
+            "2",
+            "104",
+            "2025-01-20",
+            "2"
+          ],
+          [
+            "2",
+            "105",
+            "2025-03-02",
+            "3"
+          ],
+          [
+            "3",
+            "106",
+            "2025-02-01",
+            "1"
+          ],
+          [
+            "3",
+            "108",
+            "2025-02-01",
+            "2"
+          ],
+          [
+            "3",
+            "109",
+            "2025-04-09",
+            "3"
+          ],
+          [
+            "4",
+            "110",
+            "2025-03-03",
+            "1"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T202",
+      "slug": "three-ways-to-rank-a-chart",
+      "title": "Three ways to rank a chart",
+      "section": "Window functions: ranking",
+      "difficulty": "Easy",
+      "topics": [
+        "Window functions",
+        "Ranking"
+      ],
+      "statement_md": "A Spotify-style music service is arguing about how to display its weekly top-tracks chart. For every track, show three position columns side by side, ordered by `streams` descending: `row_no` (every track gets a different position; equal streams are separated alphabetically by `track`), `rank_pos` (equal streams share a position and the next position is skipped), and `dense_pos` (equal streams share a position and the next position is not skipped). Return `track`, `streams`, `row_no`, `rank_pos`, `dense_pos`, ordered by `row_no`.",
+      "tables": [
+        {
+          "name": "weekly_chart",
+          "description_md": "One row per track with this week's stream count (thousands).",
+          "columns": [
+            {
+              "name": "track",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "streams",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "Blinding Lights",
+              1200
+            ],
+            [
+              "Flowers",
+              1100
+            ],
+            [
+              "Levitating",
+              1100
+            ],
+            [
+              "As It Was",
+              1000
+            ],
+            [
+              "Heat Waves",
+              1000
+            ],
+            [
+              "Stay",
+              1000
+            ],
+            [
+              "Starboy",
+              900
+            ],
+            [
+              "Anti-Hero",
+              800
+            ],
+            [
+              "Peaches",
+              800
+            ],
+            [
+              "Kiss Me More",
+              700
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Each of the three columns is a different ranking function over the same ordering.",
+        "Look at what happens after a group of tied tracks: one column continues counting rows, one jumps ahead, one just goes to the next number."
+      ],
+      "notes_md": "**Pattern:** The three ranking functions compared. A classic warm-up: the interviewer asks what each does on ties.\n\n**Shape:** One query, one ordering, three function calls. The differences show only where streams repeat.\n\n**Syntax:** `ROW_NUMBER()`, `RANK()` and `DENSE_RANK()` take no arguments; all need `OVER (ORDER BY ...)`. Tied rows are peers: they get the same value from RANK and DENSE_RANK, never from ROW_NUMBER.\n\n**Trap:** Using one function for all three columns, or forgetting the second sort key so the numbering of tied rows is unstable.\n\n**Interview follow-up:** When would you pick each? (Unique id: ROW_NUMBER. Olympic-style places: RANK. Levels or Nth distinct value: DENSE_RANK.)",
+      "solutions": [
+        {
+          "label": "Three window functions",
+          "explain_md": "All three share the same ordering; only their tie handling differs.",
+          "sql": "SELECT track, streams,\n       ROW_NUMBER() OVER (ORDER BY streams DESC, track) AS row_no,\n       RANK() OVER (ORDER BY streams DESC) AS rank_pos,\n       DENSE_RANK() OVER (ORDER BY streams DESC) AS dense_pos\nFROM weekly_chart\nORDER BY row_no;"
+        },
+        {
+          "label": "Correlated counts",
+          "explain_md": "Each position is a count of tracks that beat this one: rows ahead, strictly better rows, or distinct better stream counts.",
+          "sql": "SELECT c.track, c.streams,\n       (SELECT COUNT(*) FROM weekly_chart x WHERE x.streams > c.streams OR (x.streams = c.streams AND x.track <= c.track)) AS row_no,\n       1 + (SELECT COUNT(*) FROM weekly_chart x WHERE x.streams > c.streams) AS rank_pos,\n       1 + (SELECT COUNT(DISTINCT x.streams) FROM weekly_chart x WHERE x.streams > c.streams) AS dense_pos\nFROM weekly_chart c\nORDER BY row_no;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Using RANK for every column makes row_no repeat on ties instead of being unique.",
+          "sql": "SELECT track, streams,\n       RANK() OVER (ORDER BY streams DESC) AS row_no,\n       RANK() OVER (ORDER BY streams DESC) AS rank_pos,\n       DENSE_RANK() OVER (ORDER BY streams DESC) AS dense_pos\nFROM weekly_chart\nORDER BY row_no, track;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "track",
+          "streams",
+          "row_no",
+          "rank_pos",
+          "dense_pos"
+        ],
+        "rows": [
+          [
+            "Blinding Lights",
+            "1200",
+            "1",
+            "1",
+            "1"
+          ],
+          [
+            "Flowers",
+            "1100",
+            "2",
+            "2",
+            "2"
+          ],
+          [
+            "Levitating",
+            "1100",
+            "3",
+            "2",
+            "2"
+          ],
+          [
+            "As It Was",
+            "1000",
+            "4",
+            "4",
+            "3"
+          ],
+          [
+            "Heat Waves",
+            "1000",
+            "5",
+            "4",
+            "3"
+          ],
+          [
+            "Stay",
+            "1000",
+            "6",
+            "4",
+            "3"
+          ],
+          [
+            "Starboy",
+            "900",
+            "7",
+            "7",
+            "4"
+          ],
+          [
+            "Anti-Hero",
+            "800",
+            "8",
+            "8",
+            "5"
+          ],
+          [
+            "Peaches",
+            "800",
+            "9",
+            "8",
+            "5"
+          ],
+          [
+            "Kiss Me More",
+            "700",
+            "10",
+            "10",
+            "6"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T203",
+      "slug": "gold-silver-bronze-per-challenge",
+      "title": "Gold, silver, bronze per challenge",
+      "section": "Window functions: ranking",
+      "difficulty": "Easy",
+      "topics": [
+        "Window functions",
+        "Ranking"
+      ],
+      "statement_md": "An Instagram-style app runs themed reel challenges and awards badges by `likes`. The best like count in a challenge wins gold, the next-best count silver, the next bronze, and creators with exactly the same count get the same badge: if two creators tie for gold, the next distinct count still earns silver. Return `challenge`, `creator`, `likes`, `medal` for every badge winner, ordered by `challenge`, then `likes` descending, then `creator`.",
+      "tables": [
+        {
+          "name": "reels",
+          "description_md": "One row per challenge entry (likes in thousands).",
+          "columns": [
+            {
+              "name": "reel_id",
+              "type": "INT"
+            },
+            {
+              "name": "challenge",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "creator",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "likes",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "DanceOff",
+              "lena_lens",
+              980
+            ],
+            [
+              2,
+              "DanceOff",
+              "max_moves",
+              980
+            ],
+            [
+              3,
+              "DanceOff",
+              "nina_nova",
+              900
+            ],
+            [
+              4,
+              "DanceOff",
+              "omar_orbit",
+              850
+            ],
+            [
+              5,
+              "DanceOff",
+              "pat_pixel",
+              700
+            ],
+            [
+              6,
+              "CoffeeArt",
+              "quinn_q",
+              700
+            ],
+            [
+              7,
+              "CoffeeArt",
+              "rosa_roast",
+              680
+            ],
+            [
+              8,
+              "CoffeeArt",
+              "sam_sips",
+              680
+            ],
+            [
+              9,
+              "CoffeeArt",
+              "tom_tamp",
+              680
+            ],
+            [
+              10,
+              "CoffeeArt",
+              "uri_urn",
+              500
+            ],
+            [
+              11,
+              "Skateline",
+              "vera_vert",
+              770
+            ],
+            [
+              12,
+              "Skateline",
+              "walt_wheels",
+              710
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Think about what the rank should be for the creator who follows a tied pair.",
+        "Compute the rank first, then filter on it in an outer query; a window function cannot be used directly in WHERE."
+      ],
+      "notes_md": "**Pattern:** Top 3 by distinct level, ties sharing a level. Interviewers use it to separate RANK from DENSE_RANK.\n\n**Shape:** Rank entries inside each challenge with a ranking that never skips numbers, then keep the first three levels and translate the level into a badge name.\n\n**Syntax:** `DENSE_RANK()` numbers distinct values 1, 2, 3 with no gaps. `CASE n WHEN 1 THEN 'x' ... END` maps numbers to labels.\n\n**Trap:** RANK skips numbers after a tie, so the creator after a tied pair is rank 3 or worse and silently loses a badge level.\n\n**Interview follow-up:** How would you award at most three badges per challenge regardless of ties? (Switch to ROW_NUMBER and choose a tie-break.)",
+      "solutions": [
+        {
+          "label": "DENSE_RANK + CASE",
+          "explain_md": "DENSE_RANK has no gaps, so level 1, 2 and 3 are the three best distinct like counts.",
+          "sql": "WITH ranked AS (\n  SELECT challenge, creator, likes,\n         DENSE_RANK() OVER (PARTITION BY challenge ORDER BY likes DESC) AS lvl\n  FROM reels\n)\nSELECT challenge, creator, likes,\n       CASE lvl WHEN 1 THEN 'Gold' WHEN 2 THEN 'Silver' ELSE 'Bronze' END AS medal\nFROM ranked\nWHERE lvl <= 3\nORDER BY challenge, likes DESC, creator;"
+        },
+        {
+          "label": "Count distinct better counts",
+          "explain_md": "The level is one plus the number of distinct higher like counts in the same challenge.",
+          "sql": "SELECT challenge, creator, likes,\n       CASE lvl WHEN 1 THEN 'Gold' WHEN 2 THEN 'Silver' ELSE 'Bronze' END AS medal\nFROM (\n  SELECT r.challenge, r.creator, r.likes,\n         1 + (SELECT COUNT(DISTINCT x.likes) FROM reels x WHERE x.challenge = r.challenge AND x.likes > r.likes) AS lvl\n  FROM reels r\n) t\nWHERE lvl <= 3\nORDER BY challenge, likes DESC, creator;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "RANK jumps from 1 straight to 3 after a tie, so the next-best creator after tied leaders is cut and a level is mislabelled.",
+          "sql": "WITH ranked AS (\n  SELECT challenge, creator, likes,\n         RANK() OVER (PARTITION BY challenge ORDER BY likes DESC) AS lvl\n  FROM reels\n)\nSELECT challenge, creator, likes,\n       CASE lvl WHEN 1 THEN 'Gold' WHEN 2 THEN 'Silver' ELSE 'Bronze' END AS medal\nFROM ranked\nWHERE lvl <= 3\nORDER BY challenge, likes DESC, creator;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "challenge",
+          "creator",
+          "likes",
+          "medal"
+        ],
+        "rows": [
+          [
+            "CoffeeArt",
+            "quinn_q",
+            "700",
+            "Gold"
+          ],
+          [
+            "CoffeeArt",
+            "rosa_roast",
+            "680",
+            "Silver"
+          ],
+          [
+            "CoffeeArt",
+            "sam_sips",
+            "680",
+            "Silver"
+          ],
+          [
+            "CoffeeArt",
+            "tom_tamp",
+            "680",
+            "Silver"
+          ],
+          [
+            "CoffeeArt",
+            "uri_urn",
+            "500",
+            "Bronze"
+          ],
+          [
+            "DanceOff",
+            "lena_lens",
+            "980",
+            "Gold"
+          ],
+          [
+            "DanceOff",
+            "max_moves",
+            "980",
+            "Gold"
+          ],
+          [
+            "DanceOff",
+            "nina_nova",
+            "900",
+            "Silver"
+          ],
+          [
+            "DanceOff",
+            "omar_orbit",
+            "850",
+            "Bronze"
+          ],
+          [
+            "Skateline",
+            "vera_vert",
+            "770",
+            "Gold"
+          ],
+          [
+            "Skateline",
+            "walt_wheels",
+            "710",
+            "Silver"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T204",
+      "slug": "top-two-earning-channels-per-category",
+      "title": "Top two earning channels per category",
+      "section": "Window functions: ranking",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Ranking",
+        "Top N per group"
+      ],
+      "statement_md": "A YouTube-style partner team wants the two best-earning channels in every content category, but ties must be handled fairly. Return every channel that has at most one higher-earning channel in the same category: tied channels are all returned (so a category can return more than two channels), yet nobody is returned just because the channels above them are tied. Return `category`, `channel`, `monthly_revenue`, ordered by `category`, then `monthly_revenue` descending, then `channel`.",
+      "tables": [
+        {
+          "name": "channel_earnings",
+          "description_md": "One row per channel with its monthly ad revenue.",
+          "columns": [
+            {
+              "name": "channel_id",
+              "type": "INT"
+            },
+            {
+              "name": "channel",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "category",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "monthly_revenue",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "PixelPatrol",
+              "Gaming",
+              15000
+            ],
+            [
+              2,
+              "QuestCrew",
+              "Gaming",
+              15000
+            ],
+            [
+              3,
+              "LootLegion",
+              "Gaming",
+              14000
+            ],
+            [
+              4,
+              "SpeedRunHQ",
+              "Gaming",
+              12000
+            ],
+            [
+              5,
+              "SpiceLab",
+              "Cooking",
+              9000
+            ],
+            [
+              6,
+              "WokWorks",
+              "Cooking",
+              8000
+            ],
+            [
+              7,
+              "BakeBay",
+              "Cooking",
+              8000
+            ],
+            [
+              8,
+              "PanFlip",
+              "Cooking",
+              7000
+            ],
+            [
+              9,
+              "GadgetGarage",
+              "Tech",
+              6000
+            ],
+            [
+              10,
+              "LoFiLoft",
+              "Music",
+              7500
+            ],
+            [
+              11,
+              "BeatBox101",
+              "Music",
+              7000
+            ],
+            [
+              12,
+              "ChordChat",
+              "Music",
+              6500
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Translate 'at most one higher-earning channel' into a rank number and decide which ranking function produces it.",
+        "Check Gaming and Cooking: look at what each ranking function does to the third channel when the top two (or second and third) tie."
+      ],
+      "notes_md": "**Pattern:** Top N per group with ties kept. The standard follow-up to 'highest earner per group'.\n\n**Shape:** Rank channels within their category by revenue, keep ranks up to N in an outer query. The ranking function is the whole decision: it must say how many channels are strictly better.\n\n**Syntax:** `RANK()` is 1 + the number of rows strictly ahead, so `RANK() <= 2` means at most one strictly better row. `DENSE_RANK()` counts distinct revenue levels instead; `ROW_NUMBER()` ignores ties.\n\n**Trap:** ROW_NUMBER cuts one of two tied channels at the boundary; DENSE_RANK lets a third channel in when the top two tie.\n\n**Interview follow-up:** What if the business wanted the top two distinct revenue levels instead? (DENSE_RANK <= 2.)",
+      "solutions": [
+        {
+          "label": "RANK",
+          "explain_md": "RANK equals 1 plus the number of strictly higher revenues, so RANK <= 2 is exactly 'at most one higher-earning channel'.",
+          "sql": "WITH ranked AS (\n  SELECT category, channel, monthly_revenue,\n         RANK() OVER (PARTITION BY category ORDER BY monthly_revenue DESC) AS rnk\n  FROM channel_earnings\n)\nSELECT category, channel, monthly_revenue\nFROM ranked\nWHERE rnk <= 2\nORDER BY category, monthly_revenue DESC, channel;"
+        },
+        {
+          "label": "Correlated count",
+          "explain_md": "Count the channels in the same category that earn strictly more and keep those with fewer than two.",
+          "sql": "SELECT c.category, c.channel, c.monthly_revenue\nFROM channel_earnings c\nWHERE (SELECT COUNT(*) FROM channel_earnings x WHERE x.category = c.category AND x.monthly_revenue > c.monthly_revenue) < 2\nORDER BY c.category, c.monthly_revenue DESC, c.channel;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "ROW_NUMBER always returns exactly two rows per category, so one of two tied channels is dropped.",
+          "sql": "WITH ranked AS (\n  SELECT category, channel, monthly_revenue,\n         ROW_NUMBER() OVER (PARTITION BY category ORDER BY monthly_revenue DESC, channel) AS rn\n  FROM channel_earnings\n)\nSELECT category, channel, monthly_revenue FROM ranked WHERE rn <= 2\nORDER BY category, monthly_revenue DESC, channel;"
+        },
+        {
+          "explain_md": "DENSE_RANK counts revenue levels, so when the top two tie it also lets in the next channel.",
+          "sql": "WITH ranked AS (\n  SELECT category, channel, monthly_revenue,\n         DENSE_RANK() OVER (PARTITION BY category ORDER BY monthly_revenue DESC) AS rnk\n  FROM channel_earnings\n)\nSELECT category, channel, monthly_revenue FROM ranked WHERE rnk <= 2\nORDER BY category, monthly_revenue DESC, channel;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "category",
+          "channel",
+          "monthly_revenue"
+        ],
+        "rows": [
+          [
+            "Cooking",
+            "SpiceLab",
+            "9000"
+          ],
+          [
+            "Cooking",
+            "BakeBay",
+            "8000"
+          ],
+          [
+            "Cooking",
+            "WokWorks",
+            "8000"
+          ],
+          [
+            "Gaming",
+            "PixelPatrol",
+            "15000"
+          ],
+          [
+            "Gaming",
+            "QuestCrew",
+            "15000"
+          ],
+          [
+            "Music",
+            "LoFiLoft",
+            "7500"
+          ],
+          [
+            "Music",
+            "BeatBox101",
+            "7000"
+          ],
+          [
+            "Tech",
+            "GadgetGarage",
+            "6000"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T205",
+      "slug": "third-highest-distinct-fare",
+      "title": "Third-highest distinct fare",
+      "section": "Window functions: ranking",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Ranking"
+      ],
+      "statement_md": "An Uber-style pricing team wants the third-highest distinct fare ever charged, counting each fare amount once no matter how many rides cost that much. Cancelled rides have no fare (`NULL`) and are not a fare level. Return a single row with the column `third_highest_fare`; it must be `NULL` if fewer than three distinct fares exist.",
+      "tables": [
+        {
+          "name": "ride_fares",
+          "description_md": "One row per ride. `fare` is NULL for cancelled rides.",
+          "columns": [
+            {
+              "name": "ride_id",
+              "type": "INT"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "fare",
+              "type": "DECIMAL(6,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Pune",
+              40.0
+            ],
+            [
+              2,
+              "Pune",
+              40.0
+            ],
+            [
+              3,
+              "Delhi",
+              35.5
+            ],
+            [
+              4,
+              "Delhi",
+              35.5
+            ],
+            [
+              5,
+              "Mumbai",
+              35.5
+            ],
+            [
+              6,
+              "Mumbai",
+              30.0
+            ],
+            [
+              7,
+              "Pune",
+              30.0
+            ],
+            [
+              8,
+              "Delhi",
+              22.0
+            ],
+            [
+              9,
+              "Mumbai",
+              18.5
+            ],
+            [
+              10,
+              "Pune",
+              null
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Duplicates must not use up a position: the highest fare appears twice.",
+        "Whatever you build must still return one row, with a NULL, when the position does not exist."
+      ],
+      "notes_md": "**Pattern:** Nth highest distinct value. A perennial interview question, usually with the 'what if it does not exist' twist.\n\n**Shape:** Rank the distinct fare levels from the top, pick the level numbered N, and make sure an empty pick still yields one NULL row instead of no rows.\n\n**Syntax:** `DENSE_RANK() OVER (ORDER BY x DESC)` numbers distinct values with no gaps. `MAX(x)` over zero rows returns NULL, which makes a handy 'one row or NULL' wrapper. `LIMIT 1 OFFSET 2` skips two rows, not two distinct values.\n\n**Trap:** ROW_NUMBER or a plain OFFSET counts duplicate fares as separate positions and returns the wrong level.\n\n**Interview follow-up:** How would you generalise to the Nth distinct value per city? (Add PARTITION BY city to the ranking.)",
+      "solutions": [
+        {
+          "label": "DENSE_RANK + MAX",
+          "explain_md": "DENSE_RANK numbers the distinct fares; MAX over the matching row turns 'no row' into NULL.",
+          "sql": "SELECT MAX(fare) AS third_highest_fare\nFROM (\n  SELECT fare, DENSE_RANK() OVER (ORDER BY fare DESC) AS rnk\n  FROM ride_fares\n  WHERE fare IS NOT NULL\n) t\nWHERE rnk = 3;"
+        },
+        {
+          "label": "DISTINCT + OFFSET in a scalar subquery",
+          "explain_md": "A scalar subquery that finds no row evaluates to NULL, giving the required fallback.",
+          "sql": "SELECT (SELECT DISTINCT fare FROM ride_fares\n        WHERE fare IS NOT NULL\n        ORDER BY fare DESC\n        LIMIT 1 OFFSET 2) AS third_highest_fare;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "ROW_NUMBER counts the duplicate 40.00 and 35.50 rides as separate positions and returns 35.50.",
+          "sql": "SELECT MAX(fare) AS third_highest_fare\nFROM (\n  SELECT fare, ROW_NUMBER() OVER (ORDER BY fare DESC) AS rn\n  FROM ride_fares\n  WHERE fare IS NOT NULL\n) t\nWHERE rn = 3;"
+        },
+        {
+          "explain_md": "OFFSET without DISTINCT skips two rides, not two fare levels.",
+          "sql": "SELECT (SELECT fare FROM ride_fares\n        WHERE fare IS NOT NULL\n        ORDER BY fare DESC\n        LIMIT 1 OFFSET 2) AS third_highest_fare;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "third_highest_fare"
+        ],
+        "rows": [
+          [
+            "30.00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T206",
+      "slug": "keep-the-latest-record-per-email",
+      "title": "Keep the latest record per email",
+      "section": "Window functions: ranking",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Deduplication"
+      ],
+      "statement_md": "An Outlook-style address book has been synced from several devices, so the same contact exists in several saved versions, one row per sync. Keep only the most recent version of each `email` (latest `modified_at`). If two versions of an email share the same `modified_at`, keep the one with the higher `contact_id`. Return `contact_id`, `email`, `display_name`, `modified_at`, ordered by `email`.",
+      "tables": [
+        {
+          "name": "address_book",
+          "description_md": "One row per saved version of a contact.",
+          "columns": [
+            {
+              "name": "contact_id",
+              "type": "INT"
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "display_name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "modified_at",
+              "type": "DATETIME"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "ana@contoso.com",
+              "Ana",
+              "2025-01-10 09:00:00"
+            ],
+            [
+              2,
+              "ana@contoso.com",
+              "Ana Bell",
+              "2025-03-02 14:30:00"
+            ],
+            [
+              3,
+              "bob@contoso.com",
+              "Bob",
+              "2025-02-01 08:00:00"
+            ],
+            [
+              4,
+              "bob@contoso.com",
+              "Robert",
+              "2025-02-01 08:00:00"
+            ],
+            [
+              5,
+              "cy@contoso.com",
+              "Cy",
+              "2025-01-15 10:00:00"
+            ],
+            [
+              6,
+              "dee@contoso.com",
+              "Dee",
+              "2025-01-20 12:00:00"
+            ],
+            [
+              7,
+              "dee@contoso.com",
+              "Dee Rao",
+              "2025-02-20 12:00:00"
+            ],
+            [
+              8,
+              "dee@contoso.com",
+              "Deedee",
+              "2025-01-25 12:00:00"
+            ],
+            [
+              9,
+              "eve@contoso.com",
+              "Eve",
+              "2025-04-01 07:45:00"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You need whole rows back, not just the latest date, so a plain GROUP BY on email is not enough.",
+        "Number the versions inside each email from newest to oldest, with a tie-breaker, and keep number one."
+      ],
+      "notes_md": "**Pattern:** Deduplication: one row per key, newest wins. The most common practical use of a window function.\n\n**Shape:** Order each email's rows newest first (id breaks exact ties), number them, and keep only the first.\n\n**Syntax:** `ROW_NUMBER() OVER (PARTITION BY k ORDER BY t DESC)` numbers the rows of each partition 1, 2, 3 in that order, so exactly one row per partition is number 1. A window result must be filtered in an outer query or CTE.\n\n**Trap:** Joining back to MAX(modified_at) keeps every row that shares the latest timestamp, so exact ties return two rows.\n\n**Interview follow-up:** How would you delete the old versions instead of selecting the new ones? (Delete rows whose number is greater than 1, or rows that have a newer sibling.)",
+      "solutions": [
+        {
+          "label": "ROW_NUMBER",
+          "explain_md": "Exactly one row per email gets number 1, even when timestamps tie, because contact_id breaks the tie.",
+          "sql": "WITH ranked AS (\n  SELECT contact_id, email, display_name, modified_at,\n         ROW_NUMBER() OVER (PARTITION BY email ORDER BY modified_at DESC, contact_id DESC) AS rn\n  FROM address_book\n)\nSELECT contact_id, email, display_name, modified_at\nFROM ranked\nWHERE rn = 1\nORDER BY email;"
+        },
+        {
+          "label": "NOT EXISTS a newer version",
+          "explain_md": "A row survives when no other version of the same email is newer, or equally new with a higher id.",
+          "sql": "SELECT c.contact_id, c.email, c.display_name, c.modified_at\nFROM address_book c\nWHERE NOT EXISTS (\n  SELECT 1 FROM address_book x\n  WHERE x.email = c.email\n    AND (x.modified_at > c.modified_at OR (x.modified_at = c.modified_at AND x.contact_id > c.contact_id))\n)\nORDER BY c.email;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Joining to the per-email MAX(modified_at) returns both versions when two share the latest timestamp.",
+          "sql": "SELECT c.contact_id, c.email, c.display_name, c.modified_at\nFROM address_book c\nJOIN (SELECT email, MAX(modified_at) AS latest FROM address_book GROUP BY email) m\n  ON m.email = c.email AND m.latest = c.modified_at\nORDER BY c.email, c.contact_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "contact_id",
+          "email",
+          "display_name",
+          "modified_at"
+        ],
+        "rows": [
+          [
+            "2",
+            "ana@contoso.com",
+            "Ana Bell",
+            "2025-03-02 14:30:00"
+          ],
+          [
+            "4",
+            "bob@contoso.com",
+            "Robert",
+            "2025-02-01 08:00:00"
+          ],
+          [
+            "5",
+            "cy@contoso.com",
+            "Cy",
+            "2025-01-15 10:00:00"
+          ],
+          [
+            "7",
+            "dee@contoso.com",
+            "Dee Rao",
+            "2025-02-20 12:00:00"
+          ],
+          [
+            "9",
+            "eve@contoso.com",
+            "Eve",
+            "2025-04-01 07:45:00"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T207",
+      "slug": "first-title-each-profile-watched",
+      "title": "First title each profile watched",
+      "section": "Window functions: ranking",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Top N per group"
+      ],
+      "statement_md": "A Netflix-style streaming company studies how new profiles start. For every profile, find the first viewing session it ever had and which title was watched in it. When a profile watched several titles on its first day, take the session with the lowest `view_id`. Return `profile_id`, `view_id`, `watched_on`, `title`, with exactly one row per profile, ordered by `profile_id`.",
+      "tables": [
+        {
+          "name": "watch_history",
+          "description_md": "One row per viewing session. A profile can watch several titles on one day.",
+          "columns": [
+            {
+              "name": "view_id",
+              "type": "INT"
+            },
+            {
+              "name": "profile_id",
+              "type": "INT"
+            },
+            {
+              "name": "watched_on",
+              "type": "DATE"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "minutes",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              10,
+              "2025-01-03",
+              "Stranger Things",
+              45
+            ],
+            [
+              2,
+              10,
+              "2025-01-03",
+              "Wednesday",
+              50
+            ],
+            [
+              3,
+              10,
+              "2025-02-10",
+              "The Crown",
+              55
+            ],
+            [
+              4,
+              11,
+              "2025-01-15",
+              "Squid Game",
+              60
+            ],
+            [
+              5,
+              11,
+              "2025-01-20",
+              "Dark",
+              40
+            ],
+            [
+              6,
+              12,
+              "2025-03-01",
+              "Bridgerton",
+              58
+            ],
+            [
+              7,
+              13,
+              "2025-02-02",
+              "Ozark",
+              50
+            ],
+            [
+              8,
+              13,
+              "2025-02-02",
+              "Narcos",
+              52
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Finding each profile's earliest date is easy; the difficulty is getting exactly one row when two sessions share it.",
+        "Number each profile's sessions in the order that defines 'first', then keep number one."
+      ],
+      "notes_md": "**Pattern:** First row per group (earliest event). A cousin of top-N-per-group with N = 1.\n\n**Shape:** Number every profile's sessions from earliest to latest with an explicit tie-break and keep the first one.\n\n**Syntax:** `ROW_NUMBER() OVER (PARTITION BY p ORDER BY d, id)` numbers each partition's rows in the order given, so number 1 is the first one. `MIN(d)` returns only the date, never the rest of the row.\n\n**Trap:** Joining back on the earliest date returns every session on that date, so a same-day tie yields two rows for one profile.\n\n**Interview follow-up:** How would you solve it without a window function? (NOT EXISTS an earlier session, with the id as tie-break.)",
+      "solutions": [
+        {
+          "label": "ROW_NUMBER",
+          "explain_md": "With the id as second sort key every profile has exactly one row numbered 1.",
+          "sql": "WITH ranked AS (\n  SELECT profile_id, view_id, watched_on, title,\n         ROW_NUMBER() OVER (PARTITION BY profile_id ORDER BY watched_on, view_id) AS rn\n  FROM watch_history\n)\nSELECT profile_id, view_id, watched_on, title\nFROM ranked\nWHERE rn = 1\nORDER BY profile_id;"
+        },
+        {
+          "label": "NOT EXISTS an earlier session",
+          "explain_md": "A session is the first one when no other session of that profile comes before it by date, or by id on the same date.",
+          "sql": "SELECT w.profile_id, w.view_id, w.watched_on, w.title\nFROM watch_history w\nWHERE NOT EXISTS (\n  SELECT 1 FROM watch_history x\n  WHERE x.profile_id = w.profile_id\n    AND (x.watched_on < w.watched_on OR (x.watched_on = w.watched_on AND x.view_id < w.view_id))\n)\nORDER BY w.profile_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Joining to MIN(watched_on) returns both sessions from a shared first day.",
+          "sql": "SELECT w.profile_id, w.view_id, w.watched_on, w.title\nFROM watch_history w\nJOIN (SELECT profile_id, MIN(watched_on) AS first_day FROM watch_history GROUP BY profile_id) f\n  ON f.profile_id = w.profile_id AND f.first_day = w.watched_on\nORDER BY w.profile_id, w.view_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "profile_id",
+          "view_id",
+          "watched_on",
+          "title"
+        ],
+        "rows": [
+          [
+            "10",
+            "1",
+            "2025-01-03",
+            "Stranger Things"
+          ],
+          [
+            "11",
+            "4",
+            "2025-01-15",
+            "Squid Game"
+          ],
+          [
+            "12",
+            "6",
+            "2025-03-01",
+            "Bridgerton"
+          ],
+          [
+            "13",
+            "7",
+            "2025-02-02",
+            "Ozark"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T208",
+      "slug": "rank-products-by-revenue-within-department",
+      "title": "Rank products by revenue within department",
+      "section": "Window functions: ranking",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Ranking",
+        "Aggregation"
+      ],
+      "statement_md": "An Amazon-style marketplace wants every product placed in its department's revenue league table. Revenue of a product is the sum of `units * unit_price` over all its order lines. Position 1 is the highest revenue; products with identical revenue share a position and the following position is skipped. Return `department`, `product`, `revenue`, `department_rank`, ordered by `department`, then `department_rank`, then `product`.",
+      "tables": [
+        {
+          "name": "order_lines",
+          "description_md": "One row per order line.",
+          "columns": [
+            {
+              "name": "line_id",
+              "type": "INT"
+            },
+            {
+              "name": "department",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "product",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "units",
+              "type": "INT"
+            },
+            {
+              "name": "unit_price",
+              "type": "DECIMAL(8,2)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Electronics",
+              "Earbuds",
+              10,
+              20.0
+            ],
+            [
+              2,
+              "Electronics",
+              "Earbuds",
+              5,
+              20.0
+            ],
+            [
+              3,
+              "Electronics",
+              "Smart Plug",
+              6,
+              50.0
+            ],
+            [
+              4,
+              "Electronics",
+              "USB Hub",
+              4,
+              35.0
+            ],
+            [
+              5,
+              "Electronics",
+              "USB Hub",
+              4,
+              35.0
+            ],
+            [
+              6,
+              "Electronics",
+              "Cable",
+              10,
+              20.0
+            ],
+            [
+              7,
+              "Books",
+              "Novel",
+              3,
+              40.0
+            ],
+            [
+              8,
+              "Books",
+              "Novel",
+              2,
+              40.0
+            ],
+            [
+              9,
+              "Books",
+              "Cookbook",
+              2,
+              90.0
+            ],
+            [
+              10,
+              "Books",
+              "Planner",
+              10,
+              15.0
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "There are two levels here: first one row per product, then a ranking of those rows.",
+        "A window function runs after GROUP BY, so it can order by an aggregate in the same SELECT, or you can aggregate in a CTE first."
+      ],
+      "notes_md": "**Pattern:** Ranking an aggregate. Tests whether you know the order of evaluation: GROUP BY, then window functions, then ORDER BY.\n\n**Shape:** Collapse order lines into one row per product with a revenue sum, then rank those rows inside each department. It can be one query or a CTE followed by a ranking query.\n\n**Syntax:** A ranking function's ORDER BY may use an aggregate such as `SUM(x)` in a grouped query: windows are evaluated after GROUP BY and HAVING and see the grouped rows.\n\n**Trap:** Ranking raw lines before aggregating, forgetting PARTITION BY (one league table for the whole store), or using ROW_NUMBER so tied products get different positions.\n\n**Interview follow-up:** How would you show only the top product per department, ties included? (Rank in a CTE and filter rank = 1.)",
+      "solutions": [
+        {
+          "label": "Window over the grouped result",
+          "explain_md": "Window functions run after GROUP BY, so the ranking can order by the SUM of each product.",
+          "sql": "SELECT department, product,\n       SUM(units * unit_price) AS revenue,\n       RANK() OVER (PARTITION BY department ORDER BY SUM(units * unit_price) DESC) AS department_rank\nFROM order_lines\nGROUP BY department, product\nORDER BY department, department_rank, product;"
+        },
+        {
+          "label": "CTE then rank",
+          "explain_md": "Aggregate first so the ranking works on plain columns.",
+          "sql": "WITH totals AS (\n  SELECT department, product, SUM(units * unit_price) AS revenue\n  FROM order_lines\n  GROUP BY department, product\n)\nSELECT department, product, revenue,\n       RANK() OVER (PARTITION BY department ORDER BY revenue DESC) AS department_rank\nFROM totals\nORDER BY department, department_rank, product;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without PARTITION BY the products are ranked in one store-wide table, so positions in Electronics continue after Books.",
+          "sql": "SELECT department, product,\n       SUM(units * unit_price) AS revenue,\n       RANK() OVER (ORDER BY SUM(units * unit_price) DESC) AS department_rank\nFROM order_lines\nGROUP BY department, product\nORDER BY department, department_rank, product;"
+        },
+        {
+          "explain_md": "ROW_NUMBER gives the two tied Electronics products different positions.",
+          "sql": "SELECT department, product,\n       SUM(units * unit_price) AS revenue,\n       ROW_NUMBER() OVER (PARTITION BY department ORDER BY SUM(units * unit_price) DESC, product) AS department_rank\nFROM order_lines\nGROUP BY department, product\nORDER BY department, department_rank, product;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "department",
+          "product",
+          "revenue",
+          "department_rank"
+        ],
+        "rows": [
+          [
+            "Books",
+            "Novel",
+            "200.00",
+            "1"
+          ],
+          [
+            "Books",
+            "Cookbook",
+            "180.00",
+            "2"
+          ],
+          [
+            "Books",
+            "Planner",
+            "150.00",
+            "3"
+          ],
+          [
+            "Electronics",
+            "Earbuds",
+            "300.00",
+            "1"
+          ],
+          [
+            "Electronics",
+            "Smart Plug",
+            "300.00",
+            "1"
+          ],
+          [
+            "Electronics",
+            "USB Hub",
+            "280.00",
+            "3"
+          ],
+          [
+            "Electronics",
+            "Cable",
+            "200.00",
+            "4"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T209",
+      "slug": "leaderboard-movers",
+      "title": "Leaderboard movers",
+      "section": "Window functions: ranking",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Ranking",
+        "Period comparisons"
+      ],
+      "statement_md": "An Xbox-style achievements service publishes a weekly leaderboard by `gamerscore` earned that week (highest first; equal scores share a position and the next position is skipped). Each week's position counts everyone who scored that week. For gamertags that appear in both week 1 and week 2, return `gamertag`, `rank_week1`, `rank_week2` and `positions_gained` (week 1 position minus week 2 position, so a positive number means they climbed). Order by `positions_gained` descending, then `gamertag`.",
+      "tables": [
+        {
+          "name": "weekly_gamerscore",
+          "description_md": "One row per gamertag per week they were active.",
+          "columns": [
+            {
+              "name": "gamertag",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "week_no",
+              "type": "INT"
+            },
+            {
+              "name": "gamerscore",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              "AceAnna",
+              1,
+              50
+            ],
+            [
+              "BlazeBea",
+              1,
+              70
+            ],
+            [
+              "CobaltCal",
+              1,
+              60
+            ],
+            [
+              "DuskDan",
+              1,
+              60
+            ],
+            [
+              "EmberEve",
+              1,
+              40
+            ],
+            [
+              "FrostFay",
+              1,
+              30
+            ],
+            [
+              "AceAnna",
+              2,
+              80
+            ],
+            [
+              "BlazeBea",
+              2,
+              65
+            ],
+            [
+              "CobaltCal",
+              2,
+              60
+            ],
+            [
+              "DuskDan",
+              2,
+              75
+            ],
+            [
+              "EmberEve",
+              2,
+              55
+            ],
+            [
+              "GlitchGus",
+              2,
+              90
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Each week has its own league table: the ranking must restart for every week.",
+        "Rank first using everyone who played that week; only afterwards drop gamertags that are missing from one of the weeks."
+      ],
+      "notes_md": "**Pattern:** Rank in two periods, then compare. Typical of 'biggest movers' questions.\n\n**Shape:** Rank every row within its week, then bring the two weeks side by side for each gamertag (self-join or conditional aggregation) and subtract.\n\n**Syntax:** `RANK() OVER (PARTITION BY week_no ORDER BY score DESC)` restarts per week. `MAX(CASE WHEN week_no = 1 THEN rnk END)` picks one week's value out of a group.\n\n**Trap:** Filtering to players present in both weeks before ranking changes everybody's position, because the positions are published for the whole field. Forgetting PARTITION BY ranks both weeks as one list.\n\n**Interview follow-up:** How would you also list players who dropped out or newly joined? (Use a full outer comparison and show NULL for the missing week.)",
+      "solutions": [
+        {
+          "label": "Rank per week, then self-join",
+          "explain_md": "The CTE ranks each week on its own; joining week 1 to week 2 on the gamertag drops anyone missing from either week.",
+          "sql": "WITH ranked AS (\n  SELECT gamertag, week_no,\n         CAST(RANK() OVER (PARTITION BY week_no ORDER BY gamerscore DESC) AS SIGNED) AS rnk\n  FROM weekly_gamerscore\n)\nSELECT a.gamertag, a.rnk AS rank_week1, b.rnk AS rank_week2, a.rnk - b.rnk AS positions_gained\nFROM ranked a\nJOIN ranked b ON b.gamertag = a.gamertag AND b.week_no = 2\nWHERE a.week_no = 1\nORDER BY positions_gained DESC, a.gamertag;"
+        },
+        {
+          "label": "Conditional aggregation",
+          "explain_md": "Group the ranked rows by gamertag and pick out each week's rank; HAVING keeps gamertags that have both.",
+          "sql": "WITH ranked AS (\n  SELECT gamertag, week_no,\n         CAST(RANK() OVER (PARTITION BY week_no ORDER BY gamerscore DESC) AS SIGNED) AS rnk\n  FROM weekly_gamerscore\n)\nSELECT gamertag,\n       MAX(CASE WHEN week_no = 1 THEN rnk END) AS rank_week1,\n       MAX(CASE WHEN week_no = 2 THEN rnk END) AS rank_week2,\n       MAX(CASE WHEN week_no = 1 THEN rnk END) - MAX(CASE WHEN week_no = 2 THEN rnk END) AS positions_gained\nFROM ranked\nGROUP BY gamertag\nHAVING COUNT(*) = 2\nORDER BY positions_gained DESC, gamertag;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Without PARTITION BY both weeks are ranked as one combined list, so the positions are wrong.",
+          "sql": "WITH ranked AS (\n  SELECT gamertag, week_no,\n         CAST(RANK() OVER (ORDER BY gamerscore DESC) AS SIGNED) AS rnk\n  FROM weekly_gamerscore\n)\nSELECT a.gamertag, a.rnk AS rank_week1, b.rnk AS rank_week2, a.rnk - b.rnk AS positions_gained\nFROM ranked a\nJOIN ranked b ON b.gamertag = a.gamertag AND b.week_no = 2\nWHERE a.week_no = 1\nORDER BY positions_gained DESC, a.gamertag;"
+        },
+        {
+          "explain_md": "Dropping gamertags absent from a week before ranking shifts everyone's position in the published table.",
+          "sql": "WITH both_weeks AS (\n  SELECT * FROM weekly_gamerscore\n  WHERE gamertag IN (SELECT gamertag FROM weekly_gamerscore WHERE week_no = 1)\n    AND gamertag IN (SELECT gamertag FROM weekly_gamerscore WHERE week_no = 2)\n), ranked AS (\n  SELECT gamertag, week_no,\n         CAST(RANK() OVER (PARTITION BY week_no ORDER BY gamerscore DESC) AS SIGNED) AS rnk\n  FROM both_weeks\n)\nSELECT a.gamertag, a.rnk AS rank_week1, b.rnk AS rank_week2, a.rnk - b.rnk AS positions_gained\nFROM ranked a\nJOIN ranked b ON b.gamertag = a.gamertag AND b.week_no = 2\nWHERE a.week_no = 1\nORDER BY positions_gained DESC, a.gamertag;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "gamertag",
+          "rank_week1",
+          "rank_week2",
+          "positions_gained"
+        ],
+        "rows": [
+          [
+            "AceAnna",
+            "4",
+            "2",
+            "2"
+          ],
+          [
+            "DuskDan",
+            "2",
+            "3",
+            "-1"
+          ],
+          [
+            "EmberEve",
+            "5",
+            "6",
+            "-1"
+          ],
+          [
+            "BlazeBea",
+            "1",
+            "4",
+            "-3"
+          ],
+          [
+            "CobaltCal",
+            "2",
+            "5",
+            "-3"
+          ]
+        ]
+      },
+      "dialect_note_md": "In MySQL a ranking function returns an unsigned integer, so subtracting a larger rank from a smaller one raises an out-of-range error instead of going negative.",
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T210",
+      "slug": "split-creators-into-follower-tiers",
+      "title": "Split creators into follower tiers",
+      "section": "Window functions: ranking",
+      "difficulty": "Easy",
+      "topics": [
+        "Window functions",
+        "NTILE"
+      ],
+      "statement_md": "An Instagram-style creator programme has 12 accounts and wants four tiers of equal size: tier 1 is the quarter with the most followers, tier 4 the quarter with the fewest. Sort by `followers` descending; accounts with the same follower count are ordered by `account_id`. Return `account_id`, `handle`, `followers`, `tier`, ordered by `followers` descending, then `account_id`.",
+      "tables": [
+        {
+          "name": "creator_accounts",
+          "description_md": "One row per creator account (followers in thousands).",
+          "columns": [
+            {
+              "name": "account_id",
+              "type": "INT"
+            },
+            {
+              "name": "handle",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "followers",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "lena_lens",
+              245
+            ],
+            [
+              2,
+              "max_moves",
+              310
+            ],
+            [
+              3,
+              "nina_nova",
+              128
+            ],
+            [
+              4,
+              "omar_orbit",
+              95
+            ],
+            [
+              5,
+              "pat_pixel",
+              180
+            ],
+            [
+              6,
+              "quinn_q",
+              410
+            ],
+            [
+              7,
+              "rosa_roast",
+              60
+            ],
+            [
+              8,
+              "sam_sips",
+              245
+            ],
+            [
+              9,
+              "tom_tamp",
+              88
+            ],
+            [
+              10,
+              "uri_urn",
+              150
+            ],
+            [
+              11,
+              "vera_vert",
+              40
+            ],
+            [
+              12,
+              "walt_wheels",
+              72
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "You are cutting an ordered list into equal slices, not grouping by value.",
+        "Two accounts share 245 thousand followers; the secondary sort key decides which of them goes into which tier."
+      ],
+      "notes_md": "**Pattern:** Equal-size buckets (quartiles, deciles, tiers). Come up whenever the question says 'top 25%' or 'split into n groups'.\n\n**Shape:** Order the rows, then let the database cut the ordered list into n consecutive slices and label them 1..n.\n\n**Syntax:** `NTILE(n) OVER (ORDER BY k)` takes the number of buckets n and numbers them 1 to n in the order given. Add a second sort key so ties are cut deterministically.\n\n**Trap:** Ordering ascending flips which tier is 'first'; ordering by a non-unique key makes the cut through tied rows unstable.\n\n**Interview follow-up:** What if the count does not divide evenly? (See the next drill on uneven buckets.)",
+      "solutions": [
+        {
+          "label": "NTILE",
+          "explain_md": "NTILE(4) cuts the ordered list into four equal slices numbered from 1.",
+          "sql": "SELECT account_id, handle, followers,\n       NTILE(4) OVER (ORDER BY followers DESC, account_id) AS tier\nFROM creator_accounts\nORDER BY followers DESC, account_id;"
+        },
+        {
+          "label": "ROW_NUMBER arithmetic",
+          "explain_md": "With 12 rows, 3 accounts fit in each tier, so the tier is the row position scaled by the tier count and total, rounded up.",
+          "sql": "SELECT account_id, handle, followers,\n       CEIL(ROW_NUMBER() OVER (ORDER BY followers DESC, account_id) * 4 / COUNT(*) OVER ()) AS tier\nFROM creator_accounts\nORDER BY followers DESC, account_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Sorting ascending numbers the smallest accounts as tier 1, reversing the tiers.",
+          "sql": "SELECT account_id, handle, followers,\n       NTILE(4) OVER (ORDER BY followers, account_id) AS tier\nFROM creator_accounts\nORDER BY followers DESC, account_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "account_id",
+          "handle",
+          "followers",
+          "tier"
+        ],
+        "rows": [
+          [
+            "6",
+            "quinn_q",
+            "410",
+            "1"
+          ],
+          [
+            "2",
+            "max_moves",
+            "310",
+            "1"
+          ],
+          [
+            "1",
+            "lena_lens",
+            "245",
+            "1"
+          ],
+          [
+            "8",
+            "sam_sips",
+            "245",
+            "2"
+          ],
+          [
+            "5",
+            "pat_pixel",
+            "180",
+            "2"
+          ],
+          [
+            "10",
+            "uri_urn",
+            "150",
+            "2"
+          ],
+          [
+            "3",
+            "nina_nova",
+            "128",
+            "3"
+          ],
+          [
+            "4",
+            "omar_orbit",
+            "95",
+            "3"
+          ],
+          [
+            "9",
+            "tom_tamp",
+            "88",
+            "3"
+          ],
+          [
+            "12",
+            "walt_wheels",
+            "72",
+            "4"
+          ],
+          [
+            "7",
+            "rosa_roast",
+            "60",
+            "4"
+          ],
+          [
+            "11",
+            "vera_vert",
+            "40",
+            "4"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T211",
+      "slug": "uneven-buckets",
+      "title": "Uneven buckets",
+      "section": "Window functions: ranking",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "NTILE"
+      ],
+      "statement_md": "A Microsoft Teams-style support channel answered 10 questions. Sort them from fastest to slowest by `reply_minutes` (the time to the first reply; `question_id` breaks ties) and cut that list into 3 consecutive groups numbered 1 to 3. When the questions cannot be split evenly, the earlier groups receive the extra questions. For each group return `bucket`, `questions` (how many), `fastest_minutes` and `slowest_minutes`, ordered by `bucket`.",
+      "tables": [
+        {
+          "name": "channel_questions",
+          "description_md": "One row per answered question.",
+          "columns": [
+            {
+              "name": "question_id",
+              "type": "INT"
+            },
+            {
+              "name": "reply_minutes",
+              "type": "DECIMAL(5,1)"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              2.0
+            ],
+            [
+              2,
+              5.5
+            ],
+            [
+              3,
+              1.5
+            ],
+            [
+              4,
+              8.0
+            ],
+            [
+              5,
+              3.0
+            ],
+            [
+              6,
+              12.5
+            ],
+            [
+              7,
+              4.0
+            ],
+            [
+              8,
+              6.5
+            ],
+            [
+              9,
+              20.0
+            ],
+            [
+              10,
+              2.5
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Work out by hand how 10 rows split into 3 groups before writing anything, and which groups get the leftover row.",
+        "You need the bucket number per question first, then an aggregate per bucket."
+      ],
+      "notes_md": "**Pattern:** Uneven bucketing and per-bucket summaries. Tests whether you know how the database spreads the remainder.\n\n**Shape:** Label every question with its bucket in a CTE, then group by the bucket and take count, min and max.\n\n**Syntax:** With `NTILE(n)`, if the rows divide into n groups with a remainder r, the first r buckets get one extra row each. Window functions cannot be used inside GROUP BY, so label first, aggregate second.\n\n**Trap:** Assuming the extra rows land in the last bucket (as a hand-rolled CEIL formula would put them), or trying to aggregate and number in the same SELECT.\n\n**Interview follow-up:** How do you build the same buckets by value range instead of by row count? (Width-based buckets with a CASE or arithmetic on the value.)",
+      "solutions": [
+        {
+          "label": "NTILE in a CTE",
+          "explain_md": "NTILE(3) over 10 rows gives sizes 4, 3, 3; grouping the labelled rows summarises each bucket.",
+          "sql": "WITH tiled AS (\n  SELECT question_id, reply_minutes,\n         NTILE(3) OVER (ORDER BY reply_minutes, question_id) AS bucket\n  FROM channel_questions\n)\nSELECT bucket,\n       COUNT(*) AS questions,\n       MIN(reply_minutes) AS fastest_minutes,\n       MAX(reply_minutes) AS slowest_minutes\nFROM tiled\nGROUP BY bucket\nORDER BY bucket;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "A hand-rolled formula that rounds the position up puts the extra question in the last bucket (3, 3, 4) instead of the first.",
+          "sql": "WITH tiled AS (\n  SELECT question_id, reply_minutes,\n         CEIL(ROW_NUMBER() OVER (ORDER BY reply_minutes, question_id) * 3 / COUNT(*) OVER ()) AS bucket\n  FROM channel_questions\n)\nSELECT bucket,\n       COUNT(*) AS questions,\n       MIN(reply_minutes) AS fastest_minutes,\n       MAX(reply_minutes) AS slowest_minutes\nFROM tiled\nGROUP BY bucket\nORDER BY bucket;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "bucket",
+          "questions",
+          "fastest_minutes",
+          "slowest_minutes"
+        ],
+        "rows": [
+          [
+            "1",
+            "4",
+            "1.5",
+            "3.0"
+          ],
+          [
+            "2",
+            "3",
+            "4.0",
+            "6.5"
+          ],
+          [
+            "3",
+            "3",
+            "8.0",
+            "20.0"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T212",
+      "slug": "price-percentile-within-city",
+      "title": "Price percentile within city",
+      "section": "Window functions: ranking",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Statistics"
+      ],
+      "statement_md": "An Airbnb-style host-tools team shows each listing where its nightly price sits within its own city, defined as the percentage of the city's *other* listings that are strictly cheaper, rounded to one decimal. The cheapest listing scores 0 and the dearest 100; a city with a single listing scores 0. Return `city`, `title`, `nightly_price`, `price_percentile`, ordered by `city`, then `nightly_price`, then `title`.",
+      "tables": [
+        {
+          "name": "listings",
+          "description_md": "One row per listing.",
+          "columns": [
+            {
+              "name": "listing_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "nightly_price",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Alfama Loft",
+              "Lisbon",
+              150
+            ],
+            [
+              2,
+              "Baixa Studio",
+              "Lisbon",
+              130
+            ],
+            [
+              3,
+              "Chiado Flat",
+              "Lisbon",
+              130
+            ],
+            [
+              4,
+              "Estrela Room",
+              "Lisbon",
+              110
+            ],
+            [
+              5,
+              "Belem Nook",
+              "Lisbon",
+              90
+            ],
+            [
+              6,
+              "Trastevere Attic",
+              "Rome",
+              60
+            ],
+            [
+              7,
+              "Monti Suite",
+              "Rome",
+              80
+            ],
+            [
+              8,
+              "Testaccio Pad",
+              "Rome",
+              80
+            ],
+            [
+              9,
+              "Fjord Cabin",
+              "Oslo",
+              75
+            ],
+            [
+              10,
+              "Shibuya Pod",
+              "Tokyo",
+              50
+            ],
+            [
+              11,
+              "Asakusa House",
+              "Tokyo",
+              65
+            ],
+            [
+              12,
+              "Ginza Loft",
+              "Tokyo",
+              80
+            ],
+            [
+              13,
+              "Roppongi Tower",
+              "Tokyo",
+              95
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "Note the exact definition: strictly cheaper, and divided by the other listings, not by all of them.",
+        "Listings with the same price must get the same percentile, and a one-listing city must not divide by zero."
+      ],
+      "notes_md": "**Pattern:** Percentile position of each row. Shows up as 'where does this value sit in its group'.\n\n**Shape:** Order each city by price ascending and let a distribution function report the relative standing, then scale to a percentage and round.\n\n**Syntax:** `PERCENT_RANK()` = (rank - 1) / (rows in partition - 1), always between 0 and 1, and 0 for a one-row partition. `CUME_DIST()` is a different quantity: rows up to and including this one divided by all rows.\n\n**Trap:** Using CUME_DIST (never 0, counts ties as 'at or below') or dividing the count of cheaper listings by the full city size.\n\n**Interview follow-up:** How would you compute the same number without PERCENT_RANK? (Count strictly cheaper listings in the city and divide by size minus one, guarding the one-row case.)",
+      "solutions": [
+        {
+          "label": "PERCENT_RANK",
+          "explain_md": "PERCENT_RANK is exactly the share of other rows that sort strictly before the current peer group.",
+          "sql": "SELECT city, title, nightly_price,\n       ROUND(PERCENT_RANK() OVER (PARTITION BY city ORDER BY nightly_price) * 100, 1) AS price_percentile\nFROM listings\nORDER BY city, nightly_price, title;"
+        },
+        {
+          "label": "Correlated counts",
+          "explain_md": "Count the strictly cheaper listings and divide by the city size minus one; NULLIF avoids dividing by zero and COALESCE turns that case into 0.",
+          "sql": "SELECT l.city, l.title, l.nightly_price,\n       COALESCE(ROUND(100 * (SELECT COUNT(*) FROM listings x WHERE x.city = l.city AND x.nightly_price < l.nightly_price)\n                      / NULLIF((SELECT COUNT(*) FROM listings y WHERE y.city = l.city) - 1, 0), 1), 0) AS price_percentile\nFROM listings l\nORDER BY l.city, l.nightly_price, l.title;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "CUME_DIST counts the row itself and its ties, so nobody scores 0 and tied listings jump higher.",
+          "sql": "SELECT city, title, nightly_price,\n       ROUND(CUME_DIST() OVER (PARTITION BY city ORDER BY nightly_price) * 100, 1) AS price_percentile\nFROM listings\nORDER BY city, nightly_price, title;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "city",
+          "title",
+          "nightly_price",
+          "price_percentile"
+        ],
+        "rows": [
+          [
+            "Lisbon",
+            "Belem Nook",
+            "90",
+            "0"
+          ],
+          [
+            "Lisbon",
+            "Estrela Room",
+            "110",
+            "25"
+          ],
+          [
+            "Lisbon",
+            "Baixa Studio",
+            "130",
+            "50"
+          ],
+          [
+            "Lisbon",
+            "Chiado Flat",
+            "130",
+            "50"
+          ],
+          [
+            "Lisbon",
+            "Alfama Loft",
+            "150",
+            "100"
+          ],
+          [
+            "Oslo",
+            "Fjord Cabin",
+            "75",
+            "0"
+          ],
+          [
+            "Rome",
+            "Trastevere Attic",
+            "60",
+            "0"
+          ],
+          [
+            "Rome",
+            "Monti Suite",
+            "80",
+            "50"
+          ],
+          [
+            "Rome",
+            "Testaccio Pad",
+            "80",
+            "50"
+          ],
+          [
+            "Tokyo",
+            "Shibuya Pod",
+            "50",
+            "0"
+          ],
+          [
+            "Tokyo",
+            "Asakusa House",
+            "65",
+            "33.3"
+          ],
+          [
+            "Tokyo",
+            "Ginza Loft",
+            "80",
+            "66.7"
+          ],
+          [
+            "Tokyo",
+            "Roppongi Tower",
+            "95",
+            "100"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T213",
+      "slug": "top-quarter-of-titles",
+      "title": "Top quarter of titles",
+      "section": "Window functions: ranking",
+      "difficulty": "Medium",
+      "topics": [
+        "Window functions",
+        "Statistics"
+      ],
+      "statement_md": "A Netflix-style home page features the top quarter of the catalogue by `completion_pct` (the share of viewers who finish a title), but tied titles must be treated alike: a group of titles with the same completion is either entirely featured or not at all, and a group is featured only if every member sits within the best 25% of the catalogue (counting the group itself). Return `title_id`, `title`, `completion_pct` for the featured titles, ordered by `completion_pct` descending, then `title_id`.",
+      "tables": [
+        {
+          "name": "catalogue",
+          "description_md": "One row per title; there are 12 titles.",
+          "columns": [
+            {
+              "name": "title_id",
+              "type": "INT"
+            },
+            {
+              "name": "title",
+              "type": "VARCHAR(30)"
+            },
+            {
+              "name": "completion_pct",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Wednesday",
+              98
+            ],
+            [
+              2,
+              "Dark",
+              95
+            ],
+            [
+              3,
+              "Ozark",
+              90
+            ],
+            [
+              4,
+              "Narcos",
+              90
+            ],
+            [
+              5,
+              "The Crown",
+              85
+            ],
+            [
+              6,
+              "Bridgerton",
+              82
+            ],
+            [
+              7,
+              "Mindhunter",
+              79
+            ],
+            [
+              8,
+              "Lupin",
+              75
+            ],
+            [
+              9,
+              "Elite",
+              70
+            ],
+            [
+              10,
+              "Sense8",
+              66
+            ],
+            [
+              11,
+              "Cobra Kai",
+              60
+            ],
+            [
+              12,
+              "Hemlock Grove",
+              55
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "A quarter of 12 titles is 3, but two titles tie for the 3rd and 4th place.",
+        "For each title ask what fraction of the catalogue completes at least as well as it does, itself included."
+      ],
+      "notes_md": "**Pattern:** Top x% with ties at the boundary. The edge case is the whole point of the question.\n\n**Shape:** For each title compute the cumulative share of the catalogue from the top down, including its tied peers, and keep those whose share is within the limit.\n\n**Syntax:** `CUME_DIST() OVER (ORDER BY x DESC)` = rows ahead plus all peers, divided by total rows, so tied rows always get the same value. `PERCENT_RANK` and `NTILE` treat the boundary differently.\n\n**Trap:** NTILE(4) cuts the tied pair in half; PERCENT_RANK <= 0.25 lets the whole tied group in because it measures rows strictly ahead.\n\n**Interview follow-up:** How would you return exactly the top 25% of rows, ignoring ties? (Number the rows and compare to a quarter of the count.)",
+      "solutions": [
+        {
+          "label": "CUME_DIST",
+          "explain_md": "The cumulative share counts the whole tied group, so a group that crosses the 25% line gets a value above it and is excluded together.",
+          "sql": "WITH d AS (\n  SELECT title_id, title, completion_pct,\n         CUME_DIST() OVER (ORDER BY completion_pct DESC) AS share_at_or_above\n  FROM catalogue\n)\nSELECT title_id, title, completion_pct\nFROM d\nWHERE share_at_or_above <= 0.25\nORDER BY completion_pct DESC, title_id;"
+        },
+        {
+          "label": "Correlated count",
+          "explain_md": "A title qualifies when the number of titles completing at least as well is at most a quarter of the catalogue.",
+          "sql": "SELECT c.title_id, c.title, c.completion_pct\nFROM catalogue c\nWHERE (SELECT COUNT(*) FROM catalogue x WHERE x.completion_pct >= c.completion_pct) * 4 <= (SELECT COUNT(*) FROM catalogue)\nORDER BY c.completion_pct DESC, c.title_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "NTILE(4) splits the tied pair across the quarter boundary and keeps one of them.",
+          "sql": "WITH t AS (\n  SELECT title_id, title, completion_pct,\n         NTILE(4) OVER (ORDER BY completion_pct DESC, title_id) AS q\n  FROM catalogue\n)\nSELECT title_id, title, completion_pct FROM t WHERE q = 1\nORDER BY completion_pct DESC, title_id;"
+        },
+        {
+          "explain_md": "PERCENT_RANK looks only at rows strictly ahead, so the whole tied pair passes the 0.25 test.",
+          "sql": "WITH p AS (\n  SELECT title_id, title, completion_pct,\n         PERCENT_RANK() OVER (ORDER BY completion_pct DESC) AS pr\n  FROM catalogue\n)\nSELECT title_id, title, completion_pct FROM p WHERE pr <= 0.25\nORDER BY completion_pct DESC, title_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "title_id",
+          "title",
+          "completion_pct"
+        ],
+        "rows": [
+          [
+            "1",
+            "Wednesday",
+            "98"
+          ],
+          [
+            "2",
+            "Dark",
+            "95"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T214",
+      "slug": "top-three-with-a-tie-breaker",
+      "title": "Top three with a tie-breaker",
+      "section": "Window functions: ranking",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Ranking",
+        "Top N per group"
+      ],
+      "statement_md": "An online shooter ranks runs on each map by `score` (higher is better) and, for equal scores, by `clear_seconds` (faster is better). Runs that are equal on both score and clear time share a place and the next place is skipped. Return the runs in places 1 to 3 of each map: `map_name`, `player`, `score`, `clear_seconds`, `place`, ordered by `map_name`, then `place`, then `player`.",
+      "tables": [
+        {
+          "name": "ranked_runs",
+          "description_md": "One row per submitted run.",
+          "columns": [
+            {
+              "name": "run_id",
+              "type": "INT"
+            },
+            {
+              "name": "map_name",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "player",
+              "type": "VARCHAR(20)"
+            },
+            {
+              "name": "score",
+              "type": "INT"
+            },
+            {
+              "name": "clear_seconds",
+              "type": "INT"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              "Neon Docks",
+              "AvaAce",
+              90,
+              420
+            ],
+            [
+              2,
+              "Neon Docks",
+              "BenBlitz",
+              90,
+              380
+            ],
+            [
+              3,
+              "Neon Docks",
+              "CleoCrit",
+              85,
+              300
+            ],
+            [
+              4,
+              "Neon Docks",
+              "DevDash",
+              85,
+              300
+            ],
+            [
+              5,
+              "Neon Docks",
+              "EshaEdge",
+              85,
+              350
+            ],
+            [
+              6,
+              "Neon Docks",
+              "FinnFrag",
+              70,
+              200
+            ],
+            [
+              7,
+              "Ice Caverns",
+              "GusGrind",
+              60,
+              500
+            ],
+            [
+              8,
+              "Ice Caverns",
+              "HanaHex",
+              75,
+              610
+            ],
+            [
+              9,
+              "Ice Caverns",
+              "IvanIce",
+              75,
+              590
+            ],
+            [
+              10,
+              "Ice Caverns",
+              "JoJolt",
+              60,
+              450
+            ],
+            [
+              11,
+              "Ice Caverns",
+              "KaiKite",
+              50,
+              100
+            ],
+            [
+              12,
+              "Ice Caverns",
+              "LenaLoot",
+              40,
+              90
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "The ordering inside the window has two keys, pointing in different directions.",
+        "Place 3 is shared by CleoCrit and DevDash on Neon Docks; check what that does to the places after them."
+      ],
+      "notes_md": "**Pattern:** Ranking on a composite key. Real leaderboards always have a tie-breaker.\n\n**Shape:** Rank inside each map using both keys, the stronger key first, then keep places up to three in an outer query.\n\n**Syntax:** `RANK() OVER (PARTITION BY g ORDER BY a DESC, b ASC)` compares rows on the whole key list: rows are peers only if every listed key is equal. Each key has its own direction.\n\n**Trap:** Ranking on score alone gives tied scores the same place and ignores the time; putting the time first makes speed beat score.\n\n**Interview follow-up:** How would you break a complete tie by earliest submission, so places are unique? (Add the id as a final key and switch to ROW_NUMBER.)",
+      "solutions": [
+        {
+          "label": "RANK on two keys",
+          "explain_md": "Runs are peers only when both score and time match, so RANK gives faster runs the better place and shares places only on a full tie.",
+          "sql": "WITH ranked AS (\n  SELECT map_name, player, score, clear_seconds,\n         RANK() OVER (PARTITION BY map_name ORDER BY score DESC, clear_seconds ASC) AS place\n  FROM ranked_runs\n)\nSELECT map_name, player, score, clear_seconds, place\nFROM ranked\nWHERE place <= 3\nORDER BY map_name, place, player;"
+        },
+        {
+          "label": "Correlated count",
+          "explain_md": "The place is one plus the number of runs on the same map that are strictly better on score, or equal on score and faster.",
+          "sql": "SELECT map_name, player, score, clear_seconds, place\nFROM (\n  SELECT r.map_name, r.player, r.score, r.clear_seconds,\n         1 + (SELECT COUNT(*) FROM ranked_runs x\n              WHERE x.map_name = r.map_name\n                AND (x.score > r.score OR (x.score = r.score AND x.clear_seconds < r.clear_seconds))) AS place\n  FROM ranked_runs r\n) t\nWHERE place <= 3\nORDER BY map_name, place, player;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Ranking by score alone ignores the clear time: tied scores share a place and the faster run gets no credit.",
+          "sql": "WITH ranked AS (\n  SELECT map_name, player, score, clear_seconds,\n         RANK() OVER (PARTITION BY map_name ORDER BY score DESC) AS place\n  FROM ranked_runs\n)\nSELECT map_name, player, score, clear_seconds, place\nFROM ranked WHERE place <= 3\nORDER BY map_name, place, player;"
+        },
+        {
+          "explain_md": "Putting clear_seconds first lets speed beat score.",
+          "sql": "WITH ranked AS (\n  SELECT map_name, player, score, clear_seconds,\n         RANK() OVER (PARTITION BY map_name ORDER BY clear_seconds ASC, score DESC) AS place\n  FROM ranked_runs\n)\nSELECT map_name, player, score, clear_seconds, place\nFROM ranked WHERE place <= 3\nORDER BY map_name, place, player;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "map_name",
+          "player",
+          "score",
+          "clear_seconds",
+          "place"
+        ],
+        "rows": [
+          [
+            "Ice Caverns",
+            "IvanIce",
+            "75",
+            "590",
+            "1"
+          ],
+          [
+            "Ice Caverns",
+            "HanaHex",
+            "75",
+            "610",
+            "2"
+          ],
+          [
+            "Ice Caverns",
+            "JoJolt",
+            "60",
+            "450",
+            "3"
+          ],
+          [
+            "Neon Docks",
+            "BenBlitz",
+            "90",
+            "380",
+            "1"
+          ],
+          [
+            "Neon Docks",
+            "AvaAce",
+            "90",
+            "420",
+            "2"
+          ],
+          [
+            "Neon Docks",
+            "CleoCrit",
+            "85",
+            "300",
+            "3"
+          ],
+          [
+            "Neon Docks",
+            "DevDash",
+            "85",
+            "300",
+            "3"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    },
+    {
+      "id": "T215",
+      "slug": "longest-login-streak",
+      "title": "Longest login streak",
+      "section": "Window functions: ranking",
+      "difficulty": "Hard",
+      "topics": [
+        "Window functions",
+        "Gaps and islands"
+      ],
+      "statement_md": "A bank's mobile app team wants to reward loyal customers. For each customer, find the longest run of consecutive calendar days on which they logged in to the app. A customer may log in several times on the same day; that day counts once. Return `customer_id` and `longest_streak` (in days) for every customer who logged in at least once, ordered by `longest_streak` descending, then `customer_id`.",
+      "tables": [
+        {
+          "name": "app_logins",
+          "description_md": "One row per login event; customers can log in several times a day.",
+          "columns": [
+            {
+              "name": "login_id",
+              "type": "INT"
+            },
+            {
+              "name": "customer_id",
+              "type": "INT"
+            },
+            {
+              "name": "login_date",
+              "type": "DATE"
+            }
+          ],
+          "rows": [
+            [
+              1,
+              1,
+              "2025-03-01"
+            ],
+            [
+              2,
+              1,
+              "2025-03-02"
+            ],
+            [
+              3,
+              1,
+              "2025-03-02"
+            ],
+            [
+              4,
+              1,
+              "2025-03-03"
+            ],
+            [
+              5,
+              1,
+              "2025-03-05"
+            ],
+            [
+              6,
+              1,
+              "2025-03-06"
+            ],
+            [
+              7,
+              2,
+              "2025-03-01"
+            ],
+            [
+              8,
+              2,
+              "2025-03-03"
+            ],
+            [
+              9,
+              2,
+              "2025-03-04"
+            ],
+            [
+              10,
+              2,
+              "2025-03-04"
+            ],
+            [
+              11,
+              2,
+              "2025-03-05"
+            ],
+            [
+              12,
+              3,
+              "2025-03-10"
+            ],
+            [
+              13,
+              4,
+              "2025-03-10"
+            ],
+            [
+              14,
+              4,
+              "2025-03-11"
+            ]
+          ]
+        }
+      ],
+      "hints_md": [
+        "A streak is a block of dates that are consecutive: think about what stays constant for dates in one block when you subtract a counter that grows by one per row.",
+        "Duplicate logins on one day break that counter, so remove them before numbering."
+      ],
+      "notes_md": "**Pattern:** Gaps and islands (streaks). The interviewer's favourite hard window question.\n\n**Shape:** Reduce to one row per customer and day, number each customer's days, and subtract that number of days from the date: consecutive days share the same result. Group by that result to get each streak's length, then take the longest per customer.\n\n**Syntax:** `DATE_SUB(d, INTERVAL n DAY)` moves a date back by n days; `COUNT(*)` per island gives its length.\n\n**Trap:** Numbering raw login rows: a second login on the same day uses up a number, so a real streak splits or merges. Counting distinct days per customer ignores gaps entirely.\n\n**Interview follow-up:** How would you find the customer's current streak ending today? (Keep only the island whose last date is today.)",
+      "solutions": [
+        {
+          "label": "Date minus ROW_NUMBER",
+          "explain_md": "After de-duplicating to one row per day, date minus row number is constant inside a streak, so grouping on it measures each streak.",
+          "sql": "WITH days AS (\n  SELECT DISTINCT customer_id, login_date FROM app_logins\n), islands AS (\n  SELECT customer_id, login_date,\n         DATE_SUB(login_date, INTERVAL ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY login_date) DAY) AS grp\n  FROM days\n), streaks AS (\n  SELECT customer_id, grp, COUNT(*) AS len\n  FROM islands\n  GROUP BY customer_id, grp\n)\nSELECT customer_id, MAX(len) AS longest_streak\nFROM streaks\nGROUP BY customer_id\nORDER BY longest_streak DESC, customer_id;"
+        },
+        {
+          "label": "LAG flag and running sum",
+          "explain_md": "Flag each day that does not continue the previous day, then a running sum of flags labels the streaks.",
+          "sql": "WITH days AS (\n  SELECT DISTINCT customer_id, login_date FROM app_logins\n), flagged AS (\n  SELECT customer_id, login_date,\n         CASE WHEN DATEDIFF(login_date, LAG(login_date) OVER (PARTITION BY customer_id ORDER BY login_date)) = 1 THEN 0 ELSE 1 END AS is_new\n  FROM days\n), islands AS (\n  SELECT customer_id, login_date,\n         SUM(is_new) OVER (PARTITION BY customer_id ORDER BY login_date) AS grp\n  FROM flagged\n), streaks AS (\n  SELECT customer_id, grp, COUNT(*) AS len\n  FROM islands\n  GROUP BY customer_id, grp\n)\nSELECT customer_id, MAX(len) AS longest_streak\nFROM streaks\nGROUP BY customer_id\nORDER BY longest_streak DESC, customer_id;"
+        }
+      ],
+      "traps": [
+        {
+          "explain_md": "Numbering raw login rows lets a repeated login shift the counter, so customer 1's streak is mis-measured.",
+          "sql": "WITH islands AS (\n  SELECT customer_id, login_date,\n         DATE_SUB(login_date, INTERVAL ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY login_date) DAY) AS grp\n  FROM app_logins\n), streaks AS (\n  SELECT customer_id, grp, COUNT(*) AS len\n  FROM islands\n  GROUP BY customer_id, grp\n)\nSELECT customer_id, MAX(len) AS longest_streak\nFROM streaks\nGROUP BY customer_id\nORDER BY longest_streak DESC, customer_id;"
+        },
+        {
+          "explain_md": "Counting distinct login days ignores the gaps between streaks.",
+          "sql": "SELECT customer_id, COUNT(DISTINCT login_date) AS longest_streak\nFROM app_logins\nGROUP BY customer_id\nORDER BY longest_streak DESC, customer_id;"
+        }
+      ],
+      "expected": {
+        "columns": [
+          "customer_id",
+          "longest_streak"
+        ],
+        "rows": [
+          [
+            "1",
+            "3"
+          ],
+          [
+            "2",
+            "3"
+          ],
+          [
+            "4",
+            "2"
+          ],
+          [
+            "3",
+            "1"
+          ]
+        ]
+      },
+      "verified_on": "MySQL 8.0.39"
+    }
+  ]
+}

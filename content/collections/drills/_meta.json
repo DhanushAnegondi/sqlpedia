@@ -1,0 +1,6 @@
+{
+  "id": "drills",
+  "title": "Interview topic drills",
+  "description_md": "Focused interview drills, one topic at a time: joins (inner, outer, self, anti, semi, range), window functions (ranking, NTILE, percentiles, aggregates and frames), value functions (LAG, LEAD, FIRST_VALUE, LAST_VALUE, NTH_VALUE), CTEs and recursive CTEs. Two to three problems per sub-topic, easy to hard, each with the classic trap planted and the follow-up an interviewer asks next.",
+  "parts": ["part-1.json", "part-2.json", "part-3.json", "part-4.json", "part-5.json", "part-6.json", "part-7.json"]
+}
