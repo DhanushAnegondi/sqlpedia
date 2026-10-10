@@ -21,3 +21,4 @@
 - Browser: basics library shows 8 section headings, filters work at 1280px and 375px (no overflow), home "Start here" = B001, 5 collection cards in one row, console clean.
 - Reviewer (Sonnet) running on basics content.
 - Committed d1c2346, pushed to main; Deploy SQLpedia run succeeded; live catalog lists basics (48).
+- 17:23 User saw no new problems on live site: browser cache (Pages max-age=600). site/js/data.js fetch now uses cache: no-cache. Pushed.

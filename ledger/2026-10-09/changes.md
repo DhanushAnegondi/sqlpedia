@@ -25,3 +25,4 @@
   Verified: real MySQL 48/48 0 issues, engine 0 issues, strict build clean; legacy verify unchanged.
 - Reviewer FAIL (Notes **Syntax:** lines were solution skeletons in 19 problems) -> replaced with generic syntax facts
   (B009 B012 B018 B019 B021 B023 B024 B026 B027 B031 B032 B034-B041). Re-verified. B048 section left as is.
+- site/js/data.js: getJson fetch with cache: 'no-cache' so new content appears right after deploy.

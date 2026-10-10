@@ -8,7 +8,8 @@ const pages = new Map();
 let dataset = null;
 
 async function getJson(path) {
-  const r = await fetch(path);
+  // revalidate every load (cheap 304) so new content shows up right after a deploy
+  const r = await fetch(path, { cache: "no-cache" });
   if (!r.ok) throw new Error(`${path} not found — run: npm run import`);
   return r.json();
 }
